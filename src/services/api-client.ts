@@ -5,9 +5,7 @@
 
 import axios, { AxiosInstance, AxiosError, InternalAxiosRequestConfig } from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-
-// Base URL - update this to your API endpoint
-const API_BASE_URL = 'https://api.example.com'; // Configure via environment or settings
+import { API_BASE_URL } from '../config/env';
 
 // Timeout in milliseconds
 const REQUEST_TIMEOUT = 30000;
@@ -16,7 +14,7 @@ const REQUEST_TIMEOUT = 30000;
  * Create axios instance with default config
  */
 const apiClient: AxiosInstance = axios.create({
-    baseURL: API_BASE_URL,
+    baseURL: `${API_BASE_URL}/api`,
     timeout: REQUEST_TIMEOUT,
     headers: {
         'Content-Type': 'application/json',

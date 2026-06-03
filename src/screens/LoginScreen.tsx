@@ -6,16 +6,15 @@ import {
   TouchableOpacity,
   StyleSheet,
   StatusBar,
-  SafeAreaView,
   ScrollView,
   KeyboardAvoidingView,
   Platform,
   Alert,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Colors, FontSizes, Radii, Spacing, Shadows } from '../theme';
-import { Eye, EyeOff, Mail } from 'lucide-react-native';
-import { Shield, User } from 'lucide-react-native';
-import { login } from '../services/authApi';
+import { Mail, Shield, User, KeyRound } from 'lucide-react-native';
+import { sendGuardOtp, verifyGuardOtp } from '../services/guardApi';
 import { useAuthNavigation } from '../navigation/utils';
 import { AUTH_ROUTES } from '../navigation/constants';
 import type { AuthStackScreenProps } from '../navigation/types';
@@ -28,22 +27,83 @@ export default function LoginScreen({ }: LoginScreenProps) {
   const navigation = useAuthNavigation();
   const dispatch = useDispatch();
   const [role, setRole] = useState<'guard' | 'manager'>('guard');
-  const [showPass, setShowPass] = useState(false);
-  const [remember, setRemember] = useState(false);
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
+  const [phone, setPhone] = useState('');
+  const [otp, setOtp] = useState('');
+  const [otpSent, setOtpSent] = useState(false);
+  const [devOtp, setDevOtp] = useState<string | null>(null); // TODO: remove — dev-only OTP display
   const [loading, setLoading] = useState(false);
+
+  const resetOtpFlow = () => {
+    setOtpSent(false);
+    setOtp('');
+    setDevOtp(null);
+  };
+
+  const handleGuardSubmit = async () => {
+    const normalizedPhone = phone.trim();
+    if (!normalizedPhone) {
+      Alert.alert('Error', 'Please enter your phone number');
+      return;
+    }
+
+    if (!otpSent) {
+      try {
+        setLoading(true);
+        const res = await sendGuardOtp(normalizedPhone);
+        if (res.success) {
+          setOtpSent(true);
+          if (res.otp != null) {
+            setDevOtp(String(res.otp));
+          }
+          Alert.alert('OTP Sent', res.message || 'Enter the OTP sent to your phone.');
+        } else {
+          Alert.alert('Error', res.message || 'Failed to send OTP');
+        }
+      } catch {
+        Alert.alert('Error', 'Something went wrong');
+      } finally {
+        setLoading(false);
+      }
+      return;
+    }
+
+    if (!otp.trim()) {
+      Alert.alert('Error', 'Please enter the OTP');
+      return;
+    }
+
+    try {
+      setLoading(true);
+      const res = await verifyGuardOtp(normalizedPhone, otp.trim());
+      if (res.success) {
+        dispatch(
+          setAuth({
+            role: 'guard',
+            token: res.token ?? null,
+            guardId: res.guardId ?? null,
+          }),
+        );
+      } else {
+        Alert.alert('Error', res.message || 'Invalid OTP');
+      }
+    } catch {
+      Alert.alert('Error', 'Something went wrong');
+    } finally {
+      setLoading(false);
+    }
+  };
   return (
     <View style={styles.container}>
       <StatusBar
         barStyle="light-content"
         backgroundColor={Colors.headerStart}
       />
-      <KeyboardAvoidingView
-        style={{ flex: 1 }}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      >
-        <ScrollView bounces={false} showsVerticalScrollIndicator={false}>
+      <SafeAreaView style={{ flex: 1 }} edges={['top', 'bottom']}>
+        <KeyboardAvoidingView
+          style={{ flex: 1 }}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        >
+          <ScrollView bounces={false} showsVerticalScrollIndicator={false}>
           {/* Header */}
           <View style={styles.header}>
             <View style={styles.headerIcon}>
@@ -57,21 +117,22 @@ export default function LoginScreen({ }: LoginScreenProps) {
 
           {/* Body */}
           <View style={styles.body}>
-            {/* Role Tabs */}
+            {/* Role Tabs (keep only Guard active flow, Manager optional) */}
             <View style={styles.roleTabs}>
               <TouchableOpacity
                 style={[
                   styles.roleTab,
                   role === 'guard' && styles.roleTabActive,
                 ]}
-                onPress={() => setRole('guard')}
+                onPress={() => {
+                  setRole('guard');
+                  resetOtpFlow();
+                }}
               >
                 <View style={{ flexDirection: 'row', alignItems: 'center' }}>
                   <Shield
                     size={16}
-                    color={
-                      role === 'guard' ? Colors.white : Colors.textSecondary
-                    }
+                    color={role === 'guard' ? Colors.white : Colors.textSecondary}
                   />
                   <Text
                     style={[
@@ -84,19 +145,21 @@ export default function LoginScreen({ }: LoginScreenProps) {
                   </Text>
                 </View>
               </TouchableOpacity>
+
               <TouchableOpacity
                 style={[
                   styles.roleTab,
                   role === 'manager' && styles.roleTabActive,
                 ]}
-                onPress={() => setRole('manager')}
+                onPress={() => {
+                  setRole('manager');
+                  resetOtpFlow();
+                }}
               >
                 <View style={{ flexDirection: 'row', alignItems: 'center' }}>
                   <User
                     size={16}
-                    color={
-                      role === 'manager' ? Colors.white : Colors.textSecondary
-                    }
+                    color={role === 'manager' ? Colors.white : Colors.textSecondary}
                   />
                   <Text
                     style={[
@@ -111,91 +174,88 @@ export default function LoginScreen({ }: LoginScreenProps) {
               </TouchableOpacity>
             </View>
 
-            <Text style={styles.label}>EMAIL ADDRESS</Text>
-            <View style={styles.inputWrap}>
-              <TextInput
-                style={styles.input}
-                value={email}
-                onChangeText={setEmail}
-                placeholder={
-                  role === 'guard' ? 'guard@company.com' : 'manager@company.com'
-                }
-                placeholderTextColor="#888"
-                keyboardType="email-address"
-                autoCapitalize="none"
-              />
-              <Mail size={18} color={Colors.textSecondary} />
-            </View>
+            {/* Only Guard uses OTP login */}
+            {role === 'guard' && (
+              <>
+                <Text style={styles.label}>PHONE NUMBER</Text>
 
-            <Text style={styles.label}>PASSWORD</Text>
-            <View style={styles.inputWrap}>
-              <TextInput
-                style={styles.input}
-                value={password}
-                onChangeText={setPassword}
-                placeholder="••••••••"
-                placeholderTextColor="#888"
-                secureTextEntry={!showPass}
-              />
-              <TouchableOpacity onPress={() => setShowPass(!showPass)}>
-                {showPass ? (
-                  <Eye size={18} color={Colors.textSecondary} />
-                ) : (
-                  <EyeOff size={18} color={Colors.textSecondary} />
+                <View style={styles.inputWrap}>
+                  <TextInput
+                    style={styles.input}
+                    value={phone}
+                    onChangeText={value => {
+                      setPhone(value);
+                      if (otpSent) resetOtpFlow();
+                    }}
+                    placeholder="923350964001"
+                    placeholderTextColor="#888"
+                    keyboardType="phone-pad"
+                    editable={!loading}
+                  />
+                  <Mail size={18} color={Colors.textSecondary} />
+                </View>
+
+                {otpSent && (
+                  <>
+                    {devOtp != null && (
+                      <Text style={styles.devOtpBanner}>
+                        OTP: {devOtp}
+                      </Text>
+                    )}
+                    <Text style={styles.label}>ENTER OTP</Text>
+                    <View style={styles.inputWrap}>
+                      <TextInput
+                        style={styles.input}
+                        value={otp}
+                        onChangeText={setOtp}
+                        placeholder="123456"
+                        placeholderTextColor="#888"
+                        keyboardType="number-pad"
+                        maxLength={6}
+                        editable={!loading}
+                      />
+                      <KeyRound size={18} color={Colors.textSecondary} />
+                    </View>
+                  </>
                 )}
-              </TouchableOpacity>
-            </View>
-            <View style={styles.rememberRow}>
-              <TouchableOpacity
-                style={[styles.checkbox, remember && styles.checkboxActive]}
-                onPress={() => setRemember(!remember)}
-              >
-                {remember && <Text style={styles.checkmark}>✓</Text>}
-              </TouchableOpacity>
 
-              <Text style={styles.rememberText}>Remember me</Text>
-            </View>
-            {/* <TouchableOpacity style={styles.forgotWrap}>
-              <Text style={styles.forgot}>Forgot Password?</Text>
-            </TouchableOpacity> */}
+                <TouchableOpacity
+                  style={styles.loginBtn}
+                  onPress={handleGuardSubmit}
+                  disabled={loading}
+                  activeOpacity={0.85}
+                >
+                  <Text style={styles.loginBtnText}>
+                    {loading
+                      ? otpSent
+                        ? 'Verifying...'
+                        : 'Sending OTP...'
+                      : otpSent
+                        ? 'VERIFY'
+                        : 'SEND OTP'}
+                  </Text>
+                </TouchableOpacity>
 
-            <TouchableOpacity
-              style={styles.loginBtn}
-              onPress={async () => {
-                if (!email || !password) {
-                  Alert.alert('Error', 'Please enter email and password');
-                  return;
-                }
+                {otpSent && (
+                  <TouchableOpacity
+                    style={styles.resendWrap}
+                    onPress={resetOtpFlow}
+                    disabled={loading}
+                  >
+                    <Text style={styles.resendText}>Change phone number</Text>
+                  </TouchableOpacity>
+                )}
+              </>
+            )}
 
-                try {
-                  setLoading(true);
-
-                  console.log('Calling login API with:', email);
-
-                  const res = await login(email, password);
-
-                  console.log('Login response:', res);
-
-                  if (res.success) {
-                    dispatch(setAuth({ role, token: null }));
-                  } else {
-                    Alert.alert('Error', res.message || 'Login failed');
-                  }
-                } catch (err) {
-                  console.error('LOGIN ERROR:', err);
-                  Alert.alert('Error', 'Something went wrong');
-                } finally {
-                  setLoading(false);
-                }
-              }}
-              activeOpacity={0.85}
-              disabled={loading}
-            >
-              <Text style={styles.loginBtnText}>
-                {loading ? 'Signing in...' : 'SIGN IN'}
+            {/* Manager login stays unchanged (you can plug email/password later) */}
+            {role === 'manager' && (
+              <Text style={{ color: Colors.textSecondary, marginTop: 20 }}>
+                Manager login coming soon...
               </Text>
-            </TouchableOpacity>
+            )}
 
+            {/* Signup */}
             <TouchableOpacity
               style={styles.signupWrap}
               onPress={() => navigation.navigate(AUTH_ROUTES.SIGNUP)}
@@ -206,25 +266,10 @@ export default function LoginScreen({ }: LoginScreenProps) {
                 <Text style={{ color: Colors.accent }}>Sign Up</Text>
               </Text>
             </TouchableOpacity>
-            {/* <View style={styles.divider}>
-              <View style={styles.divLine} />
-              <Text style={styles.divText}>or continue with</Text>
-              <View style={styles.divLine} />
-            </View>
-
-            <View style={styles.socialRow}>
-              <TouchableOpacity style={styles.socialBtn}>
-                <Text style={styles.googleG}>G</Text>
-                <Text style={styles.socialText}> Google</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.socialBtn}>
-                <Text style={{ fontSize: 13 }}>🍎</Text>
-                <Text style={styles.socialText}> Apple</Text>
-              </TouchableOpacity>
-            </View> */}
           </View>
-        </ScrollView>
-      </KeyboardAvoidingView>
+          </ScrollView>
+        </KeyboardAvoidingView>
+      </SafeAreaView>
     </View>
   );
 }
@@ -374,5 +419,25 @@ const styles = StyleSheet.create({
   signupText: {
     fontSize: 11,
     color: Colors.textSecondary,
+  },
+
+  devOtpBanner: {
+    fontSize: 22,
+    fontWeight: '800',
+    color: Colors.accent,
+    letterSpacing: 4,
+    textAlign: 'center',
+    marginBottom: 8,
+  },
+
+  resendWrap: {
+    alignItems: 'center',
+    marginTop: 14,
+  },
+
+  resendText: {
+    fontSize: 12,
+    color: Colors.accent,
+    fontWeight: '600',
   },
 });

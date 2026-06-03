@@ -1,48 +1,39 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import axios from 'axios';
+import { clearActiveShiftSession } from './activeShiftSession';
+import { sendGuardOtp, verifyGuardOtp } from './guardApi';
 
+export { API_BASE_URL, API_URL } from '../config/env';
 
-export const BASE_URL = 'https://apis-nfc.arrowbyte.com.au/api';
-
-
-export async function login(email: string, password: string) {
-  try {
-    const response = await axios.post(`${BASE_URL}/login`, {
-      email,
-      password,
-    });
-
-    console.log('LOGIN FULL RESPONSE:', response.data);
-
-    if (!response.data?.success) {
-      return { success: false, message: 'Invalid credentials' };
-    }
-
-    // 🔥 FIX HERE
-    const token = response.data?.token || response.data?.data?.token;
-
-    if (!token) {
-      console.warn('⚠️ No token received from API');
-
-      // still allow login if your app doesn't require token yet
-      return { success: true };
-    }
-
-    await AsyncStorage.setItem('authToken', token);
-
-    return { success: true };
-
-  } catch (error: any) {
-    console.error('Login error:', error?.message || error);
-    return { success: false, message: 'Something went wrong' };
+export async function loginGuardWithOtp(
+  phone: string,
+  otp?: string,
+): Promise<{ success: boolean; message?: string; token?: string }> {
+  const normalizedPhone = phone.trim();
+  if (!normalizedPhone) {
+    return { success: false, message: 'Please enter your phone number' };
   }
+
+  if (!otp?.trim()) {
+    return sendGuardOtp(normalizedPhone);
+  }
+
+  return verifyGuardOtp(normalizedPhone, otp.trim());
 }
+
+/** Legacy email/password login (manager or other flows) */
+export async function login(email: string, password: string) {
+  return loginGuardWithOtp(email, password);
+}
+
 export async function logout() {
   await AsyncStorage.removeItem('authToken');
+  await AsyncStorage.removeItem('guardId');
+  await clearActiveShiftSession();
 }
 
 export async function getAuthToken() {
   return await AsyncStorage.getItem('authToken');
 }
 
-
+/** @alias sendGuardOtp */
+export { sendGuardOtp as sendOtpToPhone } from './guardApi';

@@ -15,6 +15,7 @@ export const GUARD_ROUTES = {
     DASHBOARD: 'GuardDashboard',
     SHIFTS: 'Shifts',
     SHIFT_SIGN_IN: 'ShiftSignIn',
+    ONGOING_SHIFT: 'OngoingShift',
     PATROL_TIMELINE: 'PatrolTimeline',
     ADD_PATROL_REPORT: 'AddPatrolReport',
     INCIDENTS: 'Incidents',

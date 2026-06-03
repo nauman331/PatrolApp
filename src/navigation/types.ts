@@ -21,11 +21,31 @@ export type AuthStackParamList = {
 export type GuardStackParamList = {
     GuardDashboard: undefined;
     Shifts: undefined;
-    ShiftSignIn: { shiftId?: string };
+    ShiftSignIn: {
+        shiftId?: string;
+        rosterId?: string | number;
+        siteId?: string | number;
+        site?: string;
+        time?: string;
+        zones?: string;
+        status?: 'active' | 'upcoming';
+    };
+    OngoingShift: {
+        rosterId?: string | number;
+        site?: string;
+        zones?: string;
+        signInTime?: string;
+        shiftId?: string;
+        siteId?: string | number;
+    };
     PatrolTimeline: { shiftId?: string };
     AddPatrolReport: { shiftId?: string };
     Incidents: undefined;
-    AddIncident: { shiftId?: string };
+    AddIncident: {
+        shiftId?: string;
+        rosterId?: string | number;
+        siteId?: string | number;
+    };
     Profile: undefined;
 };
 

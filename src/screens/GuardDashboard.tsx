@@ -1,16 +1,20 @@
-import React from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   View,
   Text,
   TouchableOpacity,
   StyleSheet,
   ScrollView,
-  SafeAreaView,
   StatusBar,
   Alert,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Colors, FontSizes, Radii, Spacing, Shadows } from '../theme';
 import { NavBar, SectionHeader, StatCard, PatrolItem } from '../components';
+import {
+  DashboardShiftShimmer,
+  PatrolListShimmer,
+} from '../components/Shimmer';
 import {
   Bell,
   User,
@@ -26,6 +30,18 @@ import {
 } from 'lucide-react-native';
 import { useDispatch } from 'react-redux';
 import { clearAuth } from '../store/slices/authSlice';
+import { logout } from '../services/authApi';
+import { getGuardMyJobs } from '../services/guardApi';
+import {
+  findActiveShift,
+  mapApiJobToShift,
+  type MappedShift,
+} from '../services/guardJobsMapper';
+import {
+  getActiveShiftSession,
+  type ActiveShiftSession,
+} from '../services/activeShiftSession';
+import { useFocusEffect } from '@react-navigation/native';
 import { useGuardNavigation } from '../navigation/utils';
 import { GUARD_ROUTES } from '../navigation/constants';
 import type { GuardStackParamList } from '../navigation/types';
@@ -66,6 +82,81 @@ const QUICK_ACTIONS: QuickAction[] = [
 export default function GuardDashboard() {
   const navigation = useGuardNavigation();
   const dispatch = useDispatch();
+  const [jobsLoading, setJobsLoading] = useState(true);
+  const [activeShift, setActiveShift] = useState<MappedShift | null>(null);
+  const [todayPatrols, setTodayPatrols] = useState<MappedShift[]>([]);
+  const [activeSession, setActiveSession] = useState<ActiveShiftSession | null>(
+    null,
+  );
+
+  useFocusEffect(
+    useCallback(() => {
+      getActiveShiftSession().then(setActiveSession);
+    }, []),
+  );
+
+  const hasOngoingShift =
+    activeSession != null || activeShift?.status === 'active';
+
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      setJobsLoading(true);
+      const result = await getGuardMyJobs();
+      if (!mounted) return;
+
+      if (!result.data?.length) {
+        setTodayPatrols([]);
+        setActiveShift(null);
+        setJobsLoading(false);
+        return;
+      }
+
+      setActiveShift(findActiveShift(result.data));
+
+      const now = new Date();
+      const localToday = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+
+      const mappedToday = result.data
+        .filter((job: any) => {
+          const d =
+            job?.shift_date ??
+            job?.date ??
+            job?.shiftDate ??
+            job?.scheduled_date;
+          return typeof d === 'string' ? d === localToday : false;
+        })
+        .map(mapApiJobToShift)
+        .filter((shift): shift is MappedShift => Boolean(shift));
+
+      const fallbackMapped = result.data
+        .map(mapApiJobToShift)
+        .filter((shift): shift is MappedShift => Boolean(shift));
+
+      setTodayPatrols((mappedToday.length > 0 ? mappedToday : fallbackMapped).slice(0, 3));
+      setJobsLoading(false);
+    })();
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  const openOngoingShift = async () => {
+    const session = await getActiveShiftSession();
+    if (session) {
+      navigation.navigate(GUARD_ROUTES.ONGOING_SHIFT, session);
+      return;
+    }
+    if (activeShift?.status === 'active') {
+      navigation.navigate(GUARD_ROUTES.ONGOING_SHIFT, {
+        rosterId: activeShift.rosterId,
+        site: activeShift.site,
+        zones: activeShift.zones,
+        signInTime: new Date().toISOString(),
+        shiftId: activeShift.id,
+      });
+    }
+  };
 
   return (
     <View style={styles.container}>
@@ -73,7 +164,7 @@ export default function GuardDashboard() {
         barStyle="light-content"
         backgroundColor={Colors.headerStart}
       />
-      <SafeAreaView style={styles.safe}>
+      <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
         <ScrollView showsVerticalScrollIndicator={false}>
           {/* Header */}
           <View style={styles.header}>
@@ -105,36 +196,61 @@ export default function GuardDashboard() {
           {/* Body */}
           <View style={styles.body}>
             {/* Shift Card */}
-            <View style={[styles.shiftCard, Shadows.card]}>
+            {jobsLoading ? (
+              <DashboardShiftShimmer />
+            ) : (
+            <TouchableOpacity
+              style={[styles.shiftCard, Shadows.card]}
+              activeOpacity={0.9}
+              onPress={openOngoingShift}
+              disabled={!hasOngoingShift}
+            >
               <View>
                 <Text style={styles.shiftLbl}>ACTIVE SHIFT</Text>
-                <Text style={styles.shiftSite}>Mall of Lahore</Text>
-                <Text style={styles.shiftTime}>06:00 AM – 02:00 PM</Text>
+                <Text style={styles.shiftSite}>
+                  {activeShift?.site ?? 'Mall of Lahore'}
+                </Text>
+                <Text style={styles.shiftTime}>
+                  {activeShift?.time ?? '06:00 AM – 02:00 PM'}
+                </Text>
               </View>
               <View style={styles.shiftRight}>
                 <View style={styles.onBadge}>
                   <Text style={styles.onBadgeText}>● ON DUTY</Text>
                 </View>
-                <TouchableOpacity
-                  style={styles.signOutBtn}
-                  onPress={() => {
-                    Alert.alert(
-                      'Sign Out',
-                      'Are you sure you want to sign out?',
-                      [
-                        { text: 'Cancel', style: 'cancel' },
-                        {
-                          text: 'Yes',
-                          onPress: () => dispatch(clearAuth()),
-                        },
-                      ],
-                    );
-                  }}
-                >
-                  <Text style={styles.signOutText}>SIGN OUT</Text>
-                </TouchableOpacity>
+                {hasOngoingShift ? (
+                  <TouchableOpacity
+                    style={styles.signOutBtn}
+                    onPress={openOngoingShift}
+                  >
+                    <Text style={styles.signOutText}>CONTINUE</Text>
+                  </TouchableOpacity>
+                ) : (
+                  <TouchableOpacity
+                    style={styles.signOutBtn}
+                    onPress={() => {
+                      Alert.alert(
+                        'Sign Out',
+                        'Are you sure you want to sign out?',
+                        [
+                          { text: 'Cancel', style: 'cancel' },
+                          {
+                            text: 'Yes',
+                            onPress: async () => {
+                              await logout();
+                              dispatch(clearAuth());
+                            },
+                          },
+                        ],
+                      );
+                    }}
+                  >
+                    <Text style={styles.signOutText}>SIGN OUT</Text>
+                  </TouchableOpacity>
+                )}
               </View>
-            </View>
+            </TouchableOpacity>
+            )}
 
             {/* Stats */}
             <View style={styles.statsGrid}>
@@ -189,21 +305,20 @@ export default function GuardDashboard() {
             <TouchableOpacity onPress={() => navigation.navigate(GUARD_ROUTES.PATROL_TIMELINE)}>
               <SectionHeader title="Today's Patrols" action="See All" />
             </TouchableOpacity>
-            <PatrolItem
-              location="Gate A – North Wing"
-              time="07:00 AM"
-              status="done"
-            />
-            <PatrolItem
-              location="Parking Level B2"
-              time="08:00 AM"
-              status="done"
-            />
-            <PatrolItem
-              location="Rooftop Access"
-              time="09:00 AM"
-              status="pending"
-            />
+            {jobsLoading ? (
+              <PatrolListShimmer count={3} />
+            ) : todayPatrols.length > 0 ? (
+              todayPatrols.map(patrol => (
+                <PatrolItem
+                  key={String(patrol.rosterId)}
+                  location={patrol.site}
+                  time={patrol.time}
+                  status={patrol.status === 'done' ? 'done' : 'pending'}
+                />
+              ))
+            ) : (
+              <Text style={styles.patrolMetaText}>No patrols found.</Text>
+            )}
           </View>
         </ScrollView>
 
@@ -373,5 +488,11 @@ const styles = StyleSheet.create({
     color: '#666',
     fontWeight: '600',
     textAlign: 'center',
+  },
+  patrolMetaText: {
+    fontSize: FontSizes.sm,
+    color: Colors.textMuted,
+    marginTop: 4,
+    marginBottom: 10,
   },
 });

@@ -8,11 +8,11 @@ import {
   TouchableOpacity,
   StyleSheet,
   ScrollView,
-  SafeAreaView,
   StatusBar,
   TextInput,
   Alert,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Colors, FontSizes, Radii, Shadows } from '../theme';
 import { NavBar } from '../components';
 import {
@@ -29,6 +29,7 @@ import {
 import { useDispatch } from 'react-redux';
 import { useSelector } from 'react-redux';
 import { clearAuth } from '../store/slices/authSlice';
+import { logout } from '../services/authApi';
 import { useNavigation } from '@react-navigation/native';
 import { GUARD_ROUTES, MANAGER_ROUTES } from '../navigation/constants';
 
@@ -77,11 +78,12 @@ export default function ProfileScreen({
       {
         text: 'Logout',
         style: 'destructive',
-        onPress: () => {
+        onPress: async () => {
           if (onLogout) {
             onLogout();
             return;
           }
+          await logout();
           dispatch(clearAuth());
         },
       },
@@ -119,7 +121,7 @@ export default function ProfileScreen({
   return (
     <View style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor={Colors.bg} />
-      <SafeAreaView style={styles.safe}>
+      <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
         {/* Header */}
         <View style={styles.header}>
           <TouchableOpacity onPress={() => navigation.goBack()}>

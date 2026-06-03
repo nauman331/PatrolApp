@@ -3,6 +3,7 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import GuardDashboard from '../screens/GuardDashboard';
 import ShiftsScreen from '../screens/ShiftsScreen';
 import ShiftSignInScreen from '../screens/ShiftSignInScreen';
+import OngoingShiftScreen from '../screens/OngoingShiftScreen';
 import PatrolTimeline from '../screens/PatrolTimeline';
 import AddPatrolReport from '../screens/AddPatrolReport';
 import IncidentsScreen from '../screens/IncidentsScreen';
@@ -47,6 +48,13 @@ export function GuardNavigator() {
             <Stack.Screen
                 name={GUARD_ROUTES.SHIFT_SIGN_IN}
                 component={ShiftSignInScreen}
+                options={{
+                    animationEnabled: true,
+                }}
+            />
+            <Stack.Screen
+                name={GUARD_ROUTES.ONGOING_SHIFT}
+                component={OngoingShiftScreen}
                 options={{
                     animationEnabled: true,
                 }}
