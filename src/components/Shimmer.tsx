@@ -96,6 +96,24 @@ export function PatrolListShimmer({ count = 3 }: { count?: number }) {
   );
 }
 
+export function PatrolTimelineShimmer() {
+  return (
+    <View style={styles.patrolTimelineWrap}>
+      <View style={[styles.patrolSummaryShimmer, styles.cardShadow]}>
+        <View style={{ flex: 1, gap: 8 }}>
+          <ShimmerBox width={110} height={10} />
+          <ShimmerBox width="55%" height={16} />
+          <ShimmerBox width="40%" height={12} />
+        </View>
+        <ShimmerBox width={58} height={58} borderRadius={29} />
+      </View>
+      <ShimmerBox height={6} borderRadius={3} style={{ marginBottom: 12 }} />
+      <ShimmerBox width={120} height={10} style={{ marginBottom: 12 }} />
+      <PatrolListShimmer count={4} />
+    </View>
+  );
+}
+
 export function DashboardShiftShimmer() {
   return (
     <View style={[styles.dashboardShift, styles.cardShadow]}>
@@ -112,13 +130,54 @@ export function DashboardShiftShimmer() {
   );
 }
 
+export function IncidentCardShimmer() {
+  return (
+    <View style={[styles.incidentCard, styles.cardShadow]}>
+      <View style={{ flexDirection: 'row', gap: 10, marginBottom: 12, paddingLeft: 6 }}>
+        <ShimmerBox width={36} height={36} borderRadius={10} />
+        <View style={{ flex: 1, gap: 6 }}>
+          <ShimmerBox width="75%" height={14} />
+          <ShimmerBox width="40%" height={10} />
+        </View>
+        <ShimmerBox width={52} height={22} borderRadius={Radii.sm} />
+      </View>
+      <ShimmerBox
+        width={120}
+        height={24}
+        borderRadius={Radii.sm}
+        style={{ marginBottom: 10, marginLeft: 6 }}
+      />
+      <ShimmerBox width="90%" height={12} style={{ marginBottom: 6, marginLeft: 6 }} />
+      <ShimmerBox width="70%" height={12} style={{ marginBottom: 12, marginLeft: 6 }} />
+      <View style={{ flexDirection: 'row', gap: 8, marginBottom: 12, paddingLeft: 6 }}>
+        <ShimmerBox width={88} height={24} borderRadius={Radii.pill} />
+        <ShimmerBox width={72} height={24} borderRadius={Radii.pill} />
+      </View>
+      <View style={styles.incidentFooterShimmer}>
+        <ShimmerBox height={34} borderRadius={Radii.sm} style={{ flex: 1 }} />
+        <ShimmerBox height={34} borderRadius={Radii.sm} style={{ flex: 1 }} />
+      </View>
+    </View>
+  );
+}
+
+export function IncidentListShimmer({ count = 3 }: { count?: number }) {
+  return (
+    <>
+      {Array.from({ length: count }).map((_, i) => (
+        <IncidentCardShimmer key={i} />
+      ))}
+    </>
+  );
+}
+
 const styles = StyleSheet.create({
   base: {
     backgroundColor: '#E4E4E8',
     overflow: 'hidden',
   },
   highlight: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: '#F7F7FA',
   },
   cardShadow: {
@@ -152,6 +211,18 @@ const styles = StyleSheet.create({
     padding: 12,
     marginBottom: 8,
   },
+  patrolTimelineWrap: {
+    padding: 16,
+    paddingTop: 14,
+  },
+  patrolSummaryShimmer: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 12,
+    padding: 16,
+    marginBottom: 12,
+    borderRadius: Radii.xl,
+  },
   dashboardShift: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -159,5 +230,22 @@ const styles = StyleSheet.create({
     padding: 14,
     marginTop: 6,
     marginBottom: 14,
+  },
+  incidentCard: {
+    borderRadius: Radii.lg,
+    padding: 14,
+    paddingLeft: 10,
+    borderLeftWidth: 4,
+    borderLeftColor: Colors.border,
+    marginBottom: 12,
+  },
+  incidentFooterShimmer: {
+    flexDirection: 'row',
+    gap: 8,
+    borderTopWidth: 1,
+    borderTopColor: Colors.border,
+    paddingTop: 10,
+    marginLeft: 6,
+    marginRight: 2,
   },
 });

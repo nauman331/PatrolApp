@@ -1,5 +1,6 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { StatusBar, StyleSheet, View } from 'react-native';
+import { initNfc } from './src/services/nfcReader';
 import { NavigationContainer } from '@react-navigation/native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { RootNavigator } from './src/navigation';
@@ -32,6 +33,10 @@ function AppNavigator() {
  * - NavigationContainer: React Navigation root
  */
 export default function App() {
+  useEffect(() => {
+    initNfc();
+  }, []);
+
   return (
     <SafeAreaProvider>
       <Provider store={store}>

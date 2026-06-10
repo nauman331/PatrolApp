@@ -12,7 +12,7 @@ import { Colors, FontSizes, Radii, Spacing, Shadows } from '../theme';
 import { NavBar, SectionHeader } from '../components';
 import { BarChart2, Home, MapPin, Settings } from 'lucide-react-native';
 import { useManagerNavigation } from '../navigation/utils';
-import { MANAGER_ROUTES } from '../navigation/constants';
+import { MANAGER_ROUTES, navigateManagerBottomTab } from '../navigation/constants';
 
 import { Calendar } from 'lucide-react-native';
 
@@ -160,16 +160,7 @@ export default function ShiftReportScreen() {
             { icon: MapPin, label: 'Sites' },
             { icon: Settings, label: 'Settings' },
           ]}
-          onPress={i => {
-            const screens = [
-              MANAGER_ROUTES.DASHBOARD,
-              MANAGER_ROUTES.SHIFT_REPORT,
-              MANAGER_ROUTES.SHIFT_REPORT,
-              MANAGER_ROUTES.DASHBOARD,
-              MANAGER_ROUTES.PROFILE,
-            ];
-            navigation.navigate(screens[i]);
-          }}
+          onPress={i => navigateManagerBottomTab(navigation, i)}
         />
       </SafeAreaView>
     </View>

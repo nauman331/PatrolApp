@@ -1,5 +1,6 @@
 import apiClient from './api-client';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { normalizePatrollingReport, normalizePatrollingReports } from './patrolApiUtils';
 
 export type GuardApiResult<T = void> = {
   success: boolean;
@@ -180,6 +181,19 @@ export async function verifyGuardOtp(
   }
 }
 
+function extractIncidentsList(payload: unknown): unknown[] {
+  if (Array.isArray(payload)) return payload;
+  if (!payload || typeof payload !== 'object') return [];
+  const obj = payload as Record<string, unknown>;
+  if (Array.isArray(obj.incidents)) return obj.incidents;
+  if (Array.isArray(obj.data)) return obj.data;
+  if (obj.data && typeof obj.data === 'object' && !Array.isArray(obj.data)) {
+    const nested = obj.data as Record<string, unknown>;
+    if (Array.isArray(nested.incidents)) return nested.incidents;
+  }
+  return [];
+}
+
 export async function getGuardMyJobs(
   guardId?: string | number | null,
 ): Promise<GuardApiResult<unknown[]>> {
@@ -206,6 +220,32 @@ export async function getGuardMyJobs(
       message: extractMessage(
         error?.response?.data,
         error?.message || 'Failed to load jobs',
+      ),
+      data: [],
+    };
+  }
+}
+
+export async function getGuardMyIncidents(): Promise<
+  GuardApiResult<unknown[]>
+> {
+  try {
+    const response = await apiClient.get('/guard/my-incidents');
+    const incidents = extractIncidentsList(response.data);
+    const ok =
+      response.data?.success === true ||
+      response.status < 300;
+    return {
+      success: ok,
+      data: incidents,
+      message: extractMessage(response.data, 'Incidents loaded'),
+    };
+  } catch (error: any) {
+    return {
+      success: false,
+      message: extractMessage(
+        error?.response?.data,
+        error?.message || 'Failed to load incidents',
       ),
       data: [],
     };
@@ -391,6 +431,227 @@ export interface ReportIncidentPayload {
   wittness: IncidentWitness[];
   photo: IncidentPhotoPayload[];
   signature?: string;
+}
+
+export interface PatrolScanner {
+  id: number;
+  patrolling_report_id: number;
+  name: string;
+  value: string;
+  status: string;
+  scan_at: string | null;
+  coordinates: string | null;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface PatrollingReport {
+  id: number;
+  site_id: number | string;
+  roster_id: number | string;
+  guard_id: number | string;
+  coordinates: string;
+  scanner_count: number;
+  status: string;
+  started_at: string;
+  completed_at: string | null;
+  created_at?: string;
+  updated_at?: string;
+  scanners: PatrolScanner[];
+}
+
+export interface StartPatrolPayload {
+  site_id: string | number;
+  guard_id?: string | number;
+  coordinates: string;
+}
+
+export async function guardStartPatrol(
+  rosterId: string | number,
+  payload: StartPatrolPayload,
+): Promise<GuardApiResult<PatrollingReport>> {
+  try {
+    const storedGuardId = await AsyncStorage.getItem('guardId');
+    const guardId =
+      payload.guard_id != null && String(payload.guard_id).trim()
+        ? String(payload.guard_id).trim()
+        : storedGuardId?.trim();
+
+    const formData = new FormData();
+    formData.append('site_id', String(payload.site_id));
+    if (guardId) {
+      formData.append('guard_id', guardId);
+    }
+    formData.append('coordinates', payload.coordinates);
+
+    const response = await apiClient.post(
+      `/guard/start-patrol/${rosterId}`,
+      formData,
+      { headers: { 'Content-Type': 'multipart/form-data' } },
+    );
+
+    const body = response.data;
+    const ok = body?.success === true || response.status < 300;
+    const report = normalizePatrollingReport(body?.patrolling_report);
+    return {
+      success: ok && Boolean(report),
+      message: extractMessage(body, 'Patrol started successfully.'),
+      data: report ?? undefined,
+    };
+  } catch (error: any) {
+    return {
+      success: false,
+      message: extractMessage(
+        error?.response?.data,
+        error?.message || 'Failed to start patrol',
+      ),
+    };
+  }
+}
+
+export type TodayPatrollingResult = {
+  reports: PatrollingReport[];
+  date?: string;
+};
+
+export interface ScanNfcPayload {
+  nfc_uid: string;
+  coordinates: string;
+  patrolling_report_id?: string | number;
+  roster_id?: string | number;
+  guard_id?: string | number;
+}
+
+async function postScanNfc(
+  payload: ScanNfcPayload,
+): Promise<GuardApiResult<PatrollingReport>> {
+  const formData = new FormData();
+  formData.append('nfc_uid', payload.nfc_uid.trim());
+  formData.append('coordinates', payload.coordinates.trim());
+
+  if (payload.patrolling_report_id != null) {
+    formData.append(
+      'patrolling_report_id',
+      String(payload.patrolling_report_id),
+    );
+  }
+  if (payload.roster_id != null) {
+    formData.append('roster_id', String(payload.roster_id));
+  }
+  if (payload.guard_id != null) {
+    formData.append('guard_id', String(payload.guard_id));
+  }
+
+  const response = await apiClient.post('/guard/scan-nfc', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  });
+
+  const body = response.data;
+  const ok = body?.success === true;
+  const report = normalizePatrollingReport(body?.patrolling_report);
+  return {
+    success: ok,
+    message: extractMessage(body, ok ? 'NFC scanned successfully.' : 'NFC scan failed'),
+    data: report ?? undefined,
+  };
+}
+
+export async function guardScanNfc(
+  payload: ScanNfcPayload,
+): Promise<GuardApiResult<PatrollingReport>> {
+  try {
+    return await postScanNfc(payload);
+  } catch (error: any) {
+    return {
+      success: false,
+      message: extractMessage(
+        error?.response?.data,
+        error?.message || 'NFC scan failed',
+      ),
+    };
+  }
+}
+
+export async function guardScanNfcWithVariants(
+  variants: string[],
+  coordinates: string,
+  context?: Omit<ScanNfcPayload, 'nfc_uid' | 'coordinates'>,
+): Promise<GuardApiResult<PatrollingReport>> {
+  let lastResult: GuardApiResult<PatrollingReport> = {
+    success: false,
+    message: 'NFC scan failed',
+  };
+
+  const uniqueVariants = [...new Set(variants.map(v => v.trim()).filter(Boolean))];
+
+  for (const variant of uniqueVariants) {
+    try {
+      const result = await postScanNfc({
+        nfc_uid: variant,
+        coordinates,
+        ...context,
+      });
+      if (result.success) {
+        return result;
+      }
+      lastResult = result;
+    } catch (error: any) {
+      lastResult = {
+        success: false,
+        message: extractMessage(
+          error?.response?.data,
+          error?.message || 'NFC scan failed',
+        ),
+      };
+    }
+  }
+
+  return lastResult;
+}
+
+export async function guardTodayPatrolling(
+  guardId?: string | number | null,
+): Promise<GuardApiResult<TodayPatrollingResult>> {
+  try {
+    const storedGuardId = await AsyncStorage.getItem('guardId');
+    const resolvedGuardId =
+      guardId != null && String(guardId).trim()
+        ? String(guardId).trim()
+        : storedGuardId?.trim();
+
+    if (!resolvedGuardId) {
+      return {
+        success: false,
+        message: 'Guard ID is required.',
+        data: { reports: [] },
+      };
+    }
+
+    const response = await apiClient.get(
+      `/guard/today-patrolling/${resolvedGuardId}`,
+    );
+    const body = response.data;
+    const ok = body?.success === true || response.status < 300;
+    const reports = normalizePatrollingReports(body?.patrolling_reports);
+
+    return {
+      success: ok,
+      message: extractMessage(body, 'Patrol reports loaded.'),
+      data: {
+        reports,
+        date: typeof body?.date === 'string' ? body.date : undefined,
+      },
+    };
+  } catch (error: any) {
+    return {
+      success: false,
+      message: extractMessage(
+        error?.response?.data,
+        error?.message || 'Failed to load patrol reports',
+      ),
+      data: { reports: [] },
+    };
+  }
 }
 
 export async function guardReportIncident(

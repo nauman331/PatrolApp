@@ -44,6 +44,8 @@ import {
   type IncidentJobContext,
 } from '../services/guardJobsMapper';
 import { getActiveShiftSession } from '../services/activeShiftSession';
+import { useAppDispatch } from '../store/hooks';
+import { fetchGuardIncidents } from '../store/slices/incidentsSlice';
 
 type AddIncidentRoute = GuardStackScreenProps<'AddIncident'>['route'];
 
@@ -240,6 +242,7 @@ function Field({
 export default function AddIncidentScreen() {
   const navigation = useGuardNavigation();
   const route = useRoute<AddIncidentRoute>();
+  const dispatch = useAppDispatch();
   const guardId = useSelector((state: RootState) => state.auth?.guardId ?? null);
   const signatureRef = useRef<any>(null);
 
@@ -551,6 +554,7 @@ export default function AddIncidentScreen() {
       const result = await guardReportIncident(selectedJob.siteId, payload);
 
       if (result.success) {
+        dispatch(fetchGuardIncidents());
         Alert.alert('Success', result.message ?? 'Incident reported successfully!', [
           {
             text: 'OK',

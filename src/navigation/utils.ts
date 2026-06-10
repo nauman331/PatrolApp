@@ -58,9 +58,13 @@ export function resetToRoute(
 export function navigateWithFade(
     navigation: GuardNavigationProp | ManagerNavigationProp,
     screenName: string,
-    params?: Record<string, any>
+    params?: Record<string, unknown>,
 ) {
-    navigation.navigate(screenName as never, params as never);
+    // Union navigators cannot call .navigate safely; callers pass the correct stack.
+    (navigation.navigate as (name: string, p?: Record<string, unknown>) => void)(
+        screenName,
+        params,
+    );
 }
 
 /**
@@ -70,9 +74,12 @@ export function navigateWithFade(
 export function replaceScreen(
     navigation: AuthNavigationProp | GuardNavigationProp | ManagerNavigationProp,
     screenName: string,
-    params?: Record<string, any>
+    params?: Record<string, unknown>,
 ) {
-    navigation.replace(screenName as never, params as never);
+    (navigation.replace as (name: string, p?: Record<string, unknown>) => void)(
+        screenName,
+        params,
+    );
 }
 
 /**

@@ -11,6 +11,8 @@ export const AUTH_ROUTES = {
 /**
  * Route names for Guard Stack
  */
+import type { GuardNavigationProp, ManagerNavigationProp } from './types';
+
 export const GUARD_ROUTES = {
     DASHBOARD: 'GuardDashboard',
     SHIFTS: 'Shifts',
@@ -20,8 +22,43 @@ export const GUARD_ROUTES = {
     ADD_PATROL_REPORT: 'AddPatrolReport',
     INCIDENTS: 'Incidents',
     ADD_INCIDENT: 'AddIncident',
+    VIEW_INCIDENT: 'ViewIncidentReport',
     PROFILE: 'Profile',
 } as const;
+
+/** Bottom tab order: Home, Patrol, Incidents, Shifts, Profile */
+export const GUARD_BOTTOM_TAB_ROUTES = [
+    GUARD_ROUTES.DASHBOARD,
+    GUARD_ROUTES.PATROL_TIMELINE,
+    GUARD_ROUTES.INCIDENTS,
+    GUARD_ROUTES.SHIFTS,
+    GUARD_ROUTES.PROFILE,
+] as const;
+
+export function navigateGuardBottomTab(
+    navigation: GuardNavigationProp,
+    index: number,
+): void {
+    const route = GUARD_BOTTOM_TAB_ROUTES[index];
+    if (!route) return;
+    switch (route) {
+        case GUARD_ROUTES.DASHBOARD:
+            navigation.navigate(GUARD_ROUTES.DASHBOARD);
+            break;
+        case GUARD_ROUTES.PATROL_TIMELINE:
+            navigation.navigate(GUARD_ROUTES.PATROL_TIMELINE);
+            break;
+        case GUARD_ROUTES.INCIDENTS:
+            navigation.navigate(GUARD_ROUTES.INCIDENTS);
+            break;
+        case GUARD_ROUTES.SHIFTS:
+            navigation.navigate(GUARD_ROUTES.SHIFTS);
+            break;
+        case GUARD_ROUTES.PROFILE:
+            navigation.navigate(GUARD_ROUTES.PROFILE);
+            break;
+    }
+}
 
 /**
  * Route names for Manager Stack
@@ -32,10 +69,38 @@ export const MANAGER_ROUTES = {
     PROFILE: 'Profile',
 } as const;
 
+export const MANAGER_BOTTOM_TAB_ROUTES = [
+    MANAGER_ROUTES.DASHBOARD,
+    MANAGER_ROUTES.SHIFT_REPORT,
+    MANAGER_ROUTES.SHIFT_REPORT,
+    MANAGER_ROUTES.DASHBOARD,
+    MANAGER_ROUTES.PROFILE,
+] as const;
+
+export function navigateManagerBottomTab(
+    navigation: ManagerNavigationProp,
+    index: number,
+): void {
+    const route = MANAGER_BOTTOM_TAB_ROUTES[index];
+    if (!route) return;
+    switch (route) {
+        case MANAGER_ROUTES.DASHBOARD:
+            navigation.navigate(MANAGER_ROUTES.DASHBOARD);
+            break;
+        case MANAGER_ROUTES.SHIFT_REPORT:
+            navigation.navigate(MANAGER_ROUTES.SHIFT_REPORT);
+            break;
+        case MANAGER_ROUTES.PROFILE:
+            navigation.navigate(MANAGER_ROUTES.PROFILE);
+            break;
+    }
+}
+
 /**
  * Root Stack route names
  */
 export const ROOT_ROUTES = {
+    LOADING: 'Loading',
     AUTH: 'Auth',
     GUARD_APP: 'GuardApp',
     MANAGER_APP: 'ManagerApp',

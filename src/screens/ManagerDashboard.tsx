@@ -19,7 +19,7 @@ import {
   Settings
 } from 'lucide-react-native';
 import { useManagerNavigation } from '../navigation/utils';
-import { MANAGER_ROUTES } from '../navigation/constants';
+import { MANAGER_ROUTES, navigateManagerBottomTab } from '../navigation/constants';
 
 interface OverviewCard {
   icon: any; // change from string → component
@@ -154,16 +154,7 @@ export default function ManagerDashboard() {
             { icon: MapPin, label: 'Sites' },
             { icon: Settings, label: 'Settings' },
           ]}
-          onPress={(i) => {
-            const screens = [
-              MANAGER_ROUTES.DASHBOARD,
-              MANAGER_ROUTES.SHIFT_REPORT,
-              MANAGER_ROUTES.SHIFT_REPORT,
-              MANAGER_ROUTES.DASHBOARD,
-              MANAGER_ROUTES.PROFILE,
-            ];
-            navigation.navigate(screens[i]);
-          }}
+          onPress={i => navigateManagerBottomTab(navigation, i)}
         />
 
       </SafeAreaView>

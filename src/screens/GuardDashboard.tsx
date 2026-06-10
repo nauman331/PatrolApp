@@ -31,7 +31,6 @@ import {
 import { useDispatch } from 'react-redux';
 import { clearAuth } from '../store/slices/authSlice';
 import { logout } from '../services/authApi';
-import { getGuardMyJobs } from '../services/guardApi';
 import {
   findActiveShift,
   mapApiJobToShift,
@@ -43,13 +42,18 @@ import {
 } from '../services/activeShiftSession';
 import { useFocusEffect } from '@react-navigation/native';
 import { useGuardNavigation } from '../navigation/utils';
-import { GUARD_ROUTES } from '../navigation/constants';
-import type { GuardStackParamList } from '../navigation/types';
+import { GUARD_ROUTES, navigateGuardBottomTab } from '../navigation/constants';
+import { useAppDispatch, useAppSelector } from '../store/hooks';
+import {
+  fetchGuardJobs,
+  selectJobsItems,
+  selectJobsLoading,
+} from '../store/slices/jobsSlice';
 
 interface QuickAction {
   icon: any;
   label: string;
-  screen: keyof GuardStackParamList;
+  onPress: (navigation: ReturnType<typeof useGuardNavigation>) => void;
   bg: string;
 }
 
@@ -57,32 +61,34 @@ const QUICK_ACTIONS: QuickAction[] = [
   {
     icon: Camera,
     label: 'Patrol Report',
-    screen: GUARD_ROUTES.ADD_PATROL_REPORT,
+    onPress: nav => nav.navigate(GUARD_ROUTES.ADD_PATROL_REPORT),
     bg: Colors.accentLight,
   },
   {
     icon: AlertTriangle,
     label: 'Incident',
-    screen: GUARD_ROUTES.ADD_INCIDENT,
+    onPress: nav => nav.navigate(GUARD_ROUTES.ADD_INCIDENT),
     bg: Colors.dangerLight,
   },
   {
     icon: ClipboardList,
     label: 'View SOP',
-    screen: GUARD_ROUTES.SHIFTS,
+    onPress: nav => nav.navigate(GUARD_ROUTES.SHIFTS),
     bg: Colors.infoLight,
   },
   {
     icon: Radio,
     label: 'NFC Scan',
-    screen: GUARD_ROUTES.PATROL_TIMELINE,
+    onPress: nav => nav.navigate(GUARD_ROUTES.PATROL_TIMELINE),
     bg: Colors.successLight,
   },
 ];
 export default function GuardDashboard() {
   const navigation = useGuardNavigation();
-  const dispatch = useDispatch();
-  const [jobsLoading, setJobsLoading] = useState(true);
+  const dispatch = useAppDispatch();
+  const reduxDispatch = useDispatch();
+  const jobsRaw = useAppSelector(selectJobsItems);
+  const jobsLoading = useAppSelector(selectJobsLoading);
   const [activeShift, setActiveShift] = useState<MappedShift | null>(null);
   const [todayPatrols, setTodayPatrols] = useState<MappedShift[]>([]);
   const [activeSession, setActiveSession] = useState<ActiveShiftSession | null>(
@@ -91,55 +97,50 @@ export default function GuardDashboard() {
 
   useFocusEffect(
     useCallback(() => {
+      dispatch(fetchGuardJobs());
       getActiveShiftSession().then(setActiveSession);
-    }, []),
+    }, [dispatch]),
   );
 
   const hasOngoingShift =
     activeSession != null || activeShift?.status === 'active';
 
   useEffect(() => {
-    let mounted = true;
-    (async () => {
-      setJobsLoading(true);
-      const result = await getGuardMyJobs();
-      if (!mounted) return;
+    if (!jobsRaw.length) {
+      setTodayPatrols([]);
+      setActiveShift(null);
+      return;
+    }
 
-      if (!result.data?.length) {
-        setTodayPatrols([]);
-        setActiveShift(null);
-        setJobsLoading(false);
-        return;
-      }
+    setActiveShift(findActiveShift(jobsRaw));
 
-      setActiveShift(findActiveShift(result.data));
+    const now = new Date();
+    const localToday = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
 
-      const now = new Date();
-      const localToday = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-
-      const mappedToday = result.data
-        .filter((job: any) => {
-          const d =
-            job?.shift_date ??
-            job?.date ??
-            job?.shiftDate ??
-            job?.scheduled_date;
-          return typeof d === 'string' ? d === localToday : false;
-        })
+    const mappedToday = jobsRaw
+      .filter((job: any) => {
+        const d =
+          job?.shift_date ??
+          job?.date ??
+          job?.shiftDate ??
+          job?.scheduled_date;
+        return typeof d === 'string' ? d === localToday : false;
+      })
         .map(mapApiJobToShift)
-        .filter((shift): shift is MappedShift => Boolean(shift));
+        .filter((shift: MappedShift | null): shift is MappedShift =>
+          Boolean(shift),
+        );
 
-      const fallbackMapped = result.data
+      const fallbackMapped = jobsRaw
         .map(mapApiJobToShift)
-        .filter((shift): shift is MappedShift => Boolean(shift));
+        .filter((shift: MappedShift | null): shift is MappedShift =>
+          Boolean(shift),
+        );
 
-      setTodayPatrols((mappedToday.length > 0 ? mappedToday : fallbackMapped).slice(0, 3));
-      setJobsLoading(false);
-    })();
-    return () => {
-      mounted = false;
-    };
-  }, []);
+    setTodayPatrols(
+      (mappedToday.length > 0 ? mappedToday : fallbackMapped).slice(0, 3),
+    );
+  }, [jobsRaw]);
 
   const openOngoingShift = async () => {
     const session = await getActiveShiftSession();
@@ -238,7 +239,7 @@ export default function GuardDashboard() {
                             text: 'Yes',
                             onPress: async () => {
                               await logout();
-                              dispatch(clearAuth());
+                              reduxDispatch(clearAuth());
                             },
                           },
                         ],
@@ -291,7 +292,7 @@ export default function GuardDashboard() {
                   key={i}
                   style={[styles.qaCard, Shadows.card]}
                   activeOpacity={0.8}
-                  onPress={() => navigation.navigate(qa.screen)}
+                  onPress={() => qa.onPress(navigation)}
                 >
                   <View style={[styles.qaIcon, { backgroundColor: qa.bg }]}>
                     <qa.icon size={16} color="#000" />
@@ -330,16 +331,7 @@ export default function GuardDashboard() {
             { icon: ClipboardList, label: 'Shifts' },
             { icon: User, label: 'Profile' },
           ]}
-          onPress={i => {
-            const screens = [
-              GUARD_ROUTES.DASHBOARD,
-              GUARD_ROUTES.PATROL_TIMELINE,
-              GUARD_ROUTES.INCIDENTS,
-              GUARD_ROUTES.SHIFTS,
-              GUARD_ROUTES.PROFILE,
-            ];
-            navigation.navigate(screens[i]);
-          }}
+          onPress={i => navigateGuardBottomTab(navigation, i)}
         />
       </SafeAreaView>
     </View>

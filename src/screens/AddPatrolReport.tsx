@@ -176,7 +176,10 @@ export default function AddPatrolReport() {
             <Text style={styles.cancelText}>Cancel</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity style={styles.submitBtn} onPress={() => navigation.navigate(GUARD_ROUTES.PATROL_TIMELINE)}>
+          <TouchableOpacity
+            style={styles.submitBtn}
+            onPress={() => navigation.navigate(GUARD_ROUTES.PATROL_TIMELINE)}
+          >
             <Text style={styles.submitText}>Submit Report</Text>
           </TouchableOpacity>
         </View>

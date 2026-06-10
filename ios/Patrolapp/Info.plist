@@ -37,6 +37,8 @@
 	<string>Camera access is required to capture your check-in selfie.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>Location is required to verify your shift check-in.</string>
+	<key>NFCReaderUsageDescription</key>
+	<string>NFC is required to scan patrol checkpoint tags.</string>
 	<key>RCTNewArchEnabled</key>
 	<true/>
 	<key>UILaunchStoryboardName</key>

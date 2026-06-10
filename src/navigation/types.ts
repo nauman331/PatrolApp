@@ -21,30 +21,48 @@ export type AuthStackParamList = {
 export type GuardStackParamList = {
     GuardDashboard: undefined;
     Shifts: undefined;
-    ShiftSignIn: {
-        shiftId?: string;
-        rosterId?: string | number;
-        siteId?: string | number;
-        site?: string;
-        time?: string;
-        zones?: string;
-        status?: 'active' | 'upcoming';
-    };
-    OngoingShift: {
-        rosterId?: string | number;
-        site?: string;
-        zones?: string;
-        signInTime?: string;
-        shiftId?: string;
-        siteId?: string | number;
-    };
-    PatrolTimeline: { shiftId?: string };
-    AddPatrolReport: { shiftId?: string };
+    ShiftSignIn:
+        | {
+              shiftId?: string;
+              rosterId?: string | number;
+              siteId?: string | number;
+              site?: string;
+              time?: string;
+              zones?: string;
+              status?: 'active' | 'upcoming';
+          }
+        | undefined;
+    OngoingShift:
+        | {
+              rosterId?: string | number;
+              site?: string;
+              zones?: string;
+              signInTime?: string;
+              shiftId?: string;
+              siteId?: string | number;
+          }
+        | undefined;
+    PatrolTimeline:
+        | {
+              shiftId?: string;
+              rosterId?: string | number;
+              siteId?: string | number;
+              site?: string;
+              coordinates?: string;
+              autoStart?: boolean;
+          }
+        | undefined;
+    AddPatrolReport: { shiftId?: string } | undefined;
     Incidents: undefined;
-    AddIncident: {
-        shiftId?: string;
-        rosterId?: string | number;
-        siteId?: string | number;
+    AddIncident:
+        | {
+              shiftId?: string;
+              rosterId?: string | number;
+              siteId?: string | number;
+          }
+        | undefined;
+    ViewIncidentReport: {
+        incidentId: number;
     };
     Profile: undefined;
 };
@@ -55,7 +73,7 @@ export type GuardStackParamList = {
  */
 export type ManagerStackParamList = {
     ManagerDashboard: undefined;
-    ShiftReport: { shiftId?: string };
+    ShiftReport: { shiftId?: string } | undefined;
     Profile: undefined;
 };
 
@@ -64,6 +82,7 @@ export type ManagerStackParamList = {
  * Combines auth and unauth stacks with loading state
  */
 export type RootStackParamList = {
+    Loading: undefined;
     Auth: NavigatorScreenParams<AuthStackParamList>;
     GuardApp: NavigatorScreenParams<GuardStackParamList>;
     ManagerApp: NavigatorScreenParams<ManagerStackParamList>;

@@ -3,10 +3,12 @@
  * Combines all slices and configures persistence with AsyncStorage
  */
 
-import { configureStore } from '@reduxjs/toolkit';
+import { configureStore, type ThunkDispatch, type UnknownAction } from '@reduxjs/toolkit';
 import { persistStore, persistReducer, FLUSH, REHYDRATE, PAUSE, PERSIST, PURGE, REGISTER } from 'redux-persist';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import authReducer from './slices/authSlice';
+import jobsReducer from './slices/jobsSlice';
+import incidentsReducer from './slices/incidentsSlice';
 
 // Persist configuration
 const persistConfig = {
@@ -25,6 +27,8 @@ const persistedAuthReducer = persistReducer(persistConfig, authReducer);
 export const store = configureStore({
     reducer: {
         auth: persistedAuthReducer,
+        jobs: jobsReducer,
+        incidents: incidentsReducer,
     },
     middleware: (getDefaultMiddleware: any) =>
         getDefaultMiddleware({
@@ -48,7 +52,7 @@ export type RootState = ReturnType<typeof store.getState>;
 /**
  * App dispatch type with thunk support
  */
-export type AppDispatch = typeof store.dispatch;
+export type AppDispatch = ThunkDispatch<RootState, unknown, UnknownAction>;
 
 /**
  * App thunk type (fallback to any until proper types are available)

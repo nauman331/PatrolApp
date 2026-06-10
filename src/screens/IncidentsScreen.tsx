@@ -1,128 +1,194 @@
-import React from 'react';
+import React, { useCallback, useState, type ComponentType } from 'react';
 import {
   View,
   Text,
   TouchableOpacity,
   StyleSheet,
   ScrollView,
-  SafeAreaView,
   StatusBar,
+  ActivityIndicator,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { useFocusEffect } from '@react-navigation/native';
 import { Colors, FontSizes, Radii, Shadows } from '../theme';
 import { NavBar } from '../components';
+import { IncidentListShimmer } from '../components/Shimmer';
 import {
   AlertTriangle,
   ClipboardList,
   Home,
   Route,
   User,
-  Camera,
+  Users,
+  Car,
+  Eye,
   MapPin,
   Clock,
   ShieldAlert,
-  ShieldCheck,
-  Shield,
   Plus,
+  ChevronRight,
+  Camera,
+  Download,
 } from 'lucide-react-native';
 import { useGuardNavigation } from '../navigation/utils';
-import { GUARD_ROUTES } from '../navigation/constants';
+import { GUARD_ROUTES, navigateGuardBottomTab } from '../navigation/constants';
+import { useAppDispatch, useAppSelector } from '../store/hooks';
+import {
+  fetchGuardIncidents,
+  selectIncidents,
+  selectIncidentsError,
+  selectIncidentsLoading,
+} from '../store/slices/incidentsSlice';
+import {
+  getIncidentListMeta,
+  type IncidentSeverity,
+  type MappedIncident,
+} from '../services/incidentsMapper';
+import { downloadIncidentPdf } from '../services/incidentPdfDownload';
 
-interface Incident {
-  location: string;
-  datetime: string;
-  type: string;
-  typeColor: string;
-  severity: 'HIGH' | 'MEDIUM' | 'LOW';
-  title: string;
-  mapPin: string;
-  time: string;
-}
-
-const INCIDENTS: Incident[] = [
-  {
-    location: 'Gate A',
-    datetime: '16 Apr 08:47',
-    type: 'Altercation',
-    typeColor: Colors.danger,
-    severity: 'HIGH',
-    title: 'Physical Conflict — Food Court',
-    mapPin: 'Level 2, Stall 14',
-    time: '08:47 AM',
+const sevConfig: Record<
+  IncidentSeverity,
+  { bg: string; color: string; border: string }
+> = {
+  HIGH: {
+    bg: Colors.dangerLight,
+    color: Colors.danger,
+    border: Colors.danger,
   },
-  {
-    location: 'Parking B2',
-    datetime: '15 Apr 22:10',
-    type: 'Suspicious',
-    typeColor: Colors.warning,
-    severity: 'MEDIUM',
-    title: 'Unattended Bag — Parking',
-    mapPin: 'B2, Row 4',
-    time: '22:10 PM',
+  MEDIUM: {
+    bg: Colors.warningLight,
+    color: '#c05621',
+    border: Colors.warning,
   },
-];
-
-const sevConfig = {
-  HIGH: { bg: Colors.dangerLight, color: Colors.danger },
-  MEDIUM: { bg: Colors.warningLight, color: '#c05621' },
-  LOW: { bg: Colors.successLight, color: Colors.success },
+  LOW: {
+    bg: Colors.successLight,
+    color: Colors.success,
+    border: Colors.success,
+  },
 };
+
+function MetaChip({
+  icon: Icon,
+  label,
+}: {
+  icon: ComponentType<{ size?: number; color?: string }>;
+  label: string;
+}) {
+  return (
+    <View style={styles.metaChip}>
+      <Icon size={12} color={Colors.textSecondary} />
+      <Text style={styles.metaChipText} numberOfLines={1}>
+        {label}
+      </Text>
+    </View>
+  );
+}
 
 export default function IncidentsScreen() {
   const navigation = useGuardNavigation();
+  const dispatch = useAppDispatch();
+  const incidents = useAppSelector(selectIncidents);
+  const loading = useAppSelector(selectIncidentsLoading);
+  const error = useAppSelector(selectIncidentsError);
+  const meta = getIncidentListMeta(incidents);
+  const [downloadingId, setDownloadingId] = useState<number | null>(null);
+
+  useFocusEffect(
+    useCallback(() => {
+      dispatch(fetchGuardIncidents());
+    }, [dispatch]),
+  );
+
+  const openReport = (incident: MappedIncident) => {
+    navigation.navigate(GUARD_ROUTES.VIEW_INCIDENT, {
+      incidentId: incident.id,
+    });
+  };
+
+  const handleDownloadPdf = async (incident: MappedIncident) => {
+    setDownloadingId(incident.id);
+    try {
+      await downloadIncidentPdf(incident);
+    } finally {
+      setDownloadingId(null);
+    }
+  };
+
   return (
     <View style={styles.container}>
-      <StatusBar
-        barStyle="light-content"
-        backgroundColor={Colors.headerStart}
-      />
-      <SafeAreaView style={styles.safe}>
-        {/* Header */}
+      <StatusBar barStyle="light-content" backgroundColor={Colors.headerStart} />
+
+      <SafeAreaView style={styles.safeTop} edges={['top']}>
         <View style={styles.header}>
           <View style={styles.hdrRow}>
             <Text style={styles.hdrTitle}>Incidents</Text>
             <View style={styles.openBadge}>
-              <Text style={styles.openBadgeText}>3 OPEN</Text>
+              <Text style={styles.openBadgeText}>
+                {loading ? '...' : `${meta.count} REPORTS`}
+              </Text>
             </View>
           </View>
-          <Text style={styles.hdrSub}>Mall of Lahore · April 2026</Text>
+          <Text style={styles.hdrSub}>{meta.subtitle}</Text>
         </View>
+      </SafeAreaView>
 
-        {/* List */}
+      <SafeAreaView style={styles.safeBody} edges={['bottom']}>
         <ScrollView style={styles.body} showsVerticalScrollIndicator={false}>
-          {INCIDENTS.map((inc, i) => {
-            const sev = sevConfig[inc.severity];
+          {loading ? (
+            <IncidentListShimmer count={3} />
+          ) : error ? (
+            <View style={styles.emptyBox}>
+              <Text style={styles.emptyTitle}>Could not load incidents</Text>
+              <Text style={styles.emptySub}>{error}</Text>
+              <TouchableOpacity
+                style={styles.retryBtn}
+                onPress={() => dispatch(fetchGuardIncidents())}
+              >
+                <Text style={styles.retryText}>Retry</Text>
+              </TouchableOpacity>
+            </View>
+          ) : incidents.length === 0 ? (
+            <View style={styles.emptyBox}>
+              <ShieldAlert size={40} color={Colors.textMuted} />
+              <Text style={styles.emptyTitle}>No incidents yet</Text>
+              <Text style={styles.emptySub}>
+                Tap + to report your first incident.
+              </Text>
+            </View>
+          ) : (
+            incidents.map((inc: MappedIncident) => {
+              const sev = sevConfig[inc.severity];
+              const photoCount = inc.photos.length;
+              const peopleCount =
+                inc.peopleCount ?? inc.peopleInvolved.length;
+              const vehiclesCount = inc.vehiclesCount ?? inc.vehicles.length;
+              const witnessesCount =
+                inc.witnessesCount ?? inc.witnesses.length;
+              const isDownloading = downloadingId === inc.id;
 
-            return (
-              <View key={i} style={[styles.card, Shadows.card]}>
-                {/* IMAGE AREA */}
-                <View style={styles.imgArea}>
-                  <ShieldAlert size={34} color={Colors.headerStart} />
-
-                  <View style={styles.imgOverlay}>
-                    <View style={styles.incChip}>
-                      <MapPin size={10} color="#fff" />
-                      <Text style={styles.incChipText}>{inc.location}</Text>
+              return (
+                <View
+                  key={inc.id}
+                  style={[
+                    styles.card,
+                    Shadows.card,
+                    { borderLeftColor: sev.border },
+                  ]}
+                >
+                  <TouchableOpacity
+                    onPress={() => openReport(inc)}
+                    activeOpacity={0.88}
+                  >
+                  <View style={styles.cardHeader}>
+                    <View style={styles.siteIconWrap}>
+                      <MapPin size={16} color={Colors.accent} />
                     </View>
-
-                    <View style={styles.incChip}>
-                      <Clock size={10} color="#fff" />
-                      <Text style={styles.incChipText}>{inc.datetime}</Text>
-                    </View>
-                  </View>
-                </View>
-
-                {/* INFO */}
-                <View style={styles.info}>
-                  <View style={styles.typeRow}>
-                    <View style={styles.typeLeft}>
-                      <Shield size={10} color={inc.typeColor} />
-                      <Text
-                        style={[styles.typeLabel, { color: inc.typeColor }]}
-                      >
-                        {inc.type.toUpperCase()}
+                    <View style={styles.cardHeaderMain}>
+                      <Text style={styles.siteName} numberOfLines={2}>
+                        {inc.siteName || 'Unknown site'}
                       </Text>
+                      <Text style={styles.reportId}>Report #{inc.id}</Text>
                     </View>
-
                     <View
                       style={[styles.sevBadge, { backgroundColor: sev.bg }]}
                     >
@@ -132,51 +198,80 @@ export default function IncidentsScreen() {
                     </View>
                   </View>
 
-                  <Text style={styles.incTitle}>{inc.title}</Text>
+                  <View style={styles.typeChip}>
+                    <AlertTriangle size={12} color={sev.color} />
+                    <Text style={styles.typeChipText} numberOfLines={1}>
+                      {inc.injuryType || 'Incident'}
+                    </Text>
+                  </View>
+
+                  <Text style={styles.description} numberOfLines={2}>
+                    {inc.injuryDetail || 'No additional details provided.'}
+                  </Text>
 
                   <View style={styles.metaRow}>
-                    <View
-                      style={{
-                        flexDirection: 'row',
-                        alignItems: 'center',
-                        gap: 4,
-                      }}
-                    >
-                      <MapPin size={12} color="#888" />
-                      <Text style={styles.metaText}>{inc.mapPin}</Text>
-                    </View>
+                    <MetaChip
+                      icon={Users}
+                      label={`${peopleCount} ${peopleCount === 1 ? 'person' : 'people'}`}
+                    />
+                    <MetaChip
+                      icon={Car}
+                      label={`${vehiclesCount} ${vehiclesCount === 1 ? 'vehicle' : 'vehicles'}`}
+                    />
+                    <MetaChip
+                      icon={Eye}
+                      label={`${witnessesCount} ${witnessesCount === 1 ? 'witness' : 'witnesses'}`}
+                    />
+                    <MetaChip
+                      icon={Clock}
+                      label={inc.displayDateTime || '—'}
+                    />
+                    <MetaChip
+                      icon={ClipboardList}
+                      label={`Roster ${inc.rosterId ?? '—'}`}
+                    />
+                    {photoCount > 0 ? (
+                      <MetaChip
+                        icon={Camera}
+                        label={`${photoCount} photo${photoCount === 1 ? '' : 's'}`}
+                      />
+                    ) : null}
+                  </View>
 
-                    <View
-                      style={{
-                        flexDirection: 'row',
-                        alignItems: 'center',
-                        gap: 4,
-                      }}
+                  </TouchableOpacity>
+
+                  <View style={styles.cardActions}>
+                    <TouchableOpacity
+                      style={styles.actionView}
+                      onPress={() => openReport(inc)}
+                      activeOpacity={0.85}
                     >
-                      <Clock size={12} color="#888" />
-                      <Text style={styles.metaText}>{inc.time}</Text>
-                    </View>
+                      <Text style={styles.viewReportText}>View report</Text>
+                      <ChevronRight size={16} color={Colors.accent} />
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      style={styles.actionPdf}
+                      onPress={() => handleDownloadPdf(inc)}
+                      disabled={isDownloading}
+                      activeOpacity={0.85}
+                    >
+                      {isDownloading ? (
+                        <ActivityIndicator size="small" color={Colors.white} />
+                      ) : (
+                        <Download size={14} color={Colors.white} />
+                      )}
+                      <Text style={styles.actionPdfText}>
+                        {isDownloading ? 'Creating PDF…' : 'Download PDF'}
+                      </Text>
+                    </TouchableOpacity>
                   </View>
                 </View>
-
-                {/* ACTIONS */}
-                <View style={styles.actions}>
-                  <TouchableOpacity style={styles.actionOutline}>
-                    <Text style={styles.actionOutlineText}>View Report</Text>
-                  </TouchableOpacity>
-
-                  <TouchableOpacity style={styles.actionFill}>
-                    <Text style={styles.actionFillText}>
-                      {i === 0 ? 'Escalate' : 'Resolve'}
-                    </Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-            );
-          })}
+              );
+            })
+          )}
         </ScrollView>
 
-        {/* FAB */}
         <TouchableOpacity
           style={styles.fab}
           onPress={() => navigation.navigate(GUARD_ROUTES.ADD_INCIDENT)}
@@ -184,7 +279,6 @@ export default function IncidentsScreen() {
           <Plus size={22} color="white" />
         </TouchableOpacity>
 
-        {/* NAVBAR */}
         <NavBar
           variant="light"
           items={[
@@ -194,16 +288,7 @@ export default function IncidentsScreen() {
             { icon: ClipboardList, label: 'Shifts' },
             { icon: User, label: 'Profile' },
           ]}
-          onPress={i => {
-            const screens = [
-              GUARD_ROUTES.DASHBOARD,
-              GUARD_ROUTES.PATROL_TIMELINE,
-              GUARD_ROUTES.INCIDENTS,
-              GUARD_ROUTES.SHIFTS,
-              GUARD_ROUTES.PROFILE,
-            ];
-            navigation.navigate(screens[i]);
-          }}
+          onPress={i => navigateGuardBottomTab(navigation, i)}
         />
       </SafeAreaView>
     </View>
@@ -211,8 +296,9 @@ export default function IncidentsScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.bgAlt },
-  safe: { flex: 1 },
+  container: { flex: 1, backgroundColor: Colors.headerStart },
+  safeTop: { backgroundColor: Colors.headerStart },
+  safeBody: { flex: 1, backgroundColor: Colors.bgAlt },
   fab: {
     position: 'absolute',
     bottom: 97,
@@ -225,15 +311,10 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     elevation: 5,
   },
-  fabText: {
-    fontSize: 26,
-    color: Colors.white,
-    fontWeight: '700',
-  },
   header: {
     backgroundColor: Colors.headerStart,
     paddingHorizontal: 18,
-    paddingTop: 18,
+    paddingTop: 8,
     paddingBottom: 22,
   },
   hdrRow: {
@@ -257,106 +338,168 @@ const styles = StyleSheet.create({
     color: '#f87171',
   },
   hdrSub: { fontSize: FontSizes.xs, color: 'rgba(255,255,255,0.35)' },
-
   body: { flex: 1, padding: 14 },
+  emptyBox: {
+    alignItems: 'center',
+    paddingVertical: 48,
+    gap: 10,
+  },
+  emptyTitle: {
+    fontSize: FontSizes.md,
+    fontWeight: '700',
+    color: Colors.textPrimary,
+  },
+  emptySub: {
+    fontSize: FontSizes.sm,
+    color: Colors.textMuted,
+    textAlign: 'center',
+    paddingHorizontal: 24,
+  },
+  retryBtn: {
+    marginTop: 8,
+    backgroundColor: Colors.accent,
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: Radii.md,
+  },
+  retryText: { color: Colors.white, fontWeight: '700' },
   card: {
     backgroundColor: Colors.bgCard,
     borderRadius: Radii.lg,
-    overflow: 'hidden',
-    marginBottom: 10,
-
-    // iOS shadow
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 16,
-    },
-    shadowOpacity: 0.12,
-    shadowRadius: 10,
-
-    // Android shadow
-    elevation: 10,
+    marginBottom: 12,
+    padding: 14,
+    paddingLeft: 10,
+    borderLeftWidth: 4,
   },
-  imgArea: {
-    height: 110,
-    // backgroundColor: Colors.headerStart,
-    backgroundColor: '#d0c3c3',
+  cardHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+    marginBottom: 10,
+    paddingLeft: 6,
+  },
+  siteIconWrap: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    backgroundColor: Colors.accentLight,
     alignItems: 'center',
     justifyContent: 'center',
-
   },
-  imgEmoji: { fontSize: 32, opacity: 0.25 },
-  imgOverlay: {
-    position: 'absolute',
-    bottom: 8,
-    left: 10,
-    right: 10,
-    flexDirection: 'row',
-    gap: 5,
-
+  cardHeaderMain: {
+    flex: 1,
+    minWidth: 0,
   },
-  incChip: {
-    flexDirection: 'row',
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    borderRadius: 5,
-    gap: 5,
-    paddingHorizontal: 7,
-    paddingVertical: 5,
+  siteName: {
+    fontSize: FontSizes.md,
+    fontWeight: '800',
+    color: Colors.textPrimary,
+    lineHeight: 18,
   },
-  incChipText: {
+  reportId: {
     fontSize: FontSizes.xs,
-    color: 'rgba(255,255,255,0.75)',
-    fontWeight: '700',
+    color: Colors.textMuted,
+    marginTop: 2,
+    fontWeight: '600',
   },
-
-  info: { padding: 12 },
-  typeRow: {
+  sevBadge: {
+    borderRadius: Radii.sm,
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+    minWidth: 52,
+    alignItems: 'center',
+  },
+  sevText: { fontSize: 10, fontWeight: '800', letterSpacing: 0.3 },
+  typeChip: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 7,
+    alignSelf: 'flex-start',
+    gap: 6,
+    backgroundColor: Colors.bgAlt,
+    borderRadius: Radii.sm,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    marginBottom: 10,
+    marginLeft: 6,
+    maxWidth: '100%',
   },
-  typeLeft: { flexDirection: 'row', alignItems: 'center', gap: 5 },
-  typeDot: { width: 7, height: 7, borderRadius: 4 },
-  typeLabel: { fontSize: FontSizes.xs, fontWeight: '700', letterSpacing: 1 },
-  sevBadge: { borderRadius: 5, paddingHorizontal: 8, paddingVertical: 2 },
-  sevText: { fontSize: FontSizes.xs, fontWeight: '700' },
-  incTitle: {
-    fontSize: 13,
+  typeChipText: {
+    fontSize: FontSizes.xs,
     fontWeight: '700',
-    color: Colors.textPrimary,
-    marginBottom: 3,
+    color: Colors.textSecondary,
+    flexShrink: 1,
   },
-  metaRow: { flexDirection: 'row', gap: 10 },
-  metaText: { fontSize: FontSizes.xs, color: Colors.textMuted },
-
-  actions: {
+  description: {
+    fontSize: FontSizes.base,
+    color: Colors.textPrimary,
+    lineHeight: 18,
+    marginBottom: 12,
+    paddingLeft: 6,
+    fontWeight: '500',
+  },
+  metaRow: {
     flexDirection: 'row',
-    gap: 7,
-    padding: 10,
-    paddingTop: 10,
+    flexWrap: 'wrap',
+    gap: 8,
+    paddingLeft: 6,
+    marginBottom: 12,
+  },
+  metaChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: Colors.bgAlt,
+    borderRadius: Radii.pill,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    maxWidth: '100%',
+  },
+  metaChipText: {
+    fontSize: FontSizes.xs,
+    color: Colors.textSecondary,
+    fontWeight: '600',
+    flexShrink: 1,
+  },
+  cardActions: {
+    flexDirection: 'row',
+    gap: 8,
     borderTopWidth: 1,
     borderTopColor: Colors.border,
+    paddingTop: 10,
+    marginTop: 2,
+    marginLeft: 6,
+    marginRight: 2,
   },
-  actionOutline: {
+  actionView: {
     flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
     borderWidth: 1.5,
     borderColor: Colors.border,
     borderRadius: Radii.sm,
-    paddingVertical: 8,
-    alignItems: 'center',
+    paddingVertical: 9,
+    backgroundColor: Colors.bgCard,
   },
-  actionOutlineText: {
-    fontSize: 11,
+  viewReportText: {
+    fontSize: FontSizes.sm,
     fontWeight: '700',
-    color: Colors.textSecondary,
+    color: Colors.accent,
   },
-  actionFill: {
+  actionPdf: {
     flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
     backgroundColor: Colors.accent,
     borderRadius: Radii.sm,
-    paddingVertical: 8,
-    alignItems: 'center',
+    paddingVertical: 9,
   },
-  actionFillText: { fontSize: 11, fontWeight: '700', color: Colors.white },
+  actionPdfText: {
+    fontSize: FontSizes.sm,
+    fontWeight: '700',
+    color: Colors.white,
+  },
 });

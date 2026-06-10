@@ -8,6 +8,7 @@ import PatrolTimeline from '../screens/PatrolTimeline';
 import AddPatrolReport from '../screens/AddPatrolReport';
 import IncidentsScreen from '../screens/IncidentsScreen';
 import AddIncidentScreen from '../screens/AddIncidentScreen';
+import ViewIncidentReportScreen from '../screens/ViewIncidentReportScreen';
 import ProfileScreen from '../screens/ProfileScreen';
 import { GuardStackParamList } from './types';
 import { GUARD_ROUTES, AUTH_ROUTES, ROOT_ROUTES } from './constants';
@@ -25,8 +26,7 @@ export function GuardNavigator() {
         <Stack.Navigator
             screenOptions={{
                 headerShown: false,
-                animationEnabled: true,
-                cardStyle: {
+                contentStyle: {
                     backgroundColor: Colors.bg,
                 },
             }}
@@ -35,63 +35,61 @@ export function GuardNavigator() {
                 name={GUARD_ROUTES.DASHBOARD}
                 component={GuardDashboard}
                 options={{
-                    animationEnabled: false,
+                    animation: 'none',
                 }}
             />
             <Stack.Screen
                 name={GUARD_ROUTES.SHIFTS}
                 component={ShiftsScreen}
                 options={{
-                    animationEnabled: true,
                 }}
             />
             <Stack.Screen
                 name={GUARD_ROUTES.SHIFT_SIGN_IN}
                 component={ShiftSignInScreen}
                 options={{
-                    animationEnabled: true,
                 }}
             />
             <Stack.Screen
                 name={GUARD_ROUTES.ONGOING_SHIFT}
                 component={OngoingShiftScreen}
                 options={{
-                    animationEnabled: true,
                 }}
             />
             <Stack.Screen
                 name={GUARD_ROUTES.PATROL_TIMELINE}
                 component={PatrolTimeline}
                 options={{
-                    animationEnabled: true,
                 }}
             />
             <Stack.Screen
                 name={GUARD_ROUTES.ADD_PATROL_REPORT}
                 component={AddPatrolReport}
                 options={{
-                    animationEnabled: true,
                 }}
             />
             <Stack.Screen
                 name={GUARD_ROUTES.INCIDENTS}
                 component={IncidentsScreen}
                 options={{
-                    animationEnabled: true,
                 }}
             />
             <Stack.Screen
                 name={GUARD_ROUTES.ADD_INCIDENT}
                 component={AddIncidentScreen}
                 options={{
-                    animationEnabled: true,
+                }}
+            />
+            <Stack.Screen
+                name={GUARD_ROUTES.VIEW_INCIDENT}
+                component={ViewIncidentReportScreen}
+                options={{
                 }}
             />
             <Stack.Screen
                 name={GUARD_ROUTES.PROFILE}
                 component={ProfileScreen}
                 options={{
-                    animationEnabled: true,
                 }}
             />
         </Stack.Navigator>

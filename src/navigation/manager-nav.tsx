@@ -19,8 +19,7 @@ export function ManagerNavigator() {
         <Stack.Navigator
             screenOptions={{
                 headerShown: false,
-                animationEnabled: true,
-                cardStyle: {
+                contentStyle: {
                     backgroundColor: Colors.bg,
                 },
             }}
@@ -29,21 +28,19 @@ export function ManagerNavigator() {
                 name={MANAGER_ROUTES.DASHBOARD}
                 component={ManagerDashboard}
                 options={{
-                    animationEnabled: false,
+                    animation: 'none',
                 }}
             />
             <Stack.Screen
                 name={MANAGER_ROUTES.SHIFT_REPORT}
                 component={ShiftReportScreen}
                 options={{
-                    animationEnabled: true,
                 }}
             />
             <Stack.Screen
                 name={MANAGER_ROUTES.PROFILE}
                 component={ProfileScreen}
                 options={{
-                    animationEnabled: true,
                 }}
             />
         </Stack.Navigator>

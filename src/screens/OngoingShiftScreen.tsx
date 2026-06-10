@@ -26,7 +26,7 @@ import {
   FileText,
   Info,
   Footprints,
-  QrCode,
+  ScanLine,
   Route,
 } from 'lucide-react-native';
 import { useGuardNavigation } from '../navigation/utils';
@@ -34,6 +34,7 @@ import { GUARD_ROUTES } from '../navigation/constants';
 import type { GuardStackScreenProps } from '../navigation/types';
 import type { RootState } from '../store/store';
 import { guardJobCheckout } from '../services/guardApi';
+import { usePatrolNfcScan } from '../hooks/usePatrolNfcScan';
 import {
   clearActiveShiftSession,
   getActiveShiftSession,
@@ -116,6 +117,36 @@ export default function OngoingShiftScreen() {
   const [signoutLocation, setSignoutLocation] = useState('');
   const [locationLoading, setLocationLoading] = useState(false);
   const [checkingOut, setCheckingOut] = useState(false);
+
+  const getScanCoordinates = useCallback(async () => {
+    let coords = signoutLocation.trim();
+    if (coords) return coords;
+
+    const allowed = await requestLocationPermission();
+    if (!allowed) return '';
+
+    try {
+      coords = await getCurrentLocation(true);
+    } catch {
+      try {
+        coords = await getCurrentLocation(false);
+      } catch {
+        coords = '';
+      }
+    }
+    if (coords) setSignoutLocation(coords);
+    return coords;
+  }, [signoutLocation]);
+
+  const { scanning: nfcScanning, handleScan: handleNfcScan, scanModal } =
+    usePatrolNfcScan({
+    getCoordinates: getScanCoordinates,
+    requireActivePatrol: false,
+    getScanContext: () => ({
+      roster_id: rosterId,
+      guard_id: guardId ?? undefined,
+    }),
+  });
 
   useEffect(() => {
     (async () => {
@@ -201,6 +232,51 @@ export default function OngoingShiftScreen() {
     if (result.didCancel || result.errorCode) return;
     const asset = result.assets?.[0];
     if (asset?.uri) setSignoutSelfie(asset);
+  };
+
+  const handleStartPatrolling = async () => {
+    if (rosterId == null) {
+      Alert.alert('Error', 'Missing roster for this shift.');
+      return;
+    }
+    if (siteId == null) {
+      Alert.alert('Error', 'Missing site for this shift.');
+      return;
+    }
+
+    let coords = signoutLocation.trim();
+    if (!coords) {
+      setLocationLoading(true);
+      try {
+        const allowed = await requestLocationPermission();
+        if (!allowed) {
+          Alert.alert(
+            'Permission required',
+            'Location permission is needed to start patrolling.',
+          );
+          return;
+        }
+        try {
+          coords = await getCurrentLocation(true);
+        } catch {
+          coords = await getCurrentLocation(false);
+        }
+        setSignoutLocation(coords);
+      } catch {
+        Alert.alert('Location unavailable', 'Could not get GPS coordinates.');
+        return;
+      } finally {
+        setLocationLoading(false);
+      }
+    }
+
+    navigation.navigate(GUARD_ROUTES.PATROL_TIMELINE, {
+      rosterId,
+      siteId,
+      site,
+      coordinates: coords,
+      autoStart: true,
+    });
   };
 
   const handleEndShift = async () => {
@@ -372,7 +448,7 @@ export default function OngoingShiftScreen() {
 
           <TouchableOpacity
             style={[styles.actionRow, Shadows.card]}
-            onPress={() => navigation.navigate(GUARD_ROUTES.PATROL_TIMELINE)}
+            onPress={handleStartPatrolling}
           >
             <View style={[styles.actionIcon, { backgroundColor: Colors.accentLight }]}>
               <Route size={20} color={Colors.accent} />
@@ -381,9 +457,20 @@ export default function OngoingShiftScreen() {
             <Text style={styles.plusBtn}>+</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity style={styles.scanBtn} activeOpacity={0.85}>
-            <QrCode size={18} color={Colors.white} />
-            <Text style={styles.scanBtnText}>SCAN QR CODE</Text>
+          <TouchableOpacity
+            style={[styles.scanBtn, nfcScanning && styles.scanBtnDisabled]}
+            activeOpacity={0.85}
+            onPress={handleNfcScan}
+            disabled={nfcScanning}
+          >
+            {nfcScanning ? (
+              <ActivityIndicator color={Colors.white} />
+            ) : (
+              <>
+                <ScanLine size={18} color={Colors.white} />
+                <Text style={styles.scanBtnText}>SCAN NFC TAG</Text>
+              </>
+            )}
           </TouchableOpacity>
 
           <TouchableOpacity
@@ -399,6 +486,7 @@ export default function OngoingShiftScreen() {
             )}
           </TouchableOpacity>
         </ScrollView>
+        {scanModal}
       </SafeAreaView>
     </View>
   );
@@ -614,7 +702,9 @@ const styles = StyleSheet.create({
     paddingVertical: 16,
     marginTop: 8,
     marginBottom: 10,
+    minHeight: 52,
   },
+  scanBtnDisabled: { opacity: 0.75 },
   scanBtnText: {
     color: Colors.white,
     fontWeight: '800',

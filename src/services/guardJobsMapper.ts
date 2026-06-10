@@ -41,6 +41,12 @@ function pickString(...values: unknown[]): string {
   return '';
 }
 
+function pickId(value: unknown): string | number | undefined {
+  if (typeof value === 'string' && value.trim()) return value.trim();
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  return undefined;
+}
+
 function mapStatus(raw: unknown): ShiftStatus {
   const s = String(raw ?? '').toLowerCase();
   if (
@@ -93,9 +99,10 @@ export function mapApiJobToShift(job: unknown): MappedShift | null {
   const row = asRecord(job);
   if (!row) return null;
 
-  const rosterId =
-    row.roster_id ?? row.rosterId ?? row.id ?? row.job_id ?? row.shift_id;
-  if (rosterId === undefined || rosterId === null) return null;
+  const rosterId = pickId(
+    row.roster_id ?? row.rosterId ?? row.id ?? row.job_id ?? row.shift_id,
+  );
+  if (rosterId === undefined) return null;
 
   const location = asRecord(row.location);
   const site = pickString(
@@ -122,7 +129,7 @@ export function mapApiJobToShift(job: unknown): MappedShift | null {
     row.scheduled_date,
     row.start_date,
   );
-  const siteId = row.site_id ?? row.siteId;
+  const siteId = pickId(row.site_id ?? row.siteId);
   const progress =
     typeof row.progress === 'number'
       ? row.progress
@@ -156,9 +163,9 @@ export function mapJobToIncidentContext(
   const row = asRecord(job);
   if (!row) return null;
 
-  const rosterId = row.roster_id ?? row.rosterId ?? row.id;
-  const siteId = row.site_id ?? row.siteId;
-  if (rosterId == null || siteId == null) return null;
+  const rosterId = pickId(row.roster_id ?? row.rosterId ?? row.id);
+  const siteId = pickId(row.site_id ?? row.siteId);
+  if (rosterId === undefined || siteId === undefined) return null;
 
   return {
     rosterId,
@@ -210,4 +217,52 @@ export function findActiveShift(jobs: unknown[]): MappedShift | null {
     .map(mapApiJobToShift)
     .filter((s): s is MappedShift => Boolean(s));
   return mapped.find(s => s.status === 'active') ?? mapped[0] ?? null;
+}
+
+export interface ActiveShiftRef {
+  rosterId: string | number;
+  shiftId?: string;
+  site?: string;
+}
+
+export function shiftMatchesActiveRef(
+  shift: Pick<MappedShift, 'rosterId' | 'id'>,
+  active: ActiveShiftRef,
+): boolean {
+  if (String(active.rosterId) === String(shift.rosterId)) return true;
+  if (active.shiftId != null && String(active.shiftId) === String(shift.id)) {
+    return true;
+  }
+  return false;
+}
+
+export function isThisShiftOngoing(
+  shift: MappedShift,
+  session: ActiveShiftRef | null,
+): boolean {
+  if (session) {
+    return shiftMatchesActiveRef(shift, session);
+  }
+  return shift.status === 'active';
+}
+
+export function findBlockingActiveShift(
+  jobs: unknown[],
+  forShift: MappedShift,
+  session: ActiveShiftRef | null,
+): MappedShift | ActiveShiftRef | null {
+  if (session && !shiftMatchesActiveRef(forShift, session)) {
+    return session;
+  }
+
+  const mapped = jobs
+    .map(mapApiJobToShift)
+    .filter((s): s is MappedShift => Boolean(s));
+
+  return (
+    mapped.find(
+      s =>
+        s.status === 'active' && !shiftMatchesActiveRef(forShift, s),
+    ) ?? null
+  );
 }

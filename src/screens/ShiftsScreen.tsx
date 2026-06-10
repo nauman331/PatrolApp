@@ -6,6 +6,7 @@ import {
   StyleSheet,
   ScrollView,
   StatusBar,
+  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Colors, FontSizes, Radii, Shadows } from '../theme';
@@ -22,10 +23,11 @@ import {
 import { Clock, MapPin, CheckCircle, Camera } from 'lucide-react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { useGuardNavigation } from '../navigation/utils';
-import { GUARD_ROUTES } from '../navigation/constants';
-import { getGuardMyJobs } from '../services/guardApi';
+import { GUARD_ROUTES, navigateGuardBottomTab } from '../navigation/constants';
 import {
   groupShiftsByDate,
+  findBlockingActiveShift,
+  isThisShiftOngoing,
   type MappedShift,
   type ShiftGroup,
   type ShiftStatus,
@@ -34,6 +36,12 @@ import {
   getActiveShiftSession,
   type ActiveShiftSession,
 } from '../services/activeShiftSession';
+import { useAppDispatch, useAppSelector } from '../store/hooks';
+import {
+  fetchGuardJobs,
+  selectJobsItems,
+  selectJobsLoading,
+} from '../store/slices/jobsSlice';
 
 type Shift = MappedShift;
 
@@ -62,50 +70,34 @@ function truncateSiteName(site: string, maxWords = 6): string {
 
 export default function ShiftsScreen() {
   const navigation = useGuardNavigation();
+  const dispatch = useAppDispatch();
+  const jobsRaw = useAppSelector(selectJobsItems);
+  const loading = useAppSelector(selectJobsLoading);
   const [activeFilter, setActiveFilter] = useState('All');
   const [shifts, setShifts] = useState<ShiftGroup[]>([]);
-  const [loading, setLoading] = useState(true);
   const [activeSession, setActiveSession] = useState<ActiveShiftSession | null>(
     null,
   );
 
   useFocusEffect(
     useCallback(() => {
+      dispatch(fetchGuardJobs());
       getActiveShiftSession().then(setActiveSession);
-    }, []),
+    }, [dispatch]),
   );
 
   useEffect(() => {
-    let mounted = true;
-    (async () => {
-      try {
-        setLoading(true);
-        const [result, session] = await Promise.all([
-          getGuardMyJobs(),
-          getActiveShiftSession(),
-        ]);
-        if (!mounted) return;
-        setActiveSession(session);
-        if (!result.success || !result.data?.length) {
-          setShifts([]);
-          return;
-        }
-        setShifts(groupShiftsByDate(result.data));
-      } finally {
-        if (!mounted) return;
-        setLoading(false);
-      }
-    })();
-    return () => {
-      mounted = false;
-    };
-  }, []);
+    if (!jobsRaw.length) {
+      setShifts([]);
+      return;
+    }
+    setShifts(groupShiftsByDate(jobsRaw));
+  }, [jobsRaw]);
 
   const handleShiftAction = async (shift: Shift) => {
     const session = activeSession ?? (await getActiveShiftSession());
-    const isOngoing = session != null || shift.status === 'active';
 
-    if (isOngoing) {
+    if (isThisShiftOngoing(shift, session)) {
       navigation.navigate(GUARD_ROUTES.ONGOING_SHIFT, {
         rosterId: session?.rosterId ?? shift.rosterId,
         site: session?.site ?? shift.site,
@@ -114,6 +106,15 @@ export default function ShiftsScreen() {
         shiftId: session?.shiftId ?? shift.id,
         siteId: session?.siteId ?? shift.siteId,
       });
+      return;
+    }
+
+    const blockingShift = findBlockingActiveShift(jobsRaw, shift, session);
+    if (blockingShift) {
+      Alert.alert(
+        'Shift already active',
+        `Another shift is active at ${blockingShift.site ?? 'another site'}. Please end it first, then sign in again.`,
+      );
       return;
     }
 
@@ -127,9 +128,6 @@ export default function ShiftsScreen() {
       status: shift.status === 'done' ? 'upcoming' : shift.status,
     });
   };
-
-  const isShiftOngoing = (shift: Shift) =>
-    activeSession != null || shift.status === 'active';
 
   const filteredShifts = shifts.map(group => ({
     ...group,
@@ -186,7 +184,7 @@ export default function ShiftsScreen() {
               <Text style={styles.groupLabel}>{group.group}</Text>
               {group.items.map((shift, si) => {
                 const badge = badgeConfig[shift.status];
-                const ongoing = isShiftOngoing(shift);
+                const ongoing = isThisShiftOngoing(shift, activeSession);
                 const canAction =
                   shift.status !== 'done' && (ongoing || shift.status === 'upcoming');
 
@@ -333,16 +331,7 @@ export default function ShiftsScreen() {
             { icon: ClipboardList, label: 'Shifts', active: true },
             { icon: User, label: 'Profile' },
           ]}
-          onPress={i => {
-            const screens = [
-              GUARD_ROUTES.DASHBOARD,
-              GUARD_ROUTES.PATROL_TIMELINE,
-              GUARD_ROUTES.INCIDENTS,
-              GUARD_ROUTES.SHIFTS,
-              GUARD_ROUTES.PROFILE,
-            ];
-            navigation.navigate(screens[i]);
-          }}
+          onPress={i => navigateGuardBottomTab(navigation, i)}
         />
       </SafeAreaView>
     </View>

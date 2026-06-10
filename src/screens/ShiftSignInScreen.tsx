@@ -38,7 +38,7 @@ import {
 import { useRoute } from '@react-navigation/native';
 import { useSelector } from 'react-redux';
 import { useGuardNavigation } from '../navigation/utils';
-import { GUARD_ROUTES } from '../navigation/constants';
+import { GUARD_ROUTES, navigateGuardBottomTab } from '../navigation/constants';
 import type { GuardStackScreenProps } from '../navigation/types';
 import type { RootState } from '../store/store';
 import { getGuardMyJobs, guardJobCheckin } from '../services/guardApi';
@@ -241,7 +241,7 @@ export default function ShiftSignInScreen() {
         await saveActiveShiftSession({
           rosterId: shift.rosterId,
           site: shift.site,
-          zones: shift.zones,
+          zones: shift.zones ?? '',
           signInTime,
           shiftId: shift.id,
           siteId: shift.siteId,
@@ -249,7 +249,7 @@ export default function ShiftSignInScreen() {
         navigation.replace(GUARD_ROUTES.ONGOING_SHIFT, {
           rosterId: shift.rosterId,
           site: shift.site,
-          zones: shift.zones,
+          zones: shift.zones ?? '',
           signInTime,
           shiftId: shift.id,
           siteId: shift.siteId,
@@ -399,16 +399,7 @@ export default function ShiftSignInScreen() {
             { icon: ClipboardList, label: 'Shifts', active: true },
             { icon: User, label: 'Profile' },
           ]}
-          onPress={i => {
-            const screens = [
-              GUARD_ROUTES.DASHBOARD,
-              GUARD_ROUTES.PATROL_TIMELINE,
-              GUARD_ROUTES.INCIDENTS,
-              GUARD_ROUTES.SHIFTS,
-              GUARD_ROUTES.PROFILE,
-            ];
-            navigation.navigate(screens[i]);
-          }}
+          onPress={i => navigateGuardBottomTab(navigation, i)}
         />
       </SafeAreaView>
     </View>

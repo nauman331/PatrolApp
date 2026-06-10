@@ -34,7 +34,6 @@ export function RootNavigator({ userRole, isLoading = false }: RootNavigatorProp
         <Stack.Navigator
             screenOptions={{
                 headerShown: false,
-                animationEnabled: true,
             }}
         >
             {isLoading ? (
@@ -43,11 +42,11 @@ export function RootNavigator({ userRole, isLoading = false }: RootNavigatorProp
                  * Show splash or loading screen while determining auth state
                  * This prevents showing wrong stack briefly
                  */
-                <Stack.Group screenOptions={{ animationEnabled: false }}>
+                <Stack.Group screenOptions={{ animation: 'none' }}>
                     <Stack.Screen
-                        name="Loading"
+                        name={ROOT_ROUTES.LOADING}
                         component={LoadingScreen}
-                        options={{ animationEnabled: false }}
+                        options={{ animation: 'none' }}
                     />
                 </Stack.Group>
             ) : userRole === null ? (
@@ -55,11 +54,11 @@ export function RootNavigator({ userRole, isLoading = false }: RootNavigatorProp
                  * Auth Stack
                  * Shown when user is not authenticated
                  */
-                <Stack.Group screenOptions={{ animationEnabled: false }}>
+                <Stack.Group screenOptions={{ animation: 'none' }}>
                     <Stack.Screen
                         name={ROOT_ROUTES.AUTH}
                         component={AuthNavigator}
-                        options={{ animationEnabled: false }}
+                        options={{ animation: 'none' }}
                     />
                 </Stack.Group>
             ) : userRole === 'guard' ? (
@@ -67,11 +66,11 @@ export function RootNavigator({ userRole, isLoading = false }: RootNavigatorProp
                  * Guard App Stack
                  * Shown when authenticated user is a guard
                  */
-                <Stack.Group screenOptions={{ animationEnabled: false }}>
+                <Stack.Group screenOptions={{ animation: 'none' }}>
                     <Stack.Screen
                         name={ROOT_ROUTES.GUARD_APP}
                         component={GuardNavigator}
-                        options={{ animationEnabled: false }}
+                        options={{ animation: 'none' }}
                     />
                 </Stack.Group>
             ) : (
@@ -79,11 +78,11 @@ export function RootNavigator({ userRole, isLoading = false }: RootNavigatorProp
                  * Manager App Stack
                  * Shown when authenticated user is a manager
                  */
-                <Stack.Group screenOptions={{ animationEnabled: false }}>
+                <Stack.Group screenOptions={{ animation: 'none' }}>
                     <Stack.Screen
                         name={ROOT_ROUTES.MANAGER_APP}
                         component={ManagerNavigator}
-                        options={{ animationEnabled: false }}
+                        options={{ animation: 'none' }}
                     />
                 </Stack.Group>
             )}

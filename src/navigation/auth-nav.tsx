@@ -19,8 +19,7 @@ export function AuthNavigator() {
         <Stack.Navigator
             screenOptions={{
                 headerShown: false,
-                animationEnabled: true,
-                cardStyle: {
+                contentStyle: {
                     backgroundColor: Colors.bg,
                 },
             }}
@@ -29,21 +28,19 @@ export function AuthNavigator() {
                 name={AUTH_ROUTES.SPLASH}
                 component={SplashScreen}
                 options={{
-                    animationEnabled: false,
+                    animation: 'none',
                 }}
             />
             <Stack.Screen
                 name={AUTH_ROUTES.LOGIN}
                 component={LoginScreen}
                 options={{
-                    animationEnabled: true,
                 }}
             />
             <Stack.Screen
                 name={AUTH_ROUTES.SIGNUP}
                 component={SignupScreen}
                 options={{
-                    animationEnabled: true,
                 }}
             />
         </Stack.Navigator>
