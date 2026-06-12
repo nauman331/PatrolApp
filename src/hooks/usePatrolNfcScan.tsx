@@ -11,9 +11,13 @@ import {
 import {
   getNfcCapability,
   getNfcUidVariants,
+  isNfcUserCancelledError,
   openNfcSettings,
-  readNfcUid,
+  readNfcTag,
   stopNfc,
+  NfcDisabledError,
+  NfcUnsupportedError,
+  type NfcTagInfo,
 } from '../services/nfcReader';
 import {
   buildUidVariants,
@@ -87,10 +91,12 @@ export function usePatrolNfcScan({
   const [gateHint, setGateHint] = useState<string | null>(null);
   const [statusHint, setStatusHint] = useState<string | null>(null);
   const [showNfcSettings, setShowNfcSettings] = useState(false);
+  const [pendingTag, setPendingTag] = useState<NfcTagInfo | null>(null);
 
   const scanningRef = useRef(false);
   const listenCancelledRef = useRef(false);
   const gateHintRef = useRef<string | null>(null);
+  const pendingTagRef = useRef<NfcTagInfo | null>(null);
 
   const resetScanState = useCallback(() => {
     scanningRef.current = false;
@@ -101,6 +107,8 @@ export function usePatrolNfcScan({
     setGateHint(null);
     setStatusHint(null);
     setShowNfcSettings(false);
+    setPendingTag(null);
+    pendingTagRef.current = null;
     gateHintRef.current = null;
   }, []);
 
@@ -115,8 +123,13 @@ export function usePatrolNfcScan({
       const uid = tagUid.trim();
       if (!uid) return false;
 
+      setIsSubmitting(true);
+      setIsListening(false);
+      stopNfc();
+
       const coordinates = (await getCoordinates()).trim();
       if (!coordinates) {
+        setIsSubmitting(false);
         Alert.alert(
           'Location required',
           'GPS coordinates are needed for NFC scan.',
@@ -126,9 +139,6 @@ export function usePatrolNfcScan({
 
       const context = getScanContext?.() ?? null;
       const report = context?.report ?? (await resolveScanContext(context));
-      setIsSubmitting(true);
-      setIsListening(false);
-      stopNfc();
 
       const result = await submitTagUidToApi(uid, coordinates, report, context);
 
@@ -169,24 +179,24 @@ export function usePatrolNfcScan({
 
   const startHardwareListen = useCallback(async () => {
     listenCancelledRef.current = false;
+    setPendingTag(null);
+    pendingTagRef.current = null;
+    setStatusHint(null);
+    setShowNfcSettings(false);
     setIsListening(true);
     setIsSubmitting(false);
 
     while (!listenCancelledRef.current) {
       try {
-        const uid = await readNfcUid();
+        const tag = await readNfcTag();
         if (listenCancelledRef.current) return;
 
-        const success = await submitTagUid(uid);
-        if (listenCancelledRef.current) return;
-
-        if (success) {
-          closeModal();
-          return;
-        }
-
-        setIsSubmitting(false);
-        setIsListening(true);
+        stopNfc();
+        pendingTagRef.current = tag;
+        setPendingTag(tag);
+        setIsListening(false);
+        setStatusHint(null);
+        return;
       } catch (error: unknown) {
         if (listenCancelledRef.current) return;
 
@@ -199,18 +209,56 @@ export function usePatrolNfcScan({
           continue;
         }
 
-        if (message.toLowerCase().includes('nfc is turned off')) {
+        if (isNfcUserCancelledError(message)) {
+          setIsListening(false);
+          return;
+        }
+
+        if (
+          error instanceof NfcUnsupportedError ||
+          error instanceof NfcDisabledError
+        ) {
           setStatusHint(message);
-          setShowNfcSettings(true);
-          setIsListening(true);
-          continue;
+          setShowNfcSettings(error instanceof NfcDisabledError);
+          setIsListening(false);
+          return;
         }
 
         setStatusHint(message);
-        setIsListening(true);
+        setIsListening(false);
+        return;
       }
     }
+  }, []);
+
+  const handleConfirmTag = useCallback(async () => {
+    const tag = pendingTagRef.current;
+    if (!tag) return;
+
+    try {
+      const success = await submitTagUid(tag.uid);
+      if (success) {
+        closeModal();
+        return;
+      }
+    } catch (error: unknown) {
+      Alert.alert(
+        'Scan failed',
+        error instanceof Error
+          ? error.message
+          : 'Could not submit NFC scan. Try again.',
+      );
+    }
+
+    setIsSubmitting(false);
+    pendingTagRef.current = null;
+    setPendingTag(null);
+    setIsListening(false);
   }, [submitTagUid, closeModal]);
+
+  const handleRescan = useCallback(() => {
+    startHardwareListen();
+  }, [startHardwareListen]);
 
   const openScanner = useCallback(
     async (hint?: string) => {
@@ -224,24 +272,27 @@ export function usePatrolNfcScan({
         return;
       }
 
-      const capability = await getNfcCapability();
-      const needsSettings =
-        capability.capability === 'disabled' ||
-        capability.capability === 'unsupported' ||
-        capability.capability === 'unavailable';
-
       scanningRef.current = true;
       setScanning(true);
       setModalVisible(true);
       setGateHint(hint ?? null);
       gateHintRef.current = hint ?? null;
-      setStatusHint(
-        needsSettings
-          ? (capability.message ??
-              'Enable NFC in your phone settings, then hold the phone on the tag.')
-          : null,
-      );
-      setShowNfcSettings(needsSettings);
+      setPendingTag(null);
+      pendingTagRef.current = null;
+      setStatusHint(null);
+      setShowNfcSettings(false);
+      setIsSubmitting(false);
+
+      const capability = await getNfcCapability();
+      if (capability.capability !== 'ready') {
+        setStatusHint(
+          capability.message ??
+            'Enable NFC in your phone settings, then hold the phone on the tag.',
+        );
+        setShowNfcSettings(capability.capability === 'disabled');
+        setIsListening(false);
+        return;
+      }
 
       startHardwareListen();
     },
@@ -270,7 +321,10 @@ export function usePatrolNfcScan({
       isSubmitting={isSubmitting}
       gateHint={gateHint}
       statusHint={statusHint}
+      tagInfo={pendingTag}
       onCancel={handleCancelModal}
+      onConfirm={handleConfirmTag}
+      onRescan={handleRescan}
       onOpenSettings={showNfcSettings ? handleOpenSettings : undefined}
     />
   );

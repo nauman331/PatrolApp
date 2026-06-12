@@ -2,6 +2,32 @@ import { Platform } from 'react-native';
 
 type NfcModule = typeof import('react-native-nfc-manager');
 type NfcTechType = NfcModule['NfcTech'];
+type NfcTechValue = NfcTechType[keyof NfcTechType];
+
+export type NfcTagInfo = {
+  uid: string;
+  techTypes: string[];
+  type?: string;
+};
+
+export class NfcUnsupportedError extends Error {
+  constructor(message?: string) {
+    super(
+      message ??
+        'This device does not have NFC hardware. Use an NFC-capable phone to scan checkpoint tags.',
+    );
+    this.name = 'NfcUnsupportedError';
+  }
+}
+
+export class NfcDisabledError extends Error {
+  constructor(message?: string) {
+    super(
+      message ?? 'NFC is turned off. Enable NFC in your phone settings, then try again.',
+    );
+    this.name = 'NfcDisabledError';
+  }
+}
 
 let nfcModulePromise: Promise<NfcModule | null> | null = null;
 let nfcStarted = false;
@@ -66,6 +92,10 @@ export type NfcCapability =
   | 'unsupported'
   | 'unavailable';
 
+function isNoHardwareMessage(message: string): boolean {
+  return /no nfc support|not.*support.*nfc|nfc.*not.*support/i.test(message);
+}
+
 export async function getNfcCapability(): Promise<{
   capability: NfcCapability;
   message?: string;
@@ -79,22 +109,54 @@ export async function getNfcCapability(): Promise<{
   }
 
   const NfcManager = mod.default;
+
+  let supported = false;
+  try {
+    supported = await NfcManager.isSupported();
+  } catch {
+    supported = false;
+  }
+
+  if (!supported) {
+    return {
+      capability: 'unsupported',
+      message:
+        'This device does not have NFC hardware. Use an NFC-capable phone to scan checkpoint tags.',
+    };
+  }
+
   try {
     await NfcManager.start();
     nfcStarted = true;
-
-    let supported = true;
-    try {
-      supported = await NfcManager.isSupported();
-    } catch {
-      supported = true;
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : '';
+    if (isNoHardwareMessage(message)) {
+      return {
+        capability: 'unsupported',
+        message:
+          'This device does not have NFC hardware. Use an NFC-capable phone to scan checkpoint tags.',
+      };
     }
+    return {
+      capability: 'unavailable',
+      message: 'Could not initialize NFC. Enable NFC in settings.',
+    };
+  }
 
-    let enabled = true;
+  if (Platform.OS === 'android') {
+    let enabled = false;
     try {
       enabled = await NfcManager.isEnabled();
-    } catch {
-      enabled = true;
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : '';
+      if (isNoHardwareMessage(message)) {
+        return {
+          capability: 'unsupported',
+          message:
+            'This device does not have NFC hardware. Use an NFC-capable phone to scan checkpoint tags.',
+        };
+      }
+      enabled = false;
     }
 
     if (!enabled) {
@@ -103,22 +165,9 @@ export async function getNfcCapability(): Promise<{
         message: 'NFC is turned off. Enable it in your phone settings.',
       };
     }
-
-    if (!supported) {
-      return {
-        capability: 'unsupported',
-        message:
-          'NFC may be restricted on this device. Enable NFC in settings and try again.',
-      };
-    }
-
-    return { capability: 'ready' };
-  } catch {
-    return {
-      capability: 'unavailable',
-      message: 'Could not initialize NFC. Enable NFC in settings.',
-    };
   }
+
+  return { capability: 'ready' };
 }
 
 export async function openNfcSettings(): Promise<void> {
@@ -157,79 +206,104 @@ function withTimeout<T>(
   });
 }
 
-async function readTagWithTech(
-  mod: NfcModule,
-  tech: NfcTechType[keyof NfcTechType],
-) {
-  const NfcManager = mod.default;
-
-  if (Platform.OS === 'android') {
-    await NfcManager.requestTechnology(tech, {
-      alertMessage: 'Hold your phone near the NFC tag',
-    });
-  } else {
-    await NfcManager.requestTechnology(tech);
-  }
-
-  const tag = await NfcManager.getTag();
-  if (!tag?.id) {
-    throw new Error('Could not read NFC tag ID.');
-  }
-
-  return formatNfcUid(tag.id);
+function shortTechName(tech: unknown): string {
+  const raw = String(tech ?? '');
+  return raw.split('.').pop() ?? raw;
 }
 
-async function readNfcUidViaTechnologies(mod: NfcModule): Promise<string> {
-  const NfcManager = mod.default;
+function buildTagInfo(tag: {
+  id?: unknown;
+  techTypes?: unknown;
+  type?: unknown;
+}): NfcTagInfo {
+  const uid = formatNfcUid(tag.id as string | number[] | Uint8Array);
+  const techTypes = Array.isArray(tag.techTypes)
+    ? [...new Set(tag.techTypes.map(shortTechName).filter(Boolean))]
+    : [];
+
+  return {
+    uid,
+    techTypes,
+    type: tag.type ? String(tag.type) : undefined,
+  };
+}
+
+function getPlatformTechLists(mod: NfcModule): NfcTechValue[][] {
   const { NfcTech } = mod;
-  const techs = [
-    NfcTech.NfcA,
-    NfcTech.Ndef,
-    NfcTech.MifareClassic,
-    NfcTech.NfcB,
-    NfcTech.NfcF,
-    NfcTech.IsoDep,
-    NfcTech.NdefFormatable,
+  if (Platform.OS === 'ios') {
+    return [
+      [
+        NfcTech.MifareIOS,
+        NfcTech.Iso15693IOS,
+        NfcTech.FelicaIOS,
+        NfcTech.IsoDep,
+      ],
+      [NfcTech.Ndef],
+    ];
+  }
+  return [
+    [
+      NfcTech.NfcA,
+      NfcTech.NfcB,
+      NfcTech.NfcF,
+      NfcTech.NfcV,
+      NfcTech.IsoDep,
+      NfcTech.MifareClassic,
+      NfcTech.MifareUltralight,
+      NfcTech.Ndef,
+    ],
   ];
+}
 
-  let lastError: Error | null = null;
+async function readTagWithTechs(
+  mod: NfcModule,
+  techs: NfcTechValue[],
+  timeoutMs: number,
+): Promise<NfcTagInfo> {
+  const NfcManager = mod.default;
 
-  for (const tech of techs) {
-    try {
-      const uid = await withTimeout(
-        readTagWithTech(mod, tech),
-        35000,
+  try {
+    const request = NfcManager.requestTechnology(techs, {
+      alertMessage: 'Hold your phone near the NFC tag',
+    });
+
+    if (Platform.OS === 'ios') {
+      await request;
+    } else {
+      await withTimeout(
+        request,
+        timeoutMs,
         'NFC scan timed out. Hold the phone closer to the tag and try again.',
       );
-      return uid;
-    } catch (error: unknown) {
-      lastError =
-        error instanceof Error
-          ? error
-          : new Error(
-              error &&
-              typeof error === 'object' &&
-              'message' in error &&
-              typeof (error as { message?: unknown }).message === 'string'
-                ? (error as { message: string }).message
-                : 'NFC read failed',
-            );
-    } finally {
+    }
+
+    const tag = await NfcManager.getTag();
+    if (!tag?.id) {
+      throw new Error('Could not read NFC tag ID. Try again.');
+    }
+
+    if (Platform.OS === 'ios') {
       try {
-        await NfcManager.cancelTechnologyRequest();
+        await NfcManager.setAlertMessageIOS('NFC tag detected');
       } catch {
         // no-op
       }
     }
-  }
 
-  throw lastError ?? new Error('Could not read NFC tag. Try again.');
+    return buildTagInfo(tag);
+  } finally {
+    try {
+      await NfcManager.cancelTechnologyRequest();
+    } catch {
+      // no-op
+    }
+  }
 }
 
-async function readNfcUidViaTagEvent(
+async function readTagViaTagEvent(
   mod: NfcModule,
   timeoutMs: number,
-): Promise<string> {
+): Promise<NfcTagInfo> {
   const NfcManager = mod.default;
   const { NfcEvents, NfcAdapter } = mod;
 
@@ -269,7 +343,7 @@ async function readNfcUidViaTagEvent(
         finish(() => {
           clearTimeout(timer);
           cleanup();
-          resolve(formatNfcUid(tag.id as string | number[] | Uint8Array));
+          resolve(buildTagInfo(tag));
         });
       },
     );
@@ -302,36 +376,36 @@ async function readNfcUidViaTagEvent(
   });
 }
 
-export async function readNfcUid(): Promise<string> {
+export function isNfcUserCancelledError(message: string): boolean {
+  return /cancel|invalidated by user|session invalidated/i.test(message);
+}
+
+export async function readNfcTag(): Promise<NfcTagInfo> {
   const mod = await loadNfcModule();
   if (!mod) {
     throw new Error(
-      'NFC module is not available. Rebuild the app with npm run android.',
+      'NFC module is not available. Rebuild the app and try again.',
     );
+  }
+
+  const capability = await getNfcCapability();
+  if (capability.capability === 'unsupported') {
+    throw new NfcUnsupportedError(capability.message);
+  }
+  if (capability.capability === 'disabled') {
+    throw new NfcDisabledError(capability.message);
+  }
+  if (capability.capability !== 'ready') {
+    throw new Error(capability.message ?? 'NFC is not available.');
   }
 
   await ensureNfcStarted(mod);
   const NfcManager = mod.default;
-
   const errors: Error[] = [];
 
   if (Platform.OS === 'android') {
     try {
-      return await readNfcUidViaTechnologies(mod);
-    } catch (error: unknown) {
-      errors.push(
-        error instanceof Error ? error : new Error('Technology read failed'),
-      );
-    } finally {
-      try {
-        await NfcManager.cancelTechnologyRequest();
-      } catch {
-        // no-op
-      }
-    }
-
-    try {
-      return await readNfcUidViaTagEvent(mod, 45000);
+      return await readTagViaTagEvent(mod, 45000);
     } catch (error: unknown) {
       errors.push(
         error instanceof Error ? error : new Error('Tag event read failed'),
@@ -342,45 +416,47 @@ export async function readNfcUid(): Promise<string> {
       } catch {
         // no-op
       }
-    }
-  } else {
-    try {
-      return await readNfcUidViaTagEvent(mod, 45000);
-    } catch (error: unknown) {
-      errors.push(
-        error instanceof Error ? error : new Error('Tag event read failed'),
-      );
-    } finally {
-      try {
-        await NfcManager.unregisterTagEvent();
-      } catch {
-        // no-op
-      }
-    }
-
-    try {
-      return await readNfcUidViaTechnologies(mod);
-    } catch (error: unknown) {
-      errors.push(
-        error instanceof Error ? error : new Error('Technology read failed'),
-      );
     }
   }
 
-  const capability = await getNfcCapability();
-  if (capability.capability === 'disabled') {
-    throw new Error(
-      'NFC is turned off. Enable NFC in your phone settings, then try again.',
-    );
+  for (const techs of getPlatformTechLists(mod)) {
+    try {
+      return await readTagWithTechs(mod, techs, 45000);
+    } catch (error: unknown) {
+      const err =
+        error instanceof Error ? error : new Error('NFC read failed');
+      errors.push(err);
+      if (Platform.OS === 'ios' && isNfcUserCancelledError(err.message)) {
+        throw err;
+      }
+    }
+  }
+
+  if (Platform.OS === 'android') {
+    for (const techs of getPlatformTechLists(mod)) {
+      try {
+        return await readTagWithTechs(mod, techs, 45000);
+      } catch (error: unknown) {
+        errors.push(
+          error instanceof Error ? error : new Error('Technology read failed'),
+        );
+      }
+    }
   }
 
   const lastError = errors[errors.length - 1];
   throw (
     lastError ??
     new Error(
-      'Could not read NFC tag. Enable NFC in settings and hold the phone on the tag.',
+      'Could not read NFC tag. Hold the phone on the tag and try again.',
     )
   );
+}
+
+/** @deprecated Use readNfcTag() for tag info + confirm flow */
+export async function readNfcUid(): Promise<string> {
+  const tag = await readNfcTag();
+  return tag.uid;
 }
 
 export async function stopNfc(): Promise<void> {

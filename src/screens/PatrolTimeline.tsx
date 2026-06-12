@@ -383,7 +383,7 @@ export default function PatrolTimeline() {
   return (
     <View style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor={Colors.headerStart} />
-      <SafeAreaView style={styles.safe} edges={['top', 'left', 'right', 'bottom']}>
+      <SafeAreaView style={styles.safe} edges={['top', 'left', 'right']}>
         <View style={styles.header}>
           <View style={styles.headerLeft}>
             {fromOngoingShift ? (
@@ -417,6 +417,7 @@ export default function PatrolTimeline() {
           ) : null}
         </View>
 
+        <View style={styles.body}>
         {showShimmer ? (
           <PatrolTimelineShimmer />
         ) : (
@@ -659,6 +660,7 @@ export default function PatrolTimeline() {
             ) : null}
           </ScrollView>
         )}
+        </View>
 
         {activeReport && !allComplete ? (
           <View style={styles.scanDock}>
@@ -683,7 +685,7 @@ export default function PatrolTimeline() {
           </View>
         ) : null}
 
-        <View style={styles.navWrap}>
+        <SafeAreaView edges={['bottom']} style={styles.navWrap}>
           <NavBar
             variant="light"
             items={[
@@ -695,7 +697,7 @@ export default function PatrolTimeline() {
             ]}
             onPress={i => navigateGuardBottomTab(navigation, i)}
           />
-        </View>
+        </SafeAreaView>
         {scanModal}
       </SafeAreaView>
     </View>
@@ -743,6 +745,7 @@ const styles = StyleSheet.create({
   },
   addBtnDisabled: { opacity: 0.7 },
   addBtnText: { fontSize: 11, fontWeight: '700', color: Colors.white },
+  body: { flex: 1 },
   scroll: { flex: 1 },
   navWrap: { backgroundColor: Colors.bg },
   scrollContent: { paddingTop: 14 },
