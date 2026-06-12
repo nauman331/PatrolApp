@@ -290,7 +290,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    padding: 18,
+    padding: 15,
     paddingBottom: 12,
   },
   back: { fontSize: 24, fontWeight: 'bold' },
