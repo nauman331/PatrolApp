@@ -207,7 +207,7 @@ export default function ShiftSignInScreen() {
       saveToPhotos: false,
       quality: 0.8,
       includeExtra: true,
-      includeBase64: Platform.OS === 'android',
+      includeBase64: true,
     });
 
     if (result.didCancel) return;

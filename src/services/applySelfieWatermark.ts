@@ -254,6 +254,10 @@ async function applyTimestampWatermark(
 export async function applySelfieWatermark(
   job: SelfieWatermarkJob,
 ): Promise<string> {
+  if (Platform.OS === 'ios') {
+    throw new Error('iOS watermark is handled by SelfieWatermarkProcessor');
+  }
+
   const source = await copyUriToCache(job.sourceUri, job.base64);
   const stamp = Date.now();
 
