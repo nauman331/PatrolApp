@@ -1,14 +1,13 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Image,
-  Platform,
   StyleSheet,
   Text,
   View,
 } from 'react-native';
 import ViewShot from 'react-native-view-shot';
 import {
-  applySelfieWatermark,
+  resolveWatermarkSourceUri,
   type SelfieWatermarkJob,
 } from '../services/applySelfieWatermark';
 
@@ -23,15 +22,25 @@ type Props = {
   onError: (error: Error) => void;
 };
 
-function resolveIosSourceUri(job: SelfieWatermarkJob): string {
-  if (job.base64?.trim()) {
-    const cleaned = job.base64.replace(/^data:image\/\w+;base64,/, '').trim();
-    return `data:image/jpeg;base64,${cleaned}`;
+function normalizeCaptureUri(uri: string): string {
+  if (uri.startsWith('file://') || uri.startsWith('content://')) {
+    return uri;
   }
-  return job.sourceUri;
+  if (uri.startsWith('/')) {
+    return `file://${uri}`;
+  }
+  return uri;
 }
 
-function IOSWatermarkCanvas({
+function waitForNextFrame(): Promise<void> {
+  return new Promise(resolve => {
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => resolve());
+    });
+  });
+}
+
+function WatermarkCanvas({
   job,
   onComplete,
   onError,
@@ -41,26 +50,57 @@ function IOSWatermarkCanvas({
   onError: (error: Error) => void;
 }) {
   const viewRef = useRef<ViewShot>(null);
+  const [sourceUri, setSourceUri] = useState<string | null>(null);
   const [imageReady, setImageReady] = useState(false);
   const capturedRef = useRef(false);
 
-  const sourceUri = useMemo(() => resolveIosSourceUri(job), [job]);
   const aspectRatio =
     job.width && job.height && job.width > 0 ? job.height / job.width : 4 / 3;
   const captureHeight = Math.round(CAPTURE_WIDTH * aspectRatio);
 
   useEffect(() => {
-    setImageReady(false);
+    let cancelled = false;
     capturedRef.current = false;
-  }, [job.sourceUri, job.base64, job.timestamp]);
+    setSourceUri(null);
+    setImageReady(false);
+
+    (async () => {
+      try {
+        const uri = await resolveWatermarkSourceUri(job);
+        if (!cancelled) {
+          setSourceUri(uri);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          onError(
+            error instanceof Error
+              ? error
+              : new Error('Could not read selfie image'),
+          );
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [job, onError]);
 
   useEffect(() => {
-    if (!imageReady || capturedRef.current) {
+    if (!sourceUri || !imageReady || capturedRef.current) {
       return;
     }
 
     let cancelled = false;
-    const timer = setTimeout(async () => {
+
+    (async () => {
+      await waitForNextFrame();
+      await new Promise(resolve => setTimeout(resolve, 250));
+
+      if (cancelled || capturedRef.current) {
+        return;
+      }
+
       try {
         const uri = await viewRef.current?.capture?.();
         if (cancelled || capturedRef.current) {
@@ -71,13 +111,7 @@ function IOSWatermarkCanvas({
           return;
         }
         capturedRef.current = true;
-        onComplete(
-          uri.startsWith('file://') || uri.startsWith('content://')
-            ? uri
-            : uri.startsWith('/')
-              ? `file://${uri}`
-              : uri,
-        );
+        onComplete(normalizeCaptureUri(uri));
       } catch (error) {
         if (!cancelled && !capturedRef.current) {
           onError(
@@ -87,24 +121,37 @@ function IOSWatermarkCanvas({
           );
         }
       }
-    }, 120);
+    })();
 
     return () => {
       cancelled = true;
-      clearTimeout(timer);
     };
-  }, [imageReady, onComplete, onError]);
+  }, [sourceUri, imageReady, onComplete, onError]);
+
+  const canvasStyle = useMemo(
+    () => ({ width: CAPTURE_WIDTH, height: captureHeight }),
+    [captureHeight],
+  );
+
+  if (!sourceUri) {
+    return null;
+  }
 
   return (
-    <View pointerEvents="none" style={styles.offscreen}>
+    <View
+      pointerEvents="none"
+      style={[styles.offscreen, { height: captureHeight }]}
+      collapsable={false}
+    >
       <ViewShot
         ref={viewRef}
         options={{ format: 'jpg', quality: 0.92, result: 'tmpfile' }}
-        style={{ width: CAPTURE_WIDTH, height: captureHeight }}
+        style={canvasStyle}
+        collapsable={false}
       >
         <Image
           source={{ uri: sourceUri }}
-          style={{ width: CAPTURE_WIDTH, height: captureHeight }}
+          style={canvasStyle}
           resizeMode="cover"
           onLoad={() => setImageReady(true)}
           onError={() => onError(new Error('Could not read selfie image'))}
@@ -125,61 +172,31 @@ function IOSWatermarkCanvas({
 export function SelfieWatermarkProcessor({ job, onComplete, onError }: Props) {
   const onCompleteRef = useRef(onComplete);
   const onErrorRef = useRef(onError);
-  const jobIdRef = useRef(0);
 
   onCompleteRef.current = onComplete;
   onErrorRef.current = onError;
 
-  useEffect(() => {
-    if (Platform.OS === 'ios' || !job?.sourceUri) {
-      return;
-    }
-
-    const currentJobId = ++jobIdRef.current;
-    let cancelled = false;
-
-    (async () => {
-      try {
-        const uri = await applySelfieWatermark(job);
-        if (!cancelled && currentJobId === jobIdRef.current) {
-          onCompleteRef.current(uri);
-        }
-      } catch (error) {
-        if (!cancelled && currentJobId === jobIdRef.current) {
-          onErrorRef.current(
-            error instanceof Error
-              ? error
-              : new Error('Watermark failed'),
-          );
-        }
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [job]);
-
-  if (Platform.OS === 'ios' && job?.sourceUri) {
-    return (
-      <IOSWatermarkCanvas
-        job={job}
-        onComplete={uri => onCompleteRef.current(uri)}
-        onError={error => onErrorRef.current(error)}
-      />
-    );
+  if (!job?.sourceUri) {
+    return null;
   }
 
-  return null;
+  return (
+    <WatermarkCanvas
+      job={job}
+      onComplete={uri => onCompleteRef.current(uri)}
+      onError={error => onErrorRef.current(error)}
+    />
+  );
 }
 
 const styles = StyleSheet.create({
   offscreen: {
     position: 'absolute',
-    top: -10000,
+    top: 0,
     left: 0,
-    opacity: 0,
     width: CAPTURE_WIDTH,
+    opacity: 0.01,
+    zIndex: -1,
   },
   logo: {
     position: 'absolute',

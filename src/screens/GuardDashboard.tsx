@@ -450,9 +450,7 @@ export default function GuardDashboard() {
             >
               <SectionHeader title="Today's Patrols" action="See All" />
             </TouchableOpacity>
-          </View>
 
-          <View style={styles.patrolListWrap}>
             {showPatrolShimmer ? (
               <PatrolListShimmer count={3} />
             ) : todayPatrols.length > 0 ? (
@@ -583,11 +581,9 @@ const styles = StyleSheet.create({
     paddingTop: Spacing.md,
     paddingBottom: 0,
     marginTop: -10,
-    justifyContent: 'space-between',
-    minHeight: 0,
   },
   bodyUpper: {
-    flexShrink: 0,
+    flexGrow: 0,
   },
 
   shiftCard: {
@@ -708,12 +704,6 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
 
-  patrolListWrap: {
-    flexShrink: 1,
-    minHeight: 0,
-    maxHeight: PATROL_LIST_MAX_HEIGHT,
-    marginBottom: 0,
-  },
   patrolScroll: {
     maxHeight: PATROL_LIST_MAX_HEIGHT,
   },

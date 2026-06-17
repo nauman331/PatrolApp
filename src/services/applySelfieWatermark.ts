@@ -251,6 +251,33 @@ async function applyTimestampWatermark(
   return normalized;
 }
 
+export async function resolveWatermarkSourceUri(
+  job: SelfieWatermarkJob,
+): Promise<string> {
+  if (job.base64?.trim()) {
+    const cleaned = job.base64.replace(/^data:image\/\w+;base64,/, '').trim();
+    if (cleaned) {
+      return `data:image/jpeg;base64,${cleaned}`;
+    }
+  }
+
+  const normalized = normalizeFileUri(job.sourceUri.trim());
+  if (!normalized) {
+    throw new Error('Could not read selfie image');
+  }
+
+  if (
+    Platform.OS === 'ios' &&
+    (normalized.startsWith('file://') || normalized.startsWith('data:'))
+  ) {
+    if (await fileExists(normalized)) {
+      return normalized;
+    }
+  }
+
+  return copyUriToCache(normalized, job.base64);
+}
+
 export async function applySelfieWatermark(
   job: SelfieWatermarkJob,
 ): Promise<string> {
