@@ -1,8 +1,15 @@
 import React from 'react';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import ManagerDashboard from '../screens/ManagerDashboard';
-import ShiftReportScreen from '../screens/ShiftReportScreen';
-import ProfileScreen from '../screens/ProfileScreen';
+import {
+    ManagerDashboard,
+    ManagerGuardsScreen,
+    ManagerGuardDetailsScreen,
+    ManagerGuardAttendanceScreen,
+    ManagerReportsScreen,
+    ManagerShiftReportScreen,
+    ManagerRosterScreen,
+    ManagerProfileScreen,
+} from '../screens/manager';
 import PrivacyPolicyScreen from '../screens/PrivacyPolicyScreen';
 import TermsConditionsScreen from '../screens/TermsConditionsScreen';
 import { ManagerStackParamList } from './types';
@@ -13,8 +20,7 @@ const Stack = createNativeStackNavigator<ManagerStackParamList>();
 
 /**
  * Manager Navigation Stack
- * Contains all screens accessible to manager users
- * Includes dashboard, shift reports, and profile
+ * Dashboard, guards, reports, roster, and profile flows
  */
 export function ManagerNavigator() {
     return (
@@ -29,21 +35,39 @@ export function ManagerNavigator() {
             <Stack.Screen
                 name={MANAGER_ROUTES.DASHBOARD}
                 component={ManagerDashboard}
-                options={{
-                    animation: 'none',
-                }}
+                options={{ animation: 'none' }}
+            />
+            <Stack.Screen
+                name={MANAGER_ROUTES.GUARDS}
+                component={ManagerGuardsScreen}
+                options={{ animation: 'none' }}
+            />
+            <Stack.Screen
+                name={MANAGER_ROUTES.GUARD_DETAILS}
+                component={ManagerGuardDetailsScreen}
+            />
+            <Stack.Screen
+                name={MANAGER_ROUTES.GUARD_ATTENDANCE}
+                component={ManagerGuardAttendanceScreen}
+            />
+            <Stack.Screen
+                name={MANAGER_ROUTES.REPORTS}
+                component={ManagerReportsScreen}
+                options={{ animation: 'none' }}
             />
             <Stack.Screen
                 name={MANAGER_ROUTES.SHIFT_REPORT}
-                component={ShiftReportScreen}
-                options={{
-                }}
+                component={ManagerShiftReportScreen}
+            />
+            <Stack.Screen
+                name={MANAGER_ROUTES.ROSTER}
+                component={ManagerRosterScreen}
+                options={{ animation: 'none' }}
             />
             <Stack.Screen
                 name={MANAGER_ROUTES.PROFILE}
-                component={ProfileScreen}
-                options={{
-                }}
+                component={ManagerProfileScreen}
+                options={{ animation: 'none' }}
             />
             <Stack.Screen
                 name={MANAGER_ROUTES.PRIVACY_POLICY}

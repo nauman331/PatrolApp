@@ -283,13 +283,53 @@ export type GuardDashboardGuard = {
   phone: string;
 };
 
+export type GuardDashboardTodayJob = {
+  roster_id: number;
+  site_name: string;
+  site_address: string;
+  site_id: number;
+  state: string | null;
+  start_datetime: string;
+  end_datetime: string;
+  shift_date: string;
+  day_of_week: string;
+  status: string;
+};
+
 export type GuardDashboardData = {
   patrolling_report_count: number;
   incident_report_count: number;
   scanners_count: number;
   scan_nfc_count: number;
   guard: GuardDashboardGuard;
+  today_jobs: GuardDashboardTodayJob[];
 };
+
+function extractTodayJobs(raw: Record<string, unknown>): GuardDashboardTodayJob[] {
+  const jobs = raw.today_jobs;
+  if (!Array.isArray(jobs)) return [];
+
+  return jobs
+    .filter(
+      (job): job is Record<string, unknown> =>
+        Boolean(job && typeof job === 'object' && !Array.isArray(job)),
+    )
+    .map(job => ({
+      roster_id: Number(job.roster_id) || 0,
+      site_name: typeof job.site_name === 'string' ? job.site_name : '',
+      site_address: typeof job.site_address === 'string' ? job.site_address : '',
+      site_id: Number(job.site_id) || 0,
+      state: typeof job.state === 'string' ? job.state : null,
+      start_datetime:
+        typeof job.start_datetime === 'string' ? job.start_datetime : '',
+      end_datetime:
+        typeof job.end_datetime === 'string' ? job.end_datetime : '',
+      shift_date: typeof job.shift_date === 'string' ? job.shift_date : '',
+      day_of_week: typeof job.day_of_week === 'string' ? job.day_of_week : '',
+      status: typeof job.status === 'string' ? job.status : '',
+    }))
+    .filter(job => job.roster_id > 0);
+}
 
 function extractDashboardData(payload: unknown): GuardDashboardData | null {
   if (!payload || typeof payload !== 'object') return null;
@@ -307,17 +347,22 @@ function extractDashboardData(payload: unknown): GuardDashboardData | null {
   const name = typeof guard.name === 'string' ? guard.name.trim() : '';
   if (!name) return null;
 
+  const scanCount =
+    Number(raw.scaned_nfc_count ?? raw.scan_nfc_count ?? raw.scanned_nfc_count) ||
+    0;
+
   return {
     patrolling_report_count: Number(raw.patrolling_report_count) || 0,
     incident_report_count: Number(raw.incident_report_count) || 0,
     scanners_count: Number(raw.scanners_count) || 0,
-    scan_nfc_count: Number(raw.scan_nfc_count) || 0,
+    scan_nfc_count: scanCount,
     guard: {
       id: Number(guard.id) || 0,
       name,
       email: typeof guard.email === 'string' ? guard.email : '',
       phone: typeof guard.phone === 'string' ? guard.phone : '',
     },
+    today_jobs: extractTodayJobs(raw),
   };
 }
 
@@ -653,6 +698,10 @@ export interface ScanNfcPayload {
   nfc_uid: string;
   coordinates: string;
   patrolling_report_id?: string | number;
+  /** API field: patrolling report id */
+  patrolling_id?: string | number;
+  /** API field: scanner row id */
+  scanner_id?: string | number;
   roster_id?: string | number;
   guard_id?: string | number;
 }
@@ -664,11 +713,13 @@ async function postScanNfc(
   formData.append('nfc_uid', payload.nfc_uid.trim());
   formData.append('coordinates', payload.coordinates.trim());
 
-  if (payload.patrolling_report_id != null) {
-    formData.append(
-      'patrolling_report_id',
-      String(payload.patrolling_report_id),
-    );
+  const patrollingId =
+    payload.patrolling_id ?? payload.patrolling_report_id;
+  if (patrollingId != null) {
+    formData.append('patrolling_id', String(patrollingId));
+  }
+  if (payload.scanner_id != null) {
+    formData.append('id', String(payload.scanner_id));
   }
   if (payload.roster_id != null) {
     formData.append('roster_id', String(payload.roster_id));
@@ -746,6 +797,7 @@ export async function guardScanNfcWithVariants(
 
 export async function guardTodayPatrolling(
   guardId?: string | number | null,
+  rosterId?: string | number | null,
 ): Promise<GuardApiResult<TodayPatrollingResult>> {
   try {
     const storedGuardId = await AsyncStorage.getItem('guardId');
@@ -762,9 +814,15 @@ export async function guardTodayPatrolling(
       };
     }
 
-    const response = await apiClient.get(
-      `/guard/today-patrolling/${resolvedGuardId}`,
-    );
+    const formData = new FormData();
+    formData.append('guard_id', resolvedGuardId);
+    if (rosterId != null && String(rosterId).trim()) {
+      formData.append('roster_id', String(rosterId).trim());
+    }
+
+    const response = await apiClient.post('/guard/today-patrolling', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
     const body = response.data;
     const reports = normalizePatrollingReports(body?.patrolling_reports);
     const ok =

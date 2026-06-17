@@ -250,64 +250,11 @@ export default function OngoingShiftScreen() {
     }
   };
 
-  const handleStartPatrolling = async () => {
-    const session = await getActiveShiftSession();
-    if (!session) {
-      promptCheckInRequired(() => navigation.navigate(GUARD_ROUTES.SHIFTS));
-      return;
-    }
-    if (rosterId == null) {
-      Alert.alert('Error', 'Missing roster for this shift.');
-      return;
-    }
-    if (String(session.rosterId) !== String(rosterId)) {
-      Alert.alert(
-        'Shift mismatch',
-        'This screen does not match your checked-in shift. Open the correct ongoing shift first.',
-      );
-      return;
-    }
-    if (siteId == null) {
-      Alert.alert('Error', 'Missing site for this shift.');
-      return;
-    }
-
-    let coords = locationCoords.trim();
-    if (!coords) {
-      setLocationLoading(true);
-      try {
-        const allowed = await requestLocationPermission();
-        if (!allowed) {
-          Alert.alert(
-            'Permission required',
-            'Location permission is needed to start patrolling.',
-          );
-          return;
-        }
-        let fix;
-        try {
-          fix = await fetchLocationFix(true, locationFallback);
-        } catch {
-          fix = await fetchLocationFix(false, locationFallback);
-        }
-        coords = fix.coordinates;
-        setLocationCoords(fix.coordinates);
-        setLocationLabel(fix.displayName);
-        setLocationFetched(true);
-      } catch {
-        Alert.alert('Location unavailable', 'Could not get GPS coordinates.');
-        return;
-      } finally {
-        setLocationLoading(false);
-      }
-    }
-
+  const handleStartPatrolling = () => {
     navigation.navigate(GUARD_ROUTES.PATROL_TIMELINE, {
       rosterId,
       siteId,
       site,
-      coordinates: coords,
-      autoStart: true,
     });
   };
 

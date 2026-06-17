@@ -33,7 +33,7 @@ import { clearAuth } from '../store/slices/authSlice';
 import { fetchGuardIncidents, selectIncidents } from '../store/slices/incidentsSlice';
 import { logout } from '../services/authApi';
 import { useNavigation } from '@react-navigation/native';
-import { GUARD_ROUTES, MANAGER_ROUTES, navigateGuardBottomTab } from '../navigation/constants';
+import { GUARD_ROUTES, MANAGER_ROUTES, navigateGuardBottomTab, navigateManagerBottomTab } from '../navigation/constants';
 import {
   deleteUserAccount,
   fetchUserProfile,
@@ -303,7 +303,7 @@ export default function ProfileScreen({ onLogout }: Props) {
 
   const handleViewReports = () => {
     if (userRole === 'manager') {
-      navigation.navigate(MANAGER_ROUTES.SHIFT_REPORT);
+      navigation.navigate(MANAGER_ROUTES.REPORTS);
       return;
     }
     navigation.navigate(GUARD_ROUTES.INCIDENTS);
@@ -540,14 +540,7 @@ export default function ProfileScreen({ onLogout }: Props) {
           ]}
           onPress={i => {
             if (userRole === 'manager') {
-              const managerScreens = [
-                MANAGER_ROUTES.DASHBOARD,
-                MANAGER_ROUTES.SHIFT_REPORT,
-                MANAGER_ROUTES.SHIFT_REPORT,
-                MANAGER_ROUTES.DASHBOARD,
-                MANAGER_ROUTES.PROFILE,
-              ];
-              navigation.navigate(managerScreens[i]);
+              navigateManagerBottomTab(navigation, i);
               return;
             }
 

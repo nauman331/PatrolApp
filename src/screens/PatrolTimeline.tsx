@@ -40,12 +40,10 @@ import {
   guardStartPatrol,
   guardTodayPatrolling,
   type PatrollingReport,
-  type PatrolScanner,
 } from '../services/guardApi';
 import {
   findActiveReportForRoster,
   getCompletedCount,
-  getNextScanner,
   isPatrolReportActive,
   isScannerComplete,
 } from '../services/patrolUtils';
@@ -60,8 +58,6 @@ import {
 
 type PatrolTimelineRoute = GuardStackScreenProps<'PatrolTimeline'>['route'];
 
-type ScannerStatus = 'done' | 'pending' | 'now';
-
 function formatPatrolTime(value?: string | null): string {
   if (!value) return '—';
   const normalized = value.replace(' ', 'T');
@@ -71,15 +67,6 @@ function formatPatrolTime(value?: string | null): string {
     hour: '2-digit',
     minute: '2-digit',
   });
-}
-
-function getScannerUiStatus(
-  scanner: PatrolScanner,
-  nextScannerId: number | null,
-): ScannerStatus {
-  if (isScannerComplete(scanner)) return 'done';
-  if (scanner.id === nextScannerId) return 'now';
-  return 'pending';
 }
 
 async function requestLocationPermission(): Promise<boolean> {
@@ -118,7 +105,6 @@ export default function PatrolTimeline() {
   const siteId = route.params?.siteId;
   const siteName = route.params?.site;
   const coordinates = route.params?.coordinates;
-  const autoStart = route.params?.autoStart === true;
   const fromOngoingShift = rosterId != null;
 
   const [loading, setLoading] = useState(true);
@@ -136,7 +122,6 @@ export default function PatrolTimeline() {
   const [activeSession, setActiveSession] = useState<ActiveShiftSession | null>(
     null,
   );
-  const autoStartAttemptedRef = useRef(false);
   const isMountedRef = useRef(true);
   const locationRef = useRef(coordinates ?? '');
 
@@ -168,7 +153,7 @@ export default function PatrolTimeline() {
           rosterId != null ? null : await getActiveShiftSession();
         const resolvedRosterId = rosterId ?? session?.rosterId ?? shiftRosterId;
 
-        const result = await guardTodayPatrolling(guardId);
+        const result = await guardTodayPatrolling(guardId, resolvedRosterId);
         if (!isMountedRef.current) return null;
 
         if (!result.success) {
@@ -246,6 +231,15 @@ export default function PatrolTimeline() {
       return false;
     }
 
+    const loaded = await loadPatrols({ silent: true });
+    if (loaded?.active) {
+      Alert.alert(
+        'Patrol in progress',
+        'Complete all NFC scans for the current patrol before starting a new one.',
+      );
+      return false;
+    }
+
     const patrolSiteId = siteId ?? session.siteId;
     if (patrolSiteId == null) {
       Alert.alert('Error', 'Site is required to start patrolling.');
@@ -302,6 +296,9 @@ export default function PatrolTimeline() {
   const activeReportRef = useRef<PatrollingReport | null>(null);
   activeReportRef.current = activeReport;
 
+  const loadPatrolsRef = useRef(loadPatrols);
+  loadPatrolsRef.current = loadPatrols;
+
   const {
     scanning: nfcScanning,
     handleScanCheckpoint,
@@ -313,6 +310,7 @@ export default function PatrolTimeline() {
       if (!report) return null;
       return {
         patrolling_report_id: report.id,
+        patrolling_id: report.id,
         roster_id: report.roster_id ?? rosterId ?? shiftRosterId,
         guard_id: report.guard_id ?? guardId ?? undefined,
         report,
@@ -332,13 +330,9 @@ export default function PatrolTimeline() {
         return [report, ...prev];
       });
       setLastScannedGate(gateName);
+      loadPatrolsRef.current({ silent: true });
     },
   });
-
-  const loadPatrolsRef = useRef(loadPatrols);
-  const startPatrolRef = useRef(startPatrol);
-  loadPatrolsRef.current = loadPatrols;
-  startPatrolRef.current = startPatrol;
 
   useFocusEffect(
     useCallback(() => {
@@ -353,30 +347,7 @@ export default function PatrolTimeline() {
             setShiftRosterId(session.rosterId);
           }
 
-          const loaded = await loadPatrolsRef.current();
-          if (cancelled || !isMountedRef.current) return;
-
-          if (
-            autoStart &&
-            rosterId != null &&
-            siteId != null &&
-            !autoStartAttemptedRef.current
-          ) {
-            autoStartAttemptedRef.current = true;
-            const session = await getActiveShiftSession();
-            if (
-              !session ||
-              String(session.rosterId) !== String(rosterId)
-            ) {
-              promptCheckInRequired(() =>
-                navigation.navigate(GUARD_ROUTES.SHIFTS),
-              );
-              return;
-            }
-            if (!loaded?.active) {
-              await startPatrolRef.current();
-            }
-          }
+          await loadPatrolsRef.current();
         } catch {
           // Prevent unhandled rejection crashes on focus load.
         }
@@ -385,7 +356,7 @@ export default function PatrolTimeline() {
       return () => {
         cancelled = true;
       };
-    }, [autoStart, rosterId, siteId, navigation]),
+    }, [rosterId]),
   );
 
   const handleRefresh = async () => {
@@ -408,15 +379,18 @@ export default function PatrolTimeline() {
     startPatrol();
   };
 
-  const nextScanner = getNextScanner(activeReport);
-  const nextScannerId = nextScanner?.id ?? null;
   const completedCount = activeReport ? getCompletedCount(activeReport) : 0;
   const totalScanners = activeReport?.scanners?.length ?? 0;
   const progressPct =
     totalScanners > 0 ? Math.round((completedCount / totalScanners) * 100) : 0;
   const allComplete = totalScanners > 0 && completedCount >= totalScanners;
 
-  const historyReports = reports.filter(r => r.id !== activeReport?.id);
+  const rosterReports = resolvedRosterId
+    ? reports.filter(r => String(r.roster_id) === String(resolvedRosterId))
+    : reports;
+  const completedRounds = rosterReports.filter(r => !isPatrolReportActive(r));
+  const runningRounds = rosterReports.filter(r => isPatrolReportActive(r));
+  const historyReports = rosterReports.filter(r => r.id !== activeReport?.id);
   const patrolHeaderDate = formatFullDisplayDate(patrolDate);
   const patrolHeaderSub = [
     siteName ?? activeSession?.site,
@@ -425,12 +399,6 @@ export default function PatrolTimeline() {
     .filter(Boolean)
     .join(' · ');
   const screenTitle = activeReport ? 'Patrolling' : 'Patrol';
-
-  const dotColors: Record<ScannerStatus, string> = {
-    done: Colors.success,
-    now: Colors.accent,
-    pending: Colors.textMuted,
-  };
 
   const showShimmer = loading || starting;
 
@@ -462,7 +430,9 @@ export default function PatrolTimeline() {
             <View style={styles.hdrActions}>
               <View style={styles.countBadge}>
                 <Text style={styles.countBadgeText}>
-                  {loading ? '...' : `${reports.length} ROUNDS`}
+                  {loading
+                    ? '...'
+                    : `${completedRounds.length} done · ${runningRounds.length} running`}
                 </Text>
               </View>
 
@@ -512,15 +482,15 @@ export default function PatrolTimeline() {
                     <Text style={styles.summaryTime}>
                       Started {formatPatrolTime(activeReport.started_at)}
                     </Text>
-                    {nextScanner ? (
-                      <Text style={styles.nextGate}>
-                        Next: {nextScanner.name}
-                      </Text>
-                    ) : allComplete ? (
+                    {allComplete ? (
                       <Text style={styles.nextGateDone}>
-                        All checkpoints completed
+                        All checkpoints completed — start a new patrol when ready
                       </Text>
-                    ) : null}
+                    ) : (
+                      <Text style={styles.nextGate}>
+                        {completedCount} of {totalScanners} checkpoints scanned
+                      </Text>
+                    )}
                   </View>
                   <View style={styles.progressRing}>
                     <Text style={styles.progressRingVal}>{progressPct}%</Text>
@@ -542,9 +512,22 @@ export default function PatrolTimeline() {
                 <Text style={styles.emptyTitle}>No active patrol</Text>
                 <Text style={styles.emptySub}>
                   {hasCheckedInShift
-                    ? 'Tap + Start to begin a new patrol round for this shift.'
-                    : 'Check in to a shift first, then start patrolling from the ongoing shift screen.'}
+                    ? 'Tap Start to begin a new patrol round for this shift.'
+                    : 'Check in to a shift first, then open patrolling from the ongoing shift screen.'}
                 </Text>
+                {canStartPatrol ? (
+                  <TouchableOpacity
+                    style={[styles.startMainBtn, starting && styles.addBtnDisabled]}
+                    onPress={handleStartNewPatrol}
+                    disabled={starting}
+                  >
+                    {starting ? (
+                      <ActivityIndicator size="small" color={Colors.white} />
+                    ) : (
+                      <Text style={styles.startMainBtnText}>Start Patrol</Text>
+                    )}
+                  </TouchableOpacity>
+                ) : null}
               </View>
             )}
 
@@ -564,21 +547,19 @@ export default function PatrolTimeline() {
                 <View style={styles.timeline}>
                   <View style={styles.verticalLine} />
                   {activeReport.scanners.map(scanner => {
-                    const status = getScannerUiStatus(scanner, nextScannerId);
-                    const isNow = status === 'now';
-                    const isPending = status === 'pending';
+                    const isDone = isScannerComplete(scanner);
 
                     return (
-                      <View
-                        key={scanner.id}
-                        style={[styles.tlRow, isPending && { opacity: 0.6 }]}
-                      >
+                      <View key={scanner.id} style={styles.tlRow}>
                         <View style={styles.dotCol}>
                           <View
                             style={[
                               styles.dot,
-                              { backgroundColor: dotColors[status] },
-                              isNow && styles.dotNowGlow,
+                              {
+                                backgroundColor: isDone
+                                  ? Colors.success
+                                  : Colors.accent,
+                              },
                             ]}
                           />
                         </View>
@@ -586,8 +567,7 @@ export default function PatrolTimeline() {
                         <View
                           style={[
                             styles.card,
-                            isNow && styles.cardNow,
-                            status === 'done' && styles.cardDone,
+                            isDone ? styles.cardDone : styles.cardNow,
                           ]}
                         >
                           <View style={styles.cardTop}>
@@ -595,11 +575,7 @@ export default function PatrolTimeline() {
                               <MapPin
                                 size={14}
                                 color={
-                                  status === 'done'
-                                    ? Colors.success
-                                    : isNow
-                                      ? Colors.accent
-                                      : Colors.textPrimary
+                                  isDone ? Colors.success : Colors.accent
                                 }
                               />
                               <Text style={styles.cardLoc}>{scanner.name}</Text>
@@ -607,34 +583,26 @@ export default function PatrolTimeline() {
                             <View
                               style={[
                                 styles.statusChip,
-                                status === 'done'
+                                isDone
                                   ? styles.statusChipDone
-                                  : isNow
-                                    ? styles.statusChipNow
-                                    : styles.statusChipPending,
+                                  : styles.statusChipNow,
                               ]}
                             >
                               <Text
                                 style={[
                                   styles.statusChipText,
-                                  status === 'done'
+                                  isDone
                                     ? styles.statusChipTextDone
-                                    : isNow
-                                      ? styles.statusChipTextNow
-                                      : styles.statusChipTextPending,
+                                    : styles.statusChipTextNow,
                                 ]}
                               >
-                                {status === 'done'
-                                  ? 'Scanned'
-                                  : isNow
-                                    ? 'Scan now'
-                                    : 'Pending'}
+                                {isDone ? 'Done' : 'Ready'}
                               </Text>
                             </View>
                           </View>
 
                           <Text style={styles.nfcValue}>
-                            Tap tag at gate to read UID
+                            {scanner.value || 'Tap tag at gate to read UID'}
                           </Text>
 
                           {scanner.scan_at ? (
@@ -644,14 +612,17 @@ export default function PatrolTimeline() {
                                 Scanned at {formatPatrolTime(scanner.scan_at)}
                               </Text>
                             </View>
-                          ) : isNow ? (
+                          ) : (
                             <>
                               <Text style={styles.scanPrompt}>
-                                Hold your phone on the physical NFC tag at this
-                                gate, then tap the scan button above.
+                                Hold your phone on the NFC tag at this gate, then
+                                tap scan.
                               </Text>
                               <TouchableOpacity
-                                style={styles.scanGateBtn}
+                                style={[
+                                  styles.scanGateBtn,
+                                  nfcScanning && styles.scanGateBtnDisabled,
+                                ]}
                                 onPress={() => handleScanCheckpoint(scanner)}
                                 disabled={nfcScanning}
                               >
@@ -661,7 +632,7 @@ export default function PatrolTimeline() {
                                 </Text>
                               </TouchableOpacity>
                             </>
-                          ) : null}
+                          )}
                         </View>
                       </View>
                     );
@@ -716,7 +687,7 @@ export default function PatrolTimeline() {
                                 : styles.statusDoneText,
                             ]}
                           >
-                            {roundActive ? 'Active' : 'Done'}
+                            {roundActive ? 'Running' : 'Completed'}
                           </Text>
                         </View>
                       </View>
@@ -920,6 +891,20 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     lineHeight: 18,
   },
+  startMainBtn: {
+    marginTop: 14,
+    backgroundColor: Colors.accent,
+    borderRadius: Radii.md,
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    minWidth: 140,
+    alignItems: 'center',
+  },
+  startMainBtnText: {
+    fontSize: FontSizes.sm,
+    fontWeight: '700',
+    color: Colors.white,
+  },
   section: { paddingBottom: 8 },
   sectionTitle: {
     fontSize: FontSizes.xs,
@@ -1040,6 +1025,7 @@ const styles = StyleSheet.create({
     fontSize: FontSizes.xs,
     fontWeight: '700',
   },
+  scanGateBtnDisabled: { opacity: 0.6 },
   historyCard: {
     backgroundColor: Colors.bgCard,
     borderRadius: Radii.lg,

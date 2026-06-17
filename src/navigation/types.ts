@@ -77,8 +77,23 @@ export type GuardStackParamList = {
  */
 export type ManagerStackParamList = {
     ManagerDashboard: undefined;
-    ShiftReport: { shiftId?: string } | undefined;
-    Profile: undefined;
+    ManagerGuards: undefined;
+    ManagerGuardDetails: {
+        guardId?: string;
+        name?: string;
+    };
+    ManagerGuardAttendance: {
+        guardId?: string;
+        name?: string;
+    };
+    ManagerReports: undefined;
+    ManagerShiftReport: {
+        shiftId?: string;
+        guardName?: string;
+        site?: string;
+    } | undefined;
+    ManagerRoster: undefined;
+    ManagerProfile: undefined;
     PrivacyPolicy: undefined;
     TermsConditions: undefined;
 };

@@ -32,7 +32,6 @@ import {
   ScanLine,
 } from 'lucide-react-native';
 import {
-  findActiveShift,
   mapApiJobToShift,
   type MappedShift,
 } from '../services/guardJobsMapper';
@@ -44,12 +43,7 @@ import {
 import { useFocusEffect } from '@react-navigation/native';
 import { useGuardNavigation } from '../navigation/utils';
 import { GUARD_ROUTES, navigateGuardBottomTab } from '../navigation/constants';
-import { useAppDispatch, useAppSelector } from '../store/hooks';
-import {
-  fetchGuardJobs,
-  selectJobsItems,
-  selectJobsLoading,
-} from '../store/slices/jobsSlice';
+import { useAppSelector } from '../store/hooks';
 import {
   getGuardDashboardData,
   type GuardDashboardData,
@@ -76,20 +70,12 @@ function firstName(fullName: string): string {
   return part || 'Guard';
 }
 
-const PATROL_ITEM_HEIGHT = 67;
-const PATROL_LIST_MAX_HEIGHT = PATROL_ITEM_HEIGHT * 3;
-
 export default function GuardDashboard() {
   const navigation = useGuardNavigation();
-  const dispatch = useAppDispatch();
   const guardId = useAppSelector(state => state.auth?.guardId ?? null);
-  const jobsRaw = useAppSelector(selectJobsItems);
-  const jobsLoading = useAppSelector(selectJobsLoading);
 
   const [dashboard, setDashboard] = useState<GuardDashboardData | null>(null);
   const [dashboardLoading, setDashboardLoading] = useState(true);
-  const [activeShift, setActiveShift] = useState<MappedShift | null>(null);
-  const [todayPatrols, setTodayPatrols] = useState<MappedShift[]>([]);
   const [activeSession, setActiveSession] = useState<ActiveShiftSession | null>(
     null,
   );
@@ -97,18 +83,20 @@ export default function GuardDashboard() {
 
   const loadDashboard = useCallback(async () => {
     setDashboardLoading(true);
-    const result = await getGuardDashboardData(guardId);
+    const [result, session] = await Promise.all([
+      getGuardDashboardData(guardId),
+      getActiveShiftSession(),
+    ]);
     if (result.success && result.data) {
       setDashboard(result.data);
     }
+    setActiveSession(session);
     setDashboardLoading(false);
   }, [guardId]);
 
   const refreshDashboard = useCallback(() => {
-    dispatch(fetchGuardJobs());
-    getActiveShiftSession().then(setActiveSession);
     loadDashboard();
-  }, [dispatch, loadDashboard]);
+  }, [loadDashboard]);
 
   useFocusEffect(
     useCallback(() => {
@@ -133,43 +121,23 @@ export default function GuardDashboard() {
     return () => subscription.remove();
   }, [refreshDashboard]);
 
+  const todayJobs = dashboard?.today_jobs ?? [];
+
+  const todayPatrols = useMemo(
+    () =>
+      todayJobs
+        .map(mapApiJobToShift)
+        .filter((shift): shift is MappedShift => Boolean(shift)),
+    [todayJobs],
+  );
+
+  const activeShift = useMemo(
+    () => todayPatrols.find(shift => shift.status === 'active') ?? null,
+    [todayPatrols],
+  );
+
   const hasOngoingShift =
     activeSession != null || activeShift?.status === 'active';
-
-  useEffect(() => {
-    if (!jobsRaw.length) {
-      setTodayPatrols([]);
-      setActiveShift(null);
-      return;
-    }
-
-    setActiveShift(findActiveShift(jobsRaw));
-
-    const now = new Date();
-    const localToday = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-
-    const mappedToday = jobsRaw
-      .filter((job: any) => {
-        const d =
-          job?.shift_date ??
-          job?.date ??
-          job?.shiftDate ??
-          job?.scheduled_date;
-        return typeof d === 'string' ? d === localToday : false;
-      })
-      .map(mapApiJobToShift)
-      .filter((shift: MappedShift | null): shift is MappedShift =>
-        Boolean(shift),
-      );
-
-    const fallbackMapped = jobsRaw
-      .map(mapApiJobToShift)
-      .filter((shift: MappedShift | null): shift is MappedShift =>
-        Boolean(shift),
-      );
-
-    setTodayPatrols(mappedToday.length > 0 ? mappedToday : fallbackMapped);
-  }, [jobsRaw]);
 
   const guardName = dashboard?.guard.name ?? 'Security Guard';
   const greetingName = firstName(guardName);
@@ -293,9 +261,8 @@ export default function GuardDashboard() {
     },
   ];
 
-  const statsLoading = dashboardLoading;
-  const showShiftShimmer = jobsLoading;
-  const showPatrolShimmer = jobsLoading;
+  const showShiftShimmer = dashboardLoading;
+  const showPatrolShimmer = dashboardLoading;
 
   return (
     <View style={styles.container}>
@@ -397,7 +364,7 @@ export default function GuardDashboard() {
               </View>
             )}
 
-            {statsLoading ? (
+            {dashboardLoading ? (
               <DashboardStatsShimmer />
             ) : (
               <View style={styles.statsGrid}>
@@ -460,12 +427,13 @@ export default function GuardDashboard() {
                 showsVerticalScrollIndicator={false}
                 nestedScrollEnabled
               >
-                {todayPatrols.map(patrol => (
+                {todayPatrols.map((patrol, index) => (
                   <PatrolItem
                     key={String(patrol.rosterId)}
                     location={patrol.site}
                     time={patrol.time}
                     status={patrol.status === 'done' ? 'done' : 'pending'}
+                    isLast={index === todayPatrols.length - 1}
                   />
                 ))}
               </ScrollView>
@@ -583,7 +551,7 @@ const styles = StyleSheet.create({
     marginTop: -10,
   },
   bodyUpper: {
-    flexGrow: 0,
+    flex: 1,
   },
 
   shiftCard: {
@@ -705,10 +673,10 @@ const styles = StyleSheet.create({
   },
 
   patrolScroll: {
-    maxHeight: PATROL_LIST_MAX_HEIGHT,
+    flex: 1,
   },
   patrolScrollContent: {
-    paddingBottom: 0,
+    paddingBottom: Spacing.sm,
   },
   patrolMetaText: {
     fontSize: FontSizes.sm,

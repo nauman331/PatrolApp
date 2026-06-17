@@ -244,6 +244,7 @@ interface PatrolItemProps {
   location: string;
   time: string;
   status: PatrolStatus;
+  isLast?: boolean;
 }
 
 const dotColor: Record<PatrolStatus, string> = {
@@ -256,8 +257,9 @@ export const PatrolItem: React.FC<PatrolItemProps> = ({
   location,
   time,
   status,
+  isLast = false,
 }) => (
-  <View style={[styles.patrolItem, Shadows.card]}>
+  <View style={[styles.patrolItem, !isLast && styles.patrolItemSpaced, Shadows.card]}>
     <View
       style={[
         styles.patrolDot,
@@ -397,10 +399,12 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.bgCard,
     borderRadius: Radii.md,
     padding: Spacing.md,
-    marginBottom: 7,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
+  },
+  patrolItemSpaced: {
+    marginBottom: 7,
   },
   patrolDot: { width: 9, height: 9, borderRadius: 9 },
   patrolLoc: {

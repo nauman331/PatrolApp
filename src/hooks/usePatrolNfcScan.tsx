@@ -24,11 +24,12 @@ import {
   findActiveReportForRoster,
   findMatchingScanner,
   findScannedGateName,
+  isScannerComplete,
 } from '../services/patrolUtils';
 
 export type PatrolScanContext = Pick<
   ScanNfcPayload,
-  'patrolling_report_id' | 'roster_id' | 'guard_id'
+  'patrolling_report_id' | 'patrolling_id' | 'scanner_id' | 'roster_id' | 'guard_id'
 > & {
   report?: PatrollingReport | null;
 };
@@ -50,7 +51,7 @@ async function resolveScanContext(
   const rosterId = context?.roster_id;
   if (!guardId && rosterId == null) return null;
 
-  const today = await guardTodayPatrolling(guardId);
+  const today = await guardTodayPatrolling(guardId, rosterId);
   return findActiveReportForRoster(today.data?.reports ?? [], rosterId);
 }
 
@@ -66,8 +67,11 @@ async function submitTagUidToApi(
   ];
 
   return guardScanNfcWithVariants(variants, coordinates, {
-    patrolling_report_id:
-      context?.patrolling_report_id ?? resolvedReport?.id,
+    patrolling_id:
+      context?.patrolling_id ??
+      context?.patrolling_report_id ??
+      resolvedReport?.id,
+    scanner_id: context?.scanner_id,
     roster_id: context?.roster_id ?? resolvedReport?.roster_id,
     guard_id: context?.guard_id ?? resolvedReport?.guard_id,
   });
@@ -97,6 +101,7 @@ export function usePatrolNfcScan({
   const listenCancelledRef = useRef(false);
   const gateHintRef = useRef<string | null>(null);
   const pendingTagRef = useRef<NfcTagInfo | null>(null);
+  const pendingScannerRef = useRef<PatrolScanner | null>(null);
 
   const resetScanState = useCallback(() => {
     scanningRef.current = false;
@@ -109,6 +114,7 @@ export function usePatrolNfcScan({
     setShowNfcSettings(false);
     setPendingTag(null);
     pendingTagRef.current = null;
+    pendingScannerRef.current = null;
     gateHintRef.current = null;
   }, []);
 
@@ -138,9 +144,33 @@ export function usePatrolNfcScan({
       }
 
       const context = getScanContext?.() ?? null;
+      const scanner = pendingScannerRef.current;
       const report = context?.report ?? (await resolveScanContext(context));
 
-      const result = await submitTagUidToApi(uid, coordinates, report, context);
+      const scanContext: PatrolScanContext | null = context
+        ? {
+            ...context,
+            patrolling_id:
+              context.patrolling_id ??
+              context.patrolling_report_id ??
+              report?.id,
+            scanner_id: context.scanner_id ?? scanner?.id,
+          }
+        : report
+          ? {
+              patrolling_id: report.id,
+              scanner_id: scanner?.id,
+              roster_id: report.roster_id,
+              guard_id: report.guard_id,
+            }
+          : null;
+
+      const result = await submitTagUidToApi(
+        uid,
+        coordinates,
+        report,
+        scanContext,
+      );
 
       if (!result.success) {
         Alert.alert(
@@ -261,7 +291,7 @@ export function usePatrolNfcScan({
   }, [startHardwareListen]);
 
   const openScanner = useCallback(
-    async (hint?: string) => {
+    async (scanner?: PatrolScanner) => {
       if (scanningRef.current) return;
 
       if (requireActivePatrol && hasActivePatrol && !hasActivePatrol()) {
@@ -271,8 +301,9 @@ export function usePatrolNfcScan({
       scanningRef.current = true;
       setScanning(true);
       setModalVisible(true);
-      setGateHint(hint ?? null);
-      gateHintRef.current = hint ?? null;
+      setGateHint(scanner?.name ?? null);
+      gateHintRef.current = scanner?.name ?? null;
+      pendingScannerRef.current = scanner ?? null;
       setPendingTag(null);
       pendingTagRef.current = null;
       setStatusHint(null);
@@ -297,7 +328,8 @@ export function usePatrolNfcScan({
 
   const handleScanCheckpoint = useCallback(
     (scanner: PatrolScanner) => {
-      openScanner(scanner.name);
+      if (isScannerComplete(scanner)) return;
+      openScanner(scanner);
     },
     [openScanner],
   );

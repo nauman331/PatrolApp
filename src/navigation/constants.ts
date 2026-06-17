@@ -86,17 +86,22 @@ export function navigateGuardBottomTab(
  */
 export const MANAGER_ROUTES = {
     DASHBOARD: 'ManagerDashboard',
-    SHIFT_REPORT: 'ShiftReport',
-    PROFILE: 'Profile',
+    GUARDS: 'ManagerGuards',
+    GUARD_DETAILS: 'ManagerGuardDetails',
+    GUARD_ATTENDANCE: 'ManagerGuardAttendance',
+    REPORTS: 'ManagerReports',
+    SHIFT_REPORT: 'ManagerShiftReport',
+    ROSTER: 'ManagerRoster',
+    PROFILE: 'ManagerProfile',
     PRIVACY_POLICY: 'PrivacyPolicy',
     TERMS_CONDITIONS: 'TermsConditions',
 } as const;
 
 export const MANAGER_BOTTOM_TAB_ROUTES = [
     MANAGER_ROUTES.DASHBOARD,
-    MANAGER_ROUTES.SHIFT_REPORT,
-    MANAGER_ROUTES.SHIFT_REPORT,
-    MANAGER_ROUTES.DASHBOARD,
+    MANAGER_ROUTES.GUARDS,
+    MANAGER_ROUTES.REPORTS,
+    MANAGER_ROUTES.ROSTER,
     MANAGER_ROUTES.PROFILE,
 ] as const;
 
@@ -110,8 +115,14 @@ export function navigateManagerBottomTab(
         case MANAGER_ROUTES.DASHBOARD:
             navigation.navigate(MANAGER_ROUTES.DASHBOARD);
             break;
-        case MANAGER_ROUTES.SHIFT_REPORT:
-            navigation.navigate(MANAGER_ROUTES.SHIFT_REPORT);
+        case MANAGER_ROUTES.GUARDS:
+            navigation.navigate(MANAGER_ROUTES.GUARDS);
+            break;
+        case MANAGER_ROUTES.REPORTS:
+            navigation.navigate(MANAGER_ROUTES.REPORTS);
+            break;
+        case MANAGER_ROUTES.ROSTER:
+            navigation.navigate(MANAGER_ROUTES.ROSTER);
             break;
         case MANAGER_ROUTES.PROFILE:
             navigation.navigate(MANAGER_ROUTES.PROFILE);
