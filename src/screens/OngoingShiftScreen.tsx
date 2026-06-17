@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -22,7 +22,6 @@ import { Colors, FontSizes, Radii, Shadows } from '../theme';
 import {
   ArrowLeft,
   Clock,
-  Camera,
   FileText,
   Info,
   Footprints,
@@ -38,8 +37,19 @@ import { usePatrolNfcScan } from '../hooks/usePatrolNfcScan';
 import {
   clearActiveShiftSession,
   getActiveShiftSession,
+  promptCheckInRequired,
   saveActiveShiftSession,
 } from '../services/activeShiftSession';
+import {
+  fetchLocationFix,
+  formatCaptureTimestamp,
+} from '../services/locationUtils';
+import {
+  SelfieWatermarkProcessor,
+  type SelfieWatermarkJob,
+} from '../components/SelfieWatermarkProcessor';
+
+const appLogo = require('../../assets/opg-logo.png');
 
 type OngoingShiftRoute = GuardStackScreenProps<'OngoingShift'>['route'];
 
@@ -67,6 +77,10 @@ function formatSignInLabel(iso?: string) {
   return `${dd}-${mm}-${yyyy} ${hh}:${min}`;
 }
 
+function resolveCaptureUri(asset: Asset): string {
+  return asset.uri?.trim() ?? '';
+}
+
 async function requestLocationPermission(): Promise<boolean> {
   if (Platform.OS !== 'android') return true;
   const granted = await PermissionsAndroid.requestMultiple([
@@ -79,19 +93,6 @@ async function requestLocationPermission(): Promise<boolean> {
     granted[PermissionsAndroid.PERMISSIONS.ACCESS_COARSE_LOCATION] ===
     PermissionsAndroid.RESULTS.GRANTED
   );
-}
-
-function getCurrentLocation(enableHighAccuracy: boolean): Promise<string> {
-  return new Promise((resolve, reject) => {
-    Geolocation.getCurrentPosition(
-      pos => {
-        const { latitude, longitude } = pos.coords;
-        resolve(`${latitude},${longitude}`);
-      },
-      err => reject(err),
-      { enableHighAccuracy, timeout: 20000, maximumAge: 5000 },
-    );
-  });
 }
 
 export default function OngoingShiftScreen() {
@@ -112,31 +113,42 @@ export default function OngoingShiftScreen() {
   );
 
   const [elapsed, setElapsed] = useState('00:00:00');
-  const [signoutNotes, setSignoutNotes] = useState('End my shift');
+  const [signoutNotes, setSignoutNotes] = useState('');
   const [signoutSelfie, setSignoutSelfie] = useState<Asset | null>(null);
-  const [signoutLocation, setSignoutLocation] = useState('');
+  const [watermarkJob, setWatermarkJob] = useState<SelfieWatermarkJob | null>(null);
+  const [watermarking, setWatermarking] = useState(false);
+  const pendingSelfieRef = useRef<Asset | null>(null);
+  const [locationCoords, setLocationCoords] = useState('');
+  const [locationLabel, setLocationLabel] = useState('');
+  const [locationFetched, setLocationFetched] = useState(false);
   const [locationLoading, setLocationLoading] = useState(false);
   const [checkingOut, setCheckingOut] = useState(false);
 
+  const locationFallback = site || address || 'Current location';
+
   const getScanCoordinates = useCallback(async () => {
-    let coords = signoutLocation.trim();
+    let coords = locationCoords.trim();
     if (coords) return coords;
 
     const allowed = await requestLocationPermission();
     if (!allowed) return '';
 
     try {
-      coords = await getCurrentLocation(true);
-    } catch {
+      let fix;
       try {
-        coords = await getCurrentLocation(false);
+        fix = await fetchLocationFix(true, locationFallback);
       } catch {
-        coords = '';
+        fix = await fetchLocationFix(false, locationFallback);
       }
+      coords = fix.coordinates;
+      setLocationCoords(fix.coordinates);
+      setLocationLabel(fix.displayName);
+      setLocationFetched(true);
+    } catch {
+      coords = '';
     }
-    if (coords) setSignoutLocation(coords);
     return coords;
-  }, [signoutLocation]);
+  }, [locationCoords, locationFallback]);
 
   const { scanning: nfcScanning, handleScan: handleNfcScan, scanModal } =
     usePatrolNfcScan({
@@ -183,6 +195,10 @@ export default function OngoingShiftScreen() {
   }, [signInTime]);
 
   const refreshLocation = useCallback(async () => {
+    if (locationFetched) {
+      return;
+    }
+
     setLocationLoading(true);
     try {
       const allowed = await requestLocationPermission();
@@ -190,17 +206,23 @@ export default function OngoingShiftScreen() {
         Alert.alert('Permission required', 'Location permission is needed.');
         return;
       }
+
+      let fix;
       try {
-        setSignoutLocation(await getCurrentLocation(true));
+        fix = await fetchLocationFix(true, locationFallback);
       } catch {
-        setSignoutLocation(await getCurrentLocation(false));
+        fix = await fetchLocationFix(false, locationFallback);
       }
+
+      setLocationCoords(fix.coordinates);
+      setLocationLabel(fix.displayName);
+      setLocationFetched(true);
     } catch {
       Alert.alert('Location unavailable', 'Could not get GPS coordinates.');
     } finally {
       setLocationLoading(false);
     }
-  }, []);
+  }, [locationFetched, locationFallback]);
 
   useEffect(() => {
     Geolocation.setRNConfiguration({
@@ -227,16 +249,41 @@ export default function OngoingShiftScreen() {
       cameraType: 'front',
       saveToPhotos: false,
       quality: 0.8,
+      includeExtra: true,
+      includeBase64: Platform.OS === 'android',
     });
 
     if (result.didCancel || result.errorCode) return;
     const asset = result.assets?.[0];
-    if (asset?.uri) setSignoutSelfie(asset);
+    const captureUri = asset?.uri ? resolveCaptureUri(asset) : '';
+    if (captureUri) {
+      pendingSelfieRef.current = asset ?? null;
+      setWatermarking(true);
+      setWatermarkJob({
+        sourceUri: captureUri,
+        timestamp: formatCaptureTimestamp(),
+        width: asset?.width,
+        height: asset?.height,
+        base64: asset?.base64,
+      });
+    }
   };
 
   const handleStartPatrolling = async () => {
+    const session = await getActiveShiftSession();
+    if (!session) {
+      promptCheckInRequired(() => navigation.navigate(GUARD_ROUTES.SHIFTS));
+      return;
+    }
     if (rosterId == null) {
       Alert.alert('Error', 'Missing roster for this shift.');
+      return;
+    }
+    if (String(session.rosterId) !== String(rosterId)) {
+      Alert.alert(
+        'Shift mismatch',
+        'This screen does not match your checked-in shift. Open the correct ongoing shift first.',
+      );
       return;
     }
     if (siteId == null) {
@@ -244,7 +291,7 @@ export default function OngoingShiftScreen() {
       return;
     }
 
-    let coords = signoutLocation.trim();
+    let coords = locationCoords.trim();
     if (!coords) {
       setLocationLoading(true);
       try {
@@ -256,12 +303,16 @@ export default function OngoingShiftScreen() {
           );
           return;
         }
+        let fix;
         try {
-          coords = await getCurrentLocation(true);
+          fix = await fetchLocationFix(true, locationFallback);
         } catch {
-          coords = await getCurrentLocation(false);
+          fix = await fetchLocationFix(false, locationFallback);
         }
-        setSignoutLocation(coords);
+        coords = fix.coordinates;
+        setLocationCoords(fix.coordinates);
+        setLocationLabel(fix.displayName);
+        setLocationFetched(true);
       } catch {
         Alert.alert('Location unavailable', 'Could not get GPS coordinates.');
         return;
@@ -284,7 +335,7 @@ export default function OngoingShiftScreen() {
       Alert.alert('Error', 'Missing roster for this shift.');
       return;
     }
-    if (!signoutLocation.trim()) {
+    if (!locationCoords.trim()) {
       Alert.alert('Error', 'Sign-out location is required.');
       return;
     }
@@ -301,7 +352,7 @@ export default function OngoingShiftScreen() {
       setCheckingOut(true);
       const result = await guardJobCheckout({
         roster_id: rosterId,
-        signout_location: signoutLocation.trim(),
+        signout_location: locationCoords.trim(),
         signout_notes: signoutNotes.trim(),
         guard_id: guardId ?? undefined,
         selfie: {
@@ -335,8 +386,30 @@ export default function OngoingShiftScreen() {
 
   const signInLabel = formatSignInLabel(signInTime);
 
+  const handleWatermarkComplete = useCallback((uri: string) => {
+    const asset = pendingSelfieRef.current;
+    if (asset) {
+      setSignoutSelfie({ ...asset, uri });
+    }
+    pendingSelfieRef.current = null;
+    setWatermarkJob(null);
+    setWatermarking(false);
+  }, []);
+
+  const handleWatermarkError = useCallback(() => {
+    Alert.alert('Error', 'Could not apply watermark to selfie.');
+    pendingSelfieRef.current = null;
+    setWatermarkJob(null);
+    setWatermarking(false);
+  }, []);
+
   return (
     <View style={styles.container}>
+      <SelfieWatermarkProcessor
+        job={watermarkJob}
+        onComplete={handleWatermarkComplete}
+        onError={handleWatermarkError}
+      />
       <StatusBar barStyle="light-content" backgroundColor={Colors.headerStart} />
       <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
         <View style={styles.header}>
@@ -392,9 +465,15 @@ export default function OngoingShiftScreen() {
               style={[styles.selfieCard, Shadows.card]}
               onPress={handleCaptureSelfie}
               activeOpacity={0.9}
+              disabled={watermarking}
             >
               <View style={styles.selfieInner}>
-                {signoutSelfie?.uri ? (
+                {watermarking ? (
+                  <>
+                    <ActivityIndicator size="large" color={Colors.info} />
+                    <Text style={styles.selfieHint}>Applying watermark...</Text>
+                  </>
+                ) : signoutSelfie?.uri ? (
                   <Image
                     source={{ uri: signoutSelfie.uri }}
                     style={styles.selfieImg}
@@ -402,7 +481,11 @@ export default function OngoingShiftScreen() {
                   />
                 ) : (
                   <>
-                    <Camera size={28} color={Colors.info} />
+                    <Image
+                      source={appLogo}
+                      style={styles.selfiePlaceholderLogo}
+                      resizeMode="contain"
+                    />
                     <Text style={styles.selfieTitle}>SignOut Selfie</Text>
                     <Text style={styles.selfieHint}>Tap to capture</Text>
                   </>
@@ -413,17 +496,22 @@ export default function OngoingShiftScreen() {
 
           <View style={[styles.card, Shadows.card]}>
             <Text style={styles.locLbl}>Sign-out location</Text>
-            <Text style={styles.locValue}>
+            <Text style={styles.locValue} numberOfLines={2}>
               {locationLoading
                 ? 'Fetching location...'
-                : signoutLocation || 'Location not available'}
+                : locationLabel || 'Location not available'}
             </Text>
             <TouchableOpacity
-              style={styles.refreshLocBtn}
+              style={[
+                styles.refreshLocBtn,
+                (locationLoading || locationFetched) && styles.refreshLocBtnDisabled,
+              ]}
               onPress={refreshLocation}
-              disabled={locationLoading}
+              disabled={locationLoading || locationFetched}
             >
-              <Text style={styles.refreshLocText}>Refresh location</Text>
+              <Text style={styles.refreshLocText}>
+                {locationFetched ? 'Location captured' : 'Refresh location'}
+              </Text>
             </TouchableOpacity>
           </View>
 
@@ -457,21 +545,7 @@ export default function OngoingShiftScreen() {
             <Text style={styles.plusBtn}>+</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity
-            style={[styles.scanBtn, nfcScanning && styles.scanBtnDisabled]}
-            activeOpacity={0.85}
-            onPress={handleNfcScan}
-            disabled={nfcScanning}
-          >
-            {nfcScanning ? (
-              <ActivityIndicator color={Colors.white} />
-            ) : (
-              <>
-                <ScanLine size={18} color={Colors.white} />
-                <Text style={styles.scanBtnText}>SCAN NFC TAG</Text>
-              </>
-            )}
-          </TouchableOpacity>
+         
 
           <TouchableOpacity
             style={[styles.endBtn, checkingOut && styles.endBtnDisabled]}
@@ -619,6 +693,12 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     alignItems: 'center',
     justifyContent: 'center',
+    position: 'relative',
+  },
+  selfiePlaceholderLogo: {
+    width: 72,
+    height: 48,
+    marginBottom: 8,
   },
   selfieImg: {
     ...StyleSheet.absoluteFill,
@@ -644,8 +724,10 @@ const styles = StyleSheet.create({
   },
   locValue: {
     fontSize: FontSizes.sm,
-    color: Colors.textSecondary,
+    color: Colors.textPrimary,
+    fontWeight: '600',
     marginBottom: 10,
+    lineHeight: 18,
   },
   refreshLocBtn: {
     alignSelf: 'flex-start',
@@ -653,6 +735,9 @@ const styles = StyleSheet.create({
     borderRadius: Radii.sm,
     paddingHorizontal: 12,
     paddingVertical: 8,
+  },
+  refreshLocBtnDisabled: {
+    opacity: 0.55,
   },
   refreshLocText: {
     fontSize: FontSizes.xs,

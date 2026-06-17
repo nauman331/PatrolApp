@@ -79,6 +79,10 @@ function afterTable(l: L) {
 }
 
 async function loadImage(uri: string): Promise<string | null> {
+  if (uri.startsWith('data:')) {
+    return uri;
+  }
+
   const token = await AsyncStorage.getItem('authToken');
   const headers: Record<string, string> = {};
   if (token) headers.Authorization = `Bearer ${token}`;
@@ -294,49 +298,67 @@ function drawParagraph(l: L, text: string) {
 }
 
 async function drawPhotos(l: L, incident: MappedIncident) {
-  const photos = incident.photos.filter(p => p.uri);
+  const photos = incident.photos.filter(p => p.uri || p.imgPath);
   if (!photos.length) return;
 
   section(l, 7, `Photos (${photos.length})`);
 
+  const PHOTO_SIZE = 96;
+  const PHOTO_GAP = 10;
+  const COLS = 3;
+  const LABEL_H = 10;
+  const rowHeight = LABEL_H + PHOTO_SIZE + PHOTO_GAP;
+  const rows = Math.ceil(photos.length / COLS);
+
+  space(l, rows * rowHeight + 16);
+  const startY = l.y;
+
   for (let i = 0; i < photos.length; i++) {
     const photo = photos[i];
-    if (!photo.uri) continue;
+    const source = photo.uri || photo.imgPath;
+    if (!source) continue;
 
-    space(l, 130);
+    const col = i % COLS;
+    const row = Math.floor(i / COLS);
+    const x = MARGIN + col * (PHOTO_SIZE + PHOTO_GAP);
+    const y = startY + row * rowHeight;
+
     l.doc.setFont('helvetica', 'bold');
-    l.doc.setFontSize(9);
+    l.doc.setFontSize(8);
     l.doc.setTextColor(...C.label);
-    l.doc.text(
-      `Photo ${i + 1}${photo.timestamp ? ` — ${photo.timestamp}` : ''}`,
-      MARGIN,
-      l.y,
-    );
-    l.y += 10;
+    l.doc.text(`Photo ${i + 1}`, x, y + 8);
 
-    const dataUri = await loadImage(photo.uri);
-    const imgW = l.cw;
-    const imgH = 105;
+    const imageY = y + LABEL_H;
+    const dataUri = await loadImage(source);
+    l.doc.setDrawColor(...C.line);
+    l.doc.setFillColor(...C.panel);
+    l.doc.roundedRect(x, imageY, PHOTO_SIZE, PHOTO_SIZE, 2, 2, 'FD');
+
     if (dataUri) {
       try {
-        l.doc.setDrawColor(...C.line);
-        l.doc.roundedRect(MARGIN, l.y, imgW, imgH, 2, 2, 'S');
         l.doc.addImage(
           dataUri,
           dataUri.includes('png') ? 'PNG' : 'JPEG',
-          MARGIN + 3,
-          l.y + 3,
-          imgW - 6,
-          imgH - 6,
+          x + 2,
+          imageY + 2,
+          PHOTO_SIZE - 4,
+          PHOTO_SIZE - 4,
         );
-        l.y += imgH + 14;
       } catch {
-        emptyNote(l, 'Could not load this photo.');
+        l.doc.setFont('helvetica', 'normal');
+        l.doc.setFontSize(8);
+        l.doc.setTextColor(...C.label);
+        l.doc.text('Unavailable', x + 18, imageY + PHOTO_SIZE / 2);
       }
     } else {
-      emptyNote(l, 'Photo unavailable.');
+      l.doc.setFont('helvetica', 'normal');
+      l.doc.setFontSize(8);
+      l.doc.setTextColor(...C.label);
+      l.doc.text('Unavailable', x + 18, imageY + PHOTO_SIZE / 2);
     }
   }
+
+  l.y = startY + rows * rowHeight + 8;
 }
 
 async function drawSignature(l: L, incident: MappedIncident) {
@@ -352,7 +374,8 @@ async function drawSignature(l: L, incident: MappedIncident) {
         const w = Math.min(l.cw * 0.55, 280);
         const h = 70;
         l.doc.setDrawColor(...C.line);
-        l.doc.roundedRect(MARGIN, l.y, w, h, 2, 2, 'S');
+        l.doc.setFillColor(...C.white);
+        l.doc.roundedRect(MARGIN, l.y, w, h, 2, 2, 'FD');
         l.doc.addImage(
           dataUri,
           dataUri.includes('png') ? 'PNG' : 'JPEG',

@@ -1,136 +1,153 @@
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
 import {
-  View, Text, TouchableOpacity, StyleSheet, StatusBar, SafeAreaView,
+  Animated,
+  Dimensions,
+  Easing,
+  StatusBar,
+  StyleSheet,
+  View,
 } from 'react-native';
-import { Colors, FontSizes, Radii, Shadows } from '../theme';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import AppLogo from '../components/AppLogo';
 import { useAuthNavigation } from '../navigation/utils';
 import { AUTH_ROUTES } from '../navigation/constants';
 import type { AuthStackScreenProps } from '../navigation/types';
+import { Colors } from '../theme';
+
+const SPLASH_DURATION_MS = 3000;
+const LOGO_FADE_IN_MS = 650;
+const EXIT_FADE_MS = 280;
+const SPLASH_BACKGROUND = '#16213e';
+
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
+const PROGRESS_BAR_WIDTH = Math.min(SCREEN_WIDTH * 0.58, 240);
 
 type SplashScreenProps = AuthStackScreenProps<'Splash'>;
 
-export default function SplashScreen({ }: SplashScreenProps) {
+export default function SplashScreen({}: SplashScreenProps) {
   const navigation = useAuthNavigation();
+  const logoOpacity = useRef(new Animated.Value(0)).current;
+  const logoScale = useRef(new Animated.Value(0.88)).current;
+  const progress = useRef(new Animated.Value(0)).current;
+  const screenOpacity = useRef(new Animated.Value(1)).current;
+
+  useEffect(() => {
+    const logoEntrance = Animated.parallel([
+      Animated.timing(logoOpacity, {
+        toValue: 1,
+        duration: LOGO_FADE_IN_MS,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: true,
+      }),
+      Animated.timing(logoScale, {
+        toValue: 1,
+        duration: LOGO_FADE_IN_MS,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: true,
+      }),
+    ]);
+
+    const progressFill = Animated.timing(progress, {
+      toValue: 1,
+      duration: SPLASH_DURATION_MS,
+      easing: Easing.linear,
+      useNativeDriver: false,
+    });
+
+    logoEntrance.start();
+    progressFill.start(({ finished }) => {
+      if (!finished) {
+        return;
+      }
+
+      Animated.timing(screenOpacity, {
+        toValue: 0,
+        duration: EXIT_FADE_MS,
+        easing: Easing.in(Easing.quad),
+        useNativeDriver: true,
+      }).start(({ finished: exitFinished }) => {
+        if (exitFinished) {
+          navigation.replace(AUTH_ROUTES.ONBOARDING);
+        }
+      });
+    });
+
+    return () => {
+      logoOpacity.stopAnimation();
+      logoScale.stopAnimation();
+      progress.stopAnimation();
+      screenOpacity.stopAnimation();
+    };
+  }, [logoOpacity, logoScale, navigation, progress, screenOpacity]);
+
+  const progressWidth = progress.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0, PROGRESS_BAR_WIDTH],
+  });
+
   return (
-    <View style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor={styles.container.backgroundColor} />
+    <Animated.View style={[styles.container, { opacity: screenOpacity }]}>
+      <StatusBar
+        barStyle="light-content"
+        backgroundColor={SPLASH_BACKGROUND}
+      />
       <SafeAreaView style={styles.safe}>
-        <View style={styles.decorTop} />
-        <View style={styles.decorBottom} />
-
         <View style={styles.content}>
-          <View style={styles.badge}>
-            <Text style={styles.badgeText}>SHWANIX TECHNOLOGIES</Text>
-          </View>
-
-          <View style={[styles.iconWrap, Shadows.header]}>
-            <Text style={styles.iconShield}>🛡️</Text>
-          </View>
-
-          <Text style={styles.title}>Guard &amp;{'\n'}
-            <Text style={styles.titleAccent}>Manager</Text>
-            {' '}Pro
-          </Text>
-
-          <Text style={styles.subtitle}>
-            Smart patrol management. Real-time monitoring.{'\n'}
-            Complete security control for your sites.
-          </Text>
-
-          <TouchableOpacity
-            style={styles.primaryBtn}
-            onPress={() => navigation.navigate(AUTH_ROUTES.LOGIN)}
-            activeOpacity={0.85}
+          <Animated.View
+            style={[
+              styles.logoWrap,
+              {
+                opacity: logoOpacity,
+                transform: [{ scale: logoScale }],
+              },
+            ]}
           >
-            <Text style={styles.primaryBtnText}>GET STARTED</Text>
-          </TouchableOpacity>
+            <AppLogo variant="splash" centered={false} />
+          </Animated.View>
 
-          <TouchableOpacity
-            style={styles.outlineBtn}
-            onPress={() => navigation.navigate(AUTH_ROUTES.LOGIN)}
-            activeOpacity={0.85}
-          >
-            <Text style={styles.outlineBtnText}>SIGN IN</Text>
-          </TouchableOpacity>
-
-          <View style={styles.dots}>
-            <View style={[styles.dot, styles.dotActive]} />
-            <View style={styles.dot} />
-            <View style={styles.dot} />
+          <View style={styles.progressWrap}>
+            <View style={styles.progressTrack}>
+              <Animated.View
+                style={[styles.progressFill, { width: progressWidth }]}
+              />
+            </View>
           </View>
         </View>
-      </SafeAreaView >
-    </View >
+      </SafeAreaView>
+    </Animated.View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#16213e',
+    backgroundColor: SPLASH_BACKGROUND,
   },
   safe: { flex: 1 },
-  decorTop: {
-    position: 'absolute', top: -80, right: -60,
-    width: 240, height: 240, borderRadius: 120,
-    backgroundColor: 'rgba(121,31,61,0.08)',
-  },
-  decorBottom: {
-    position: 'absolute', bottom: -60, left: -40,
-    width: 180, height: 180, borderRadius: 90,
-    backgroundColor: 'rgba(99,179,237,0.06)',
-  },
   content: {
-    flex: 1, alignItems: 'center', justifyContent: 'center',
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
     paddingHorizontal: 28,
   },
-  badge: {
-    backgroundColor: 'rgba(121,31,61,0.15)',
-    borderWidth: 1, borderColor: 'rgba(121,31,61,0.3)',
-    borderRadius: 20, paddingHorizontal: 14, paddingVertical: 6,
-    marginBottom: 32,
+  logoWrap: {
+    alignItems: 'center',
   },
-  badgeText: {
-    color: Colors.accent, fontSize: FontSizes.xs,
-    fontWeight: '700', letterSpacing: 2,
+  progressWrap: {
+    marginTop: 28,
+    width: PROGRESS_BAR_WIDTH,
+    alignItems: 'center',
   },
-  iconWrap: {
-    width: 80, height: 80, borderRadius: 24,
+  progressTrack: {
+    width: PROGRESS_BAR_WIDTH,
+    height: 3,
+    borderRadius: 999,
+    backgroundColor: 'rgba(255,255,255,0.18)',
+    overflow: 'hidden',
+  },
+  progressFill: {
+    height: '100%',
+    borderRadius: 999,
     backgroundColor: Colors.accent,
-    alignItems: 'center', justifyContent: 'center',
-    marginBottom: 28,
-  },
-  iconShield: { fontSize: 38 },
-  title: {
-    fontSize: 30, fontWeight: '800', color: Colors.white,
-    textAlign: 'center', lineHeight: 36, marginBottom: 14,
-  },
-  titleAccent: { color: Colors.accent },
-  subtitle: {
-    fontSize: 12, color: 'rgba(255,255,255,0.45)',
-    textAlign: 'center', lineHeight: 20, marginBottom: 40,
-  },
-  primaryBtn: {
-    width: '100%', backgroundColor: Colors.accent,
-    borderRadius: Radii.lg, paddingVertical: 16,
-    alignItems: 'center', marginBottom: 10,
-  },
-  primaryBtnText: {
-    color: Colors.white, fontWeight: '700', fontSize: 13, letterSpacing: 1,
-  },
-  outlineBtn: {
-    width: '100%', borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.2)',
-    borderRadius: Radii.lg, paddingVertical: 15, alignItems: 'center',
-  },
-  outlineBtnText: {
-    color: 'rgba(255,255,255,0.6)', fontWeight: '600', fontSize: 13,
-  },
-  dots: { flexDirection: 'row', gap: 6, marginTop: 28 },
-  dot: {
-    width: 6, height: 6, borderRadius: 3,
-    backgroundColor: 'rgba(255,255,255,0.2)',
-  },
-  dotActive: {
-    width: 20, borderRadius: 3, backgroundColor: Colors.accent,
   },
 });

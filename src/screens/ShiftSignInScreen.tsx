@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -22,6 +22,10 @@ import {
 import { Colors, FontSizes, Radii, Shadows } from '../theme';
 import { NavBar } from '../components';
 import {
+  SelfieWatermarkProcessor,
+  type SelfieWatermarkJob,
+} from '../components/SelfieWatermarkProcessor';
+import {
   AlertTriangle,
   ClipboardList,
   Home,
@@ -44,6 +48,12 @@ import type { RootState } from '../store/store';
 import { getGuardMyJobs, guardJobCheckin } from '../services/guardApi';
 import { findIncidentContextByRoster } from '../services/guardJobsMapper';
 import { saveActiveShiftSession } from '../services/activeShiftSession';
+import {
+  fetchLocationFix,
+  formatCaptureTimestamp,
+} from '../services/locationUtils';
+
+const appLogo = require('../../assets/opg-logo.png');
 
 type ShiftSignInRoute = GuardStackScreenProps<'ShiftSignIn'>['route'];
 
@@ -51,6 +61,10 @@ function truncateSiteName(site: string, maxWords = 5): string {
   const words = site.trim().split(/\s+/).filter(Boolean);
   if (words.length <= maxWords) return site;
   return `${words.slice(0, maxWords).join(' ')}...`;
+}
+
+function resolveCaptureUri(asset: Asset): string {
+  return asset.uri?.trim() ?? '';
 }
 
 async function requestLocationPermission(): Promise<boolean> {
@@ -75,18 +89,6 @@ async function requestCameraPermission(): Promise<boolean> {
   return granted === PermissionsAndroid.RESULTS.GRANTED;
 }
 
-function getCurrentLocation(enableHighAccuracy: boolean): Promise<string> {
-  return new Promise((resolve, reject) => {
-    Geolocation.getCurrentPosition(
-      pos => {
-        const { latitude, longitude } = pos.coords;
-        resolve(`${latitude},${longitude}`);
-      },
-      err => reject(err),
-      { enableHighAccuracy, timeout: 20000, maximumAge: 5000 },
-    );
-  });
-}
 
 export default function ShiftSignInScreen() {
   const navigation = useGuardNavigation();
@@ -96,9 +98,14 @@ export default function ShiftSignInScreen() {
 
   const [checkingIn, setCheckingIn] = useState(false);
   const [locationLoading, setLocationLoading] = useState(false);
-  const [location, setLocation] = useState('');
-  const [signinNotes, setSigninNotes] = useState('Starting my shift');
+  const [locationCoords, setLocationCoords] = useState('');
+  const [locationLabel, setLocationLabel] = useState('');
+  const [locationFetched, setLocationFetched] = useState(false);
+  const [signinNotes, setSigninNotes] = useState('');
   const [selfie, setSelfie] = useState<Asset | null>(null);
+  const [watermarkJob, setWatermarkJob] = useState<SelfieWatermarkJob | null>(null);
+  const [watermarking, setWatermarking] = useState(false);
+  const pendingSelfieRef = useRef<Asset | null>(null);
   const [resolvedSiteId, setResolvedSiteId] = useState<
     string | number | undefined
   >(params?.siteId);
@@ -144,7 +151,13 @@ export default function ShiftSignInScreen() {
   };
   const isActiveShift = shift?.status === 'active';
 
+  const locationFallback = shift.site || shift.zones || 'Current location';
+
   const refreshLocation = useCallback(async () => {
+    if (locationFetched) {
+      return;
+    }
+
     setLocationLoading(true);
     try {
       const allowed = await requestLocationPermission();
@@ -155,14 +168,17 @@ export default function ShiftSignInScreen() {
         );
         return;
       }
+
+      let fix;
       try {
-        const preciseCoords = await getCurrentLocation(true);
-        setLocation(preciseCoords);
+        fix = await fetchLocationFix(true, locationFallback);
       } catch {
-        // Fallback for devices where GPS fix is slow/blocked.
-        const coarseCoords = await getCurrentLocation(false);
-        setLocation(coarseCoords);
+        fix = await fetchLocationFix(false, locationFallback);
       }
+
+      setLocationCoords(fix.coordinates);
+      setLocationLabel(fix.displayName);
+      setLocationFetched(true);
     } catch (error: any) {
       const code = error?.code ? ` (code ${error.code})` : '';
       Alert.alert(
@@ -172,7 +188,7 @@ export default function ShiftSignInScreen() {
     } finally {
       setLocationLoading(false);
     }
-  }, []);
+  }, [locationFetched, locationFallback]);
 
   useEffect(() => {
     refreshLocation();
@@ -190,6 +206,8 @@ export default function ShiftSignInScreen() {
       cameraType: 'front',
       saveToPhotos: false,
       quality: 0.8,
+      includeExtra: true,
+      includeBase64: Platform.OS === 'android',
     });
 
     if (result.didCancel) return;
@@ -199,8 +217,17 @@ export default function ShiftSignInScreen() {
     }
 
     const asset = result.assets?.[0];
-    if (asset?.uri) {
-      setSelfie(asset);
+    const captureUri = asset?.uri ? resolveCaptureUri(asset) : '';
+    if (captureUri) {
+      pendingSelfieRef.current = asset ?? null;
+      setWatermarking(true);
+      setWatermarkJob({
+        sourceUri: captureUri,
+        timestamp: formatCaptureTimestamp(),
+        width: asset?.width,
+        height: asset?.height,
+        base64: asset?.base64,
+      });
     }
   };
 
@@ -209,7 +236,7 @@ export default function ShiftSignInScreen() {
       Alert.alert('Error', 'Missing roster for this shift.');
       return;
     }
-    if (!location.trim()) {
+    if (!locationCoords.trim()) {
       Alert.alert('Error', 'Location is required. Tap refresh to fetch GPS.');
       return;
     }
@@ -226,7 +253,7 @@ export default function ShiftSignInScreen() {
       setCheckingIn(true);
       const result = await guardJobCheckin({
         roster_id: shift.rosterId,
-        location: location.trim(),
+        location: locationCoords.trim(),
         signin_notes: signinNotes.trim(),
         guard_id: guardId ?? undefined,
         selfie: {
@@ -266,6 +293,27 @@ export default function ShiftSignInScreen() {
 
   return (
     <View style={styles.container}>
+      <SelfieWatermarkProcessor
+        job={watermarkJob}
+        onComplete={uri => {
+          const asset = pendingSelfieRef.current;
+          if (asset) {
+            setSelfie({ ...asset, uri });
+          }
+          pendingSelfieRef.current = null;
+          setWatermarkJob(null);
+          setWatermarking(false);
+        }}
+        onError={error => {
+          Alert.alert(
+            'Error',
+            error?.message?.trim() || 'Could not apply watermark to selfie.',
+          );
+          pendingSelfieRef.current = null;
+          setWatermarkJob(null);
+          setWatermarking(false);
+        }}
+      />
       <StatusBar barStyle="light-content" backgroundColor={Colors.headerStart} />
       <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
         <ScrollView
@@ -303,20 +351,25 @@ export default function ShiftSignInScreen() {
             <View style={[styles.card, Shadows.card]}>
               <View style={styles.cardTitleRow}>
                 <MapPin size={16} color={Colors.accent} />
-                <Text style={styles.cardTitle}>GPS Location</Text>
+                <Text style={styles.cardTitle}>Location</Text>
               </View>
-              <Text style={styles.locationValue}>
+              <Text style={styles.locationValue} numberOfLines={2}>
                 {locationLoading
                   ? 'Fetching location...'
-                  : location || 'Location not available'}
+                  : locationLabel || 'Location not available'}
               </Text>
               <TouchableOpacity
-                style={styles.secondaryBtn}
+                style={[
+                  styles.secondaryBtn,
+                  (locationLoading || locationFetched) && styles.secondaryBtnDisabled,
+                ]}
                 onPress={refreshLocation}
-                disabled={locationLoading}
+                disabled={locationLoading || locationFetched}
               >
                 <RefreshCw size={14} color={Colors.accent} />
-                <Text style={styles.secondaryBtnText}>Refresh location</Text>
+                <Text style={styles.secondaryBtnText}>
+                  {locationFetched ? 'Location captured' : 'Refresh location'}
+                </Text>
               </TouchableOpacity>
             </View>
 
@@ -330,7 +383,7 @@ export default function ShiftSignInScreen() {
                 style={styles.notesInput}
                 value={signinNotes}
                 onChangeText={setSigninNotes}
-                placeholder="e.g. Starting my shift"
+                placeholder="Starting my shift"
                 placeholderTextColor={Colors.textMuted}
                 multiline
                 textAlignVertical="top"
@@ -348,18 +401,24 @@ export default function ShiftSignInScreen() {
                 style={styles.camArea}
                 onPress={handleCaptureSelfie}
                 activeOpacity={0.9}
+                disabled={watermarking}
               >
-                {selfie?.uri ? (
+                {watermarking ? (
+                  <>
+                    <ActivityIndicator size="large" color={Colors.accent} />
+                    <Text style={styles.camHint}>Applying watermark...</Text>
+                  </>
+                ) : selfie?.uri ? (
                   <Image source={{ uri: selfie.uri }} style={styles.selfiePreview} />
                 ) : (
                   <>
-                    <Camera size={40} color={Colors.accent} />
+                    <Image source={appLogo} style={styles.selfiePlaceholderLogo} resizeMode="contain" />
                     <Text style={styles.camHint}>Tap to capture selfie</Text>
                   </>
                 )}
               </TouchableOpacity>
 
-              {selfie?.uri ? (
+              {selfie?.uri && !watermarking ? (
                 <TouchableOpacity style={styles.retakeBtn} onPress={handleCaptureSelfie}>
                   <Text style={styles.retakeBtnText}>Retake selfie</Text>
                 </TouchableOpacity>
@@ -503,10 +562,11 @@ const styles = StyleSheet.create({
   },
 
   locationValue: {
-    fontSize: 12,
-    color: Colors.textSecondary,
+    fontSize: 13,
+    color: Colors.textPrimary,
     marginBottom: 12,
-    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+    fontWeight: '600',
+    lineHeight: 18,
   },
   secondaryBtn: {
     flexDirection: 'row',
@@ -518,6 +578,9 @@ const styles = StyleSheet.create({
     borderRadius: Radii.sm,
     paddingVertical: 10,
     backgroundColor: Colors.accentLight,
+  },
+  secondaryBtnDisabled: {
+    opacity: 0.55,
   },
   secondaryBtnText: {
     fontSize: FontSizes.xs,
@@ -546,6 +609,12 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderStyle: 'dashed',
     borderColor: Colors.accent,
+    position: 'relative',
+  },
+  selfiePlaceholderLogo: {
+    width: 120,
+    height: 80,
+    marginBottom: 10,
   },
   camHint: {
     marginTop: 10,

@@ -47,15 +47,65 @@ function toNumberId(value: string | number | undefined | null): number | undefin
   return Number.isFinite(n) ? n : undefined;
 }
 
+function isWeekGroupEntry(value: unknown): boolean {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const row = value as Record<string, unknown>;
+  const hasRoster =
+    row.roster_id != null ||
+    row.rosterId != null ||
+    row.job_id != null ||
+    row.shift_id != null;
+  if (hasRoster) return false;
+  return (
+    Array.isArray(row.shifts) ||
+    Array.isArray(row.jobs) ||
+    row.week != null ||
+    row.week_label != null ||
+    row.weekLabel != null ||
+    row.week_start != null ||
+    row.weekStart != null
+  );
+}
+
+function flattenWeekJobs(items: unknown[]): unknown[] {
+  const flat: unknown[] = [];
+  for (const item of items) {
+    if (!item || typeof item !== 'object') continue;
+    const row = item as Record<string, unknown>;
+    if (Array.isArray(row.shifts)) {
+      flat.push(...row.shifts);
+      continue;
+    }
+    if (Array.isArray(row.jobs)) {
+      flat.push(...row.jobs);
+      continue;
+    }
+    flat.push(item);
+  }
+  return flat;
+}
+
 function extractJobsList(payload: unknown): unknown[] {
-  if (Array.isArray(payload)) return payload;
+  if (Array.isArray(payload)) {
+    return isWeekGroupEntry(payload[0]) ? flattenWeekJobs(payload) : payload;
+  }
   if (!payload || typeof payload !== 'object') return [];
   const obj = payload as Record<string, unknown>;
-  if (Array.isArray(obj.data)) return obj.data;
+  if (Array.isArray(obj.weeks)) return flattenWeekJobs(obj.weeks);
+  if (Array.isArray(obj.data)) {
+    return isWeekGroupEntry(obj.data[0])
+      ? flattenWeekJobs(obj.data)
+      : obj.data;
+  }
   if (obj.data && typeof obj.data === 'object' && !Array.isArray(obj.data)) {
     const nested = obj.data as Record<string, unknown>;
+    if (Array.isArray(nested.weeks)) return flattenWeekJobs(nested.weeks);
     if (Array.isArray(nested.jobs)) return nested.jobs;
-    if (Array.isArray(nested.data)) return nested.data;
+    if (Array.isArray(nested.data)) {
+      return isWeekGroupEntry(nested.data[0])
+        ? flattenWeekJobs(nested.data)
+        : nested.data;
+    }
   }
   if (Array.isArray(obj.jobs)) return obj.jobs;
   return [];
@@ -222,6 +272,91 @@ export async function getGuardMyJobs(
         error?.message || 'Failed to load jobs',
       ),
       data: [],
+    };
+  }
+}
+
+export type GuardDashboardGuard = {
+  id: number;
+  name: string;
+  email: string;
+  phone: string;
+};
+
+export type GuardDashboardData = {
+  patrolling_report_count: number;
+  incident_report_count: number;
+  scanners_count: number;
+  scan_nfc_count: number;
+  guard: GuardDashboardGuard;
+};
+
+function extractDashboardData(payload: unknown): GuardDashboardData | null {
+  if (!payload || typeof payload !== 'object') return null;
+  const obj = payload as Record<string, unknown>;
+  const raw =
+    obj.data && typeof obj.data === 'object' && !Array.isArray(obj.data)
+      ? (obj.data as Record<string, unknown>)
+      : obj;
+
+  const guardRaw = raw.guard;
+  if (!guardRaw || typeof guardRaw !== 'object' || Array.isArray(guardRaw)) {
+    return null;
+  }
+  const guard = guardRaw as Record<string, unknown>;
+  const name = typeof guard.name === 'string' ? guard.name.trim() : '';
+  if (!name) return null;
+
+  return {
+    patrolling_report_count: Number(raw.patrolling_report_count) || 0,
+    incident_report_count: Number(raw.incident_report_count) || 0,
+    scanners_count: Number(raw.scanners_count) || 0,
+    scan_nfc_count: Number(raw.scan_nfc_count) || 0,
+    guard: {
+      id: Number(guard.id) || 0,
+      name,
+      email: typeof guard.email === 'string' ? guard.email : '',
+      phone: typeof guard.phone === 'string' ? guard.phone : '',
+    },
+  };
+}
+
+export async function getGuardDashboardData(
+  guardId?: string | number | null,
+): Promise<GuardApiResult<GuardDashboardData>> {
+  try {
+    const storedGuardId = await AsyncStorage.getItem('guardId');
+    const resolvedGuardId =
+      guardId != null && String(guardId).trim()
+        ? String(guardId).trim()
+        : storedGuardId?.trim() || undefined;
+
+    if (!resolvedGuardId) {
+      return { success: false, message: 'Guard ID is required' };
+    }
+
+    const response = await apiClient.get(
+      `/guard/dashboard-data/${resolvedGuardId}`,
+    );
+    const data = extractDashboardData(response.data);
+    const ok =
+      (response.data?.success === true || response.status < 300) && data != null;
+
+    return {
+      success: ok,
+      data: data ?? undefined,
+      message: extractMessage(
+        response.data,
+        ok ? 'Dashboard loaded' : 'Failed to load dashboard',
+      ),
+    };
+  } catch (error: any) {
+    return {
+      success: false,
+      message: extractMessage(
+        error?.response?.data,
+        error?.message || 'Failed to load dashboard',
+      ),
     };
   }
 }
@@ -631,8 +766,11 @@ export async function guardTodayPatrolling(
       `/guard/today-patrolling/${resolvedGuardId}`,
     );
     const body = response.data;
-    const ok = body?.success === true || response.status < 300;
     const reports = normalizePatrollingReports(body?.patrolling_reports);
+    const ok =
+      body?.success === true ||
+      response.status < 300 ||
+      reports.length === 0;
 
     return {
       success: ok,
@@ -643,6 +781,14 @@ export async function guardTodayPatrolling(
       },
     };
   } catch (error: any) {
+    const status = error?.response?.status;
+    if (status === 404) {
+      return {
+        success: true,
+        data: { reports: [] },
+      };
+    }
+
     return {
       success: false,
       message: extractMessage(

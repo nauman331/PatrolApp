@@ -1,6 +1,7 @@
 import React from 'react';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import SplashScreen from '../screens/Splashscreen';
+import OnboardingScreen from '../screens/OnboardingScreen';
 import LoginScreen from '../screens/LoginScreen';
 import SignupScreen from '../screens/SignupScreen';
 import { AuthStackParamList } from './types';
@@ -30,6 +31,10 @@ export function AuthNavigator() {
                 options={{
                     animation: 'none',
                 }}
+            />
+            <Stack.Screen
+                name={AUTH_ROUTES.ONBOARDING}
+                component={OnboardingScreen}
             />
             <Stack.Screen
                 name={AUTH_ROUTES.LOGIN}

@@ -272,12 +272,12 @@ export default function IncidentsScreen() {
           )}
         </ScrollView>
 
-        <TouchableOpacity
+        {/* <TouchableOpacity
           style={styles.fab}
           onPress={() => navigation.navigate(GUARD_ROUTES.ADD_INCIDENT)}
         >
           <Plus size={22} color="white" />
-        </TouchableOpacity>
+        </TouchableOpacity> */}
 
         <NavBar
           variant="light"

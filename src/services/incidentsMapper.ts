@@ -1,4 +1,5 @@
 import { INCIDENT_ASSETS_BASE_URL } from '../config/env';
+import { formatFullDisplayDate } from './guardJobsMapper';
 
 export type IncidentSeverity = 'HIGH' | 'MEDIUM' | 'LOW';
 
@@ -253,12 +254,10 @@ export function getIncidentListMeta(incidents: MappedIncident[]): {
 } {
   const count = incidents.length;
   const latest = incidents[0];
-  const site = latest?.siteName ?? 'Your reports';
-  const month = latest?.incidentDate
-    ? latest.incidentDate.slice(0, 7)
-    : new Date().toISOString().slice(0, 7);
+  const site = latest?.siteName?.split(',')[0]?.trim() ?? 'Your reports';
+  const dateLabel = formatFullDisplayDate(latest?.incidentDate);
   return {
     count,
-    subtitle: `${site.split(',')[0]} · ${month}`,
+    subtitle: `${site} · ${dateLabel}`,
   };
 }

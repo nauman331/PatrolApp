@@ -1,4 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Alert } from 'react-native';
 
 const ACTIVE_SHIFT_KEY = 'activeShiftSession';
 
@@ -31,4 +32,17 @@ export async function getActiveShiftSession(): Promise<ActiveShiftSession | null
 
 export async function clearActiveShiftSession(): Promise<void> {
   await AsyncStorage.removeItem(ACTIVE_SHIFT_KEY);
+}
+
+export function promptCheckInRequired(onGoToShifts?: () => void): void {
+  Alert.alert(
+    'Shift not active',
+    'Please check in to a shift first, then you can start patrolling.',
+    [
+      { text: 'Cancel', style: 'cancel' },
+      ...(onGoToShifts
+        ? [{ text: 'Go to Shifts', onPress: onGoToShifts }]
+        : []),
+    ],
+  );
 }

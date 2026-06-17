@@ -4,6 +4,7 @@
  */
 export const AUTH_ROUTES = {
     SPLASH: 'Splash',
+    ONBOARDING: 'Onboarding',
     LOGIN: 'Login',
     SIGNUP: 'Signup',
 } as const;
@@ -12,6 +13,10 @@ export const AUTH_ROUTES = {
  * Route names for Guard Stack
  */
 import type { GuardNavigationProp, ManagerNavigationProp } from './types';
+import {
+  getActiveShiftSession,
+  promptCheckInRequired,
+} from '../services/activeShiftSession';
 
 export const GUARD_ROUTES = {
     DASHBOARD: 'GuardDashboard',
@@ -23,7 +28,10 @@ export const GUARD_ROUTES = {
     INCIDENTS: 'Incidents',
     ADD_INCIDENT: 'AddIncident',
     VIEW_INCIDENT: 'ViewIncidentReport',
+    SOPS: 'GuardSops',
     PROFILE: 'Profile',
+    PRIVACY_POLICY: 'PrivacyPolicy',
+    TERMS_CONDITIONS: 'TermsConditions',
 } as const;
 
 /** Bottom tab order: Home, Patrol, Incidents, Shifts, Profile */
@@ -46,7 +54,20 @@ export function navigateGuardBottomTab(
             navigation.navigate(GUARD_ROUTES.DASHBOARD);
             break;
         case GUARD_ROUTES.PATROL_TIMELINE:
-            navigation.navigate(GUARD_ROUTES.PATROL_TIMELINE);
+            void (async () => {
+                const session = await getActiveShiftSession();
+                if (!session) {
+                    promptCheckInRequired(() =>
+                        navigation.navigate(GUARD_ROUTES.SHIFTS),
+                    );
+                    return;
+                }
+                navigation.navigate(GUARD_ROUTES.PATROL_TIMELINE, {
+                    rosterId: session.rosterId,
+                    siteId: session.siteId,
+                    site: session.site,
+                });
+            })();
             break;
         case GUARD_ROUTES.INCIDENTS:
             navigation.navigate(GUARD_ROUTES.INCIDENTS);
@@ -67,6 +88,8 @@ export const MANAGER_ROUTES = {
     DASHBOARD: 'ManagerDashboard',
     SHIFT_REPORT: 'ShiftReport',
     PROFILE: 'Profile',
+    PRIVACY_POLICY: 'PrivacyPolicy',
+    TERMS_CONDITIONS: 'TermsConditions',
 } as const;
 
 export const MANAGER_BOTTOM_TAB_ROUTES = [

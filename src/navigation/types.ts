@@ -6,10 +6,11 @@ import { NavigatorScreenParams } from '@react-navigation/native';
 
 /**
  * Authentication Stack Parameters
- * Routes: Splash, Login, Signup
+ * Routes: Splash, Onboarding, Login, Signup
  */
 export type AuthStackParamList = {
     Splash: undefined;
+    Onboarding: undefined;
     Login: undefined;
     Signup: undefined;
 };
@@ -64,7 +65,10 @@ export type GuardStackParamList = {
     ViewIncidentReport: {
         incidentId: number;
     };
+    GuardSops: undefined;
     Profile: undefined;
+    PrivacyPolicy: undefined;
+    TermsConditions: undefined;
 };
 
 /**
@@ -75,6 +79,8 @@ export type ManagerStackParamList = {
     ManagerDashboard: undefined;
     ShiftReport: { shiftId?: string } | undefined;
     Profile: undefined;
+    PrivacyPolicy: undefined;
+    TermsConditions: undefined;
 };
 
 /**

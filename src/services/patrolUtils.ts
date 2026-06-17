@@ -10,29 +10,61 @@ export function isScannerComplete(scanner: PatrolScanner): boolean {
   return ['complete', 'completed', 'done', 'scanned'].includes(status);
 }
 
+export function getCompletedCount(report: PatrollingReport): number {
+  return report.scanners?.filter(isScannerComplete).length ?? 0;
+}
+
+const INACTIVE_PATROL_STATUSES = new Set([
+  'complete',
+  'completed',
+  'done',
+  'ended',
+  'end',
+  'finished',
+  'finish',
+  'closed',
+]);
+
+const ACTIVE_PATROL_STATUSES = new Set([
+  'start',
+  'started',
+  'active',
+  'in_progress',
+  'in progress',
+  'ongoing',
+]);
+
+export function isPatrolReportActive(report: PatrollingReport): boolean {
+  if (report.completed_at) return false;
+
+  const status = String(report.status ?? '').toLowerCase().trim();
+  if (INACTIVE_PATROL_STATUSES.has(status)) return false;
+
+  const total = report.scanners?.length ?? report.scanner_count ?? 0;
+  if (total > 0 && getCompletedCount(report) >= total) {
+    return false;
+  }
+
+  return ACTIVE_PATROL_STATUSES.has(status);
+}
+
 export function findActiveReportForRoster(
   reports: PatrollingReport[],
   rosterId?: string | number,
 ): PatrollingReport | null {
-  const active = reports.filter(
-    r => String(r.status).toLowerCase() === 'start' && !r.completed_at,
-  );
-  if (rosterId != null) {
-    const forRoster = active.filter(
-      r => String(r.roster_id) === String(rosterId),
-    );
-    return forRoster.sort((a, b) => Number(b.id) - Number(a.id))[0] ?? null;
-  }
-  return active.sort((a, b) => Number(b.id) - Number(a.id))[0] ?? null;
+  if (rosterId == null) return null;
+
+  return reports
+    .filter(
+      r =>
+        String(r.roster_id) === String(rosterId) && isPatrolReportActive(r),
+    )
+    .sort((a, b) => Number(b.id) - Number(a.id))[0] ?? null;
 }
 
 export function getNextScanner(report: PatrollingReport | null): PatrolScanner | null {
   if (!report?.scanners?.length) return null;
   return report.scanners.find(s => !isScannerComplete(s)) ?? null;
-}
-
-export function getCompletedCount(report: PatrollingReport): number {
-  return report.scanners?.filter(isScannerComplete).length ?? 0;
 }
 
 export function findScannedGateName(

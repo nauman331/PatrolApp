@@ -265,10 +265,6 @@ export function usePatrolNfcScan({
       if (scanningRef.current) return;
 
       if (requireActivePatrol && hasActivePatrol && !hasActivePatrol()) {
-        Alert.alert(
-          'No active patrol',
-          'Start patrolling first from your ongoing shift, then scan NFC checkpoints.',
-        );
         return;
       }
 

@@ -1,12 +1,16 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
   TouchableOpacity,
   StyleSheet,
   ScrollView,
+  FlatList,
   StatusBar,
   Alert,
+  ActivityIndicator,
+  type NativeScrollEvent,
+  type NativeSyntheticEvent,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Colors, FontSizes, Radii, Shadows } from '../theme';
@@ -25,12 +29,16 @@ import { useFocusEffect } from '@react-navigation/native';
 import { useGuardNavigation } from '../navigation/utils';
 import { GUARD_ROUTES, navigateGuardBottomTab } from '../navigation/constants';
 import {
-  groupShiftsByDate,
   findBlockingActiveShift,
   isThisShiftOngoing,
+  formatFullDisplayDate,
+  mapAndSortShifts,
+  filterShiftsByStatus,
+  groupShiftsList,
   type MappedShift,
   type ShiftGroup,
   type ShiftStatus,
+  type ShiftListFilter,
 } from '../services/guardJobsMapper';
 import {
   getActiveShiftSession,
@@ -45,10 +53,18 @@ import {
 
 type Shift = MappedShift;
 
+type ShiftListItem =
+  | { type: 'header'; key: string; label: string }
+  | { type: 'shift'; key: string; shift: Shift };
+
+const PAGE_SIZE = 10;
+const SCROLL_LOAD_THRESHOLD = 120;
+
 const leftBarColor: Record<ShiftStatus, string> = {
   active: Colors.accent,
   done: Colors.success,
   upcoming: Colors.info,
+  timeout: Colors.warning,
 };
 
 const badgeConfig: Record<
@@ -58,9 +74,20 @@ const badgeConfig: Record<
   active: { bg: Colors.accentLight, color: Colors.accent, label: '● ACTIVE' },
   done: { bg: Colors.successLight, color: Colors.success, label: '✓ DONE' },
   upcoming: { bg: Colors.infoLight, color: Colors.info, label: 'UPCOMING' },
+  timeout: {
+    bg: Colors.warningLight,
+    color: '#c05621',
+    label: 'TIMED OUT',
+  },
 };
 
-const FILTERS = ['All', 'Active', 'Upcoming', 'Completed'];
+const FILTERS: ShiftListFilter[] = [
+  'All',
+  'Active',
+  'Upcoming',
+  'Completed',
+  'Timed Out',
+];
 
 function truncateSiteName(site: string, maxWords = 6): string {
   const words = site.trim().split(/\s+/).filter(Boolean);
@@ -68,16 +95,36 @@ function truncateSiteName(site: string, maxWords = 6): string {
   return `${words.slice(0, maxWords).join(' ')}...`;
 }
 
+function buildListItems(groups: ShiftGroup[]): ShiftListItem[] {
+  const items: ShiftListItem[] = [];
+  for (const group of groups) {
+    items.push({
+      type: 'header',
+      key: `header-${group.group}`,
+      label: group.group,
+    });
+    for (const shift of group.items) {
+      items.push({
+        type: 'shift',
+        key: `shift-${shift.rosterId}-${shift.id}`,
+        shift,
+      });
+    }
+  }
+  return items;
+}
+
 export default function ShiftsScreen() {
   const navigation = useGuardNavigation();
   const dispatch = useAppDispatch();
   const jobsRaw = useAppSelector(selectJobsItems);
   const loading = useAppSelector(selectJobsLoading);
-  const [activeFilter, setActiveFilter] = useState('All');
-  const [shifts, setShifts] = useState<ShiftGroup[]>([]);
+  const [activeFilter, setActiveFilter] = useState<ShiftListFilter>('All');
+  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
   const [activeSession, setActiveSession] = useState<ActiveShiftSession | null>(
     null,
   );
+  const loadingMoreRef = useRef(false);
 
   useFocusEffect(
     useCallback(() => {
@@ -87,12 +134,55 @@ export default function ShiftsScreen() {
   );
 
   useEffect(() => {
-    if (!jobsRaw.length) {
-      setShifts([]);
-      return;
-    }
-    setShifts(groupShiftsByDate(jobsRaw));
-  }, [jobsRaw]);
+    setVisibleCount(PAGE_SIZE);
+    loadingMoreRef.current = false;
+  }, [activeFilter, jobsRaw]);
+
+  const sortedShifts = useMemo(
+    () => mapAndSortShifts(jobsRaw),
+    [jobsRaw],
+  );
+
+  const filteredShifts = useMemo(
+    () => filterShiftsByStatus(sortedShifts, activeFilter),
+    [sortedShifts, activeFilter],
+  );
+
+  const visibleShifts = useMemo(
+    () => filteredShifts.slice(0, visibleCount),
+    [filteredShifts, visibleCount],
+  );
+
+  const shifts = useMemo(
+    () => groupShiftsList(visibleShifts),
+    [visibleShifts],
+  );
+
+  const listItems = useMemo(() => buildListItems(shifts), [shifts]);
+
+  const hasMore = visibleCount < filteredShifts.length;
+
+  const loadMore = useCallback(() => {
+    if (loading || loadingMoreRef.current || !hasMore) return;
+    loadingMoreRef.current = true;
+    setVisibleCount(prev => Math.min(prev + PAGE_SIZE, filteredShifts.length));
+    requestAnimationFrame(() => {
+      loadingMoreRef.current = false;
+    });
+  }, [loading, hasMore, filteredShifts.length]);
+
+  const handleScroll = useCallback(
+    (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+      const { layoutMeasurement, contentOffset, contentSize } =
+        event.nativeEvent;
+      const distanceFromBottom =
+        contentSize.height - layoutMeasurement.height - contentOffset.y;
+      if (distanceFromBottom <= SCROLL_LOAD_THRESHOLD) {
+        loadMore();
+      }
+    },
+    [loadMore],
+  );
 
   const handleShiftAction = async (shift: Shift) => {
     const session = activeSession ?? (await getActiveShiftSession());
@@ -129,199 +219,195 @@ export default function ShiftsScreen() {
     });
   };
 
-  const filteredShifts = shifts.map(group => ({
-    ...group,
-    items:
-      activeFilter === 'All'
-        ? group.items
-        : group.items.filter(shift => {
-          if (activeFilter === 'Active') return shift.status === 'active';
-          if (activeFilter === 'Upcoming') return shift.status === 'upcoming';
-          if (activeFilter === 'Completed') return shift.status === 'done';
-          return true;
-        }),
-  })).filter(group => group.items.length > 0);
+  const shiftCount = sortedShifts.length;
+
+  const renderShiftCard = (shift: Shift) => {
+    const badge = badgeConfig[shift.status] ?? badgeConfig.upcoming;
+    const ongoing = isThisShiftOngoing(shift, activeSession);
+    const canAction =
+      shift.status !== 'done' &&
+      shift.status !== 'timeout' &&
+      (ongoing || shift.status === 'upcoming' || shift.status === 'active');
+
+    return (
+      <View
+        style={[
+          styles.shiftItem,
+          Shadows.card,
+          { borderLeftColor: leftBarColor[shift.status] ?? leftBarColor.upcoming },
+        ]}
+      >
+        <View style={styles.siTop}>
+          <View style={styles.siTopLeft}>
+            <Text
+              style={styles.siSite}
+              numberOfLines={1}
+              ellipsizeMode="tail"
+            >
+              {truncateSiteName(shift.site)}
+            </Text>
+          </View>
+          <View style={[styles.siBadge, { backgroundColor: badge.bg }]}>
+            <Text style={[styles.siBadgeText, { color: badge.color }]}>
+              {badge.label}
+            </Text>
+          </View>
+        </View>
+
+        <View style={styles.siMeta}>
+          <View style={styles.metaRow}>
+            <Clock size={12} color={Colors.textSecondary} />
+            <Text style={styles.siMetaItem}>{shift.time}</Text>
+          </View>
+
+          <View style={styles.metaRow}>
+            <MapPin size={12} color={Colors.textSecondary} />
+            <Text style={styles.siMetaItem}>{shift.zones}</Text>
+          </View>
+
+          {shift.date ? (
+            <View style={styles.metaRow}>
+              <CalendarDays size={12} color={Colors.textSecondary} />
+              <Text style={styles.siMetaItem}>{shift.date}</Text>
+            </View>
+          ) : null}
+        </View>
+
+        {shift.progress !== undefined && (
+          <View style={styles.progressWrap}>
+            <View style={styles.progressRow}>
+              <Text style={styles.progressLbl}>
+                {shift.status === 'done' ? 'Compliance' : 'Patrol Progress'}
+              </Text>
+              <Text
+                style={[
+                  styles.progressVal,
+                  {
+                    color:
+                      shift.status === 'done' ? Colors.success : Colors.accent,
+                  },
+                ]}
+              >
+                {shift.progressLabel}
+              </Text>
+            </View>
+            <View style={styles.progressBar}>
+              <View
+                style={[
+                  styles.progressFill,
+                  {
+                    width: `${shift.progress}%`,
+                    backgroundColor:
+                      shift.status === 'done' ? Colors.success : Colors.accent,
+                  },
+                ]}
+              />
+            </View>
+          </View>
+        )}
+
+        {canAction && (
+          <TouchableOpacity
+            style={styles.signInBtn}
+            onPress={() => handleShiftAction(shift)}
+          >
+            <View style={styles.signInRow}>
+              {ongoing ? (
+                <CheckCircle size={16} color="#fff" />
+              ) : (
+                <Camera size={16} color="#fff" />
+              )}
+              <Text style={styles.signInText}>
+                {ongoing ? '  Ongoing Shift' : '  Sign In'}
+              </Text>
+            </View>
+          </TouchableOpacity>
+        )}
+      </View>
+    );
+  };
+
+  const renderListItem = ({ item }: { item: ShiftListItem }) => {
+    if (item.type === 'header') {
+      return <Text style={styles.groupLabel}>{item.label}</Text>;
+    }
+    return renderShiftCard(item.shift);
+  };
+
+  const listHeader = (
+    <>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+        <View style={styles.filterRow}>
+          {FILTERS.map(f => (
+            <Chip
+              key={f}
+              label={f}
+              active={activeFilter === f}
+              onPress={() => setActiveFilter(f)}
+            />
+          ))}
+        </View>
+      </ScrollView>
+
+      {loading ? <ShiftListShimmer count={5} /> : null}
+
+      {!loading && filteredShifts.length === 0 ? (
+        <View style={styles.loaderWrap}>
+          <Text style={styles.loaderText}>No shifts found.</Text>
+        </View>
+      ) : null}
+    </>
+  );
+
+  const listFooter = !loading && hasMore ? (
+    <View style={styles.footerLoader}>
+      <ActivityIndicator size="small" color={Colors.accent} />
+      <Text style={styles.footerLoaderText}>Loading more shifts...</Text>
+    </View>
+  ) : !loading && filteredShifts.length > 0 && !hasMore ? (
+    <Text style={styles.endHint}>
+      Showing all {filteredShifts.length} shift
+      {filteredShifts.length === 1 ? '' : 's'}
+    </Text>
+  ) : null;
 
   return (
     <View style={styles.container}>
-      <StatusBar barStyle="dark-content" backgroundColor={Colors.bg} />
-      <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
-        {/* Header */}
+      <StatusBar barStyle="light-content" backgroundColor={Colors.headerStart} />
+
+      <SafeAreaView style={styles.safeTop} edges={['top']}>
         <View style={styles.header}>
-          <View style={styles.backRow}>
-            <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
-              <Text style={styles.backIcon}>←</Text>
-            </TouchableOpacity>
-            <Text style={styles.headerTitle}>My Shifts</Text>
+          <View style={styles.hdrRow}>
+            <Text style={styles.hdrTitle}>My Shifts</Text>
+            <View style={styles.countBadge}>
+              <Text style={styles.countBadgeText}>
+                {loading ? '...' : `${shiftCount} SHIFTS`}
+              </Text>
+            </View>
           </View>
-
-          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-            <View style={styles.filterRow}>
-              {FILTERS.map(f => (
-                <Chip
-                  key={f}
-                  label={f}
-                  active={activeFilter === f}
-                  onPress={() => setActiveFilter(f)}
-                />
-              ))}
-            </View>
-          </ScrollView>
+          <Text style={styles.hdrSub}>{formatFullDisplayDate()}</Text>
         </View>
+      </SafeAreaView>
 
-        {/* Shifts List */}
-        <ScrollView style={styles.body} showsVerticalScrollIndicator={false}>
-          {loading ? (
-            <ShiftListShimmer count={5} />
-          ) : filteredShifts.length === 0 ? (
-            <View style={styles.loaderWrap}>
-              <Text style={styles.loaderText}>No shifts found.</Text>
-            </View>
-          ) : null}
+      <SafeAreaView style={styles.safeBody} edges={['bottom']}>
+        <FlatList
+          style={styles.body}
+          contentContainerStyle={styles.bodyContent}
+          data={loading ? [] : listItems}
+          keyExtractor={item => item.key}
+          renderItem={renderListItem}
+          ListHeaderComponent={listHeader}
+          ListFooterComponent={listFooter}
+          showsVerticalScrollIndicator={false}
+          onScroll={handleScroll}
+          scrollEventThrottle={16}
+          onEndReached={loadMore}
+          onEndReachedThreshold={0.2}
+          initialNumToRender={12}
+          maxToRenderPerBatch={10}
+          windowSize={7}
+        />
 
-          {!loading && filteredShifts.map((group, gi) => (
-            <View key={gi}>
-              <Text style={styles.groupLabel}>{group.group}</Text>
-              {group.items.map((shift, si) => {
-                const badge = badgeConfig[shift.status];
-                const ongoing = isThisShiftOngoing(shift, activeSession);
-                const canAction =
-                  shift.status !== 'done' && (ongoing || shift.status === 'upcoming');
-
-                return (
-                  <View
-                    key={si}
-                    style={[
-                      styles.shiftItem,
-                      Shadows.card,
-                      { borderLeftColor: leftBarColor[shift.status] },
-                    ]}
-                  >
-                    <View style={styles.siTop}>
-                      <View style={styles.siTopLeft}>
-                        <Text
-                          style={styles.siSite}
-                          numberOfLines={1}
-                          ellipsizeMode="tail"
-                        >
-                          {truncateSiteName(shift.site)}
-                        </Text>
-                        {/* <Text style={styles.siId}>{shift.id}</Text> */}
-                      </View>
-                      <View
-                        style={[styles.siBadge, { backgroundColor: badge.bg }]}
-                      >
-                        <Text
-                          style={[styles.siBadgeText, { color: badge.color }]}
-                        >
-                          {badge.label}
-                        </Text>
-                      </View>
-                    </View>
-
-                    <View style={styles.siMeta}>
-                      <View
-                        style={{
-                          flexDirection: 'row',
-                          alignItems: 'center',
-                          gap: 6,
-                        }}
-                      >
-                        <Clock size={12} color={Colors.textSecondary} />
-                        <Text style={styles.siMetaItem}>{shift.time}</Text>
-                      </View>
-
-                      <View
-                        style={{
-                          flexDirection: 'row',
-                          alignItems: 'center',
-                          gap: 6,
-                        }}
-                      >
-                        <MapPin size={12} color={Colors.textSecondary} />
-                        <Text style={styles.siMetaItem}>{shift.zones}</Text>
-                      </View>
-
-                      {shift.date ? (
-                        <View
-                          style={{
-                            flexDirection: 'row',
-                            alignItems: 'center',
-                            gap: 6,
-                          }}
-                        >
-                          <CalendarDays size={12} color={Colors.textSecondary} />
-                          <Text style={styles.siMetaItem}>{shift.date}</Text>
-                        </View>
-                      ) : null}
-                    </View>
-
-                    {shift.progress !== undefined && (
-                      <View style={styles.progressWrap}>
-                        <View style={styles.progressRow}>
-                          <Text style={styles.progressLbl}>
-                            {shift.status === 'done'
-                              ? 'Compliance'
-                              : 'Patrol Progress'}
-                          </Text>
-                          <Text
-                            style={[
-                              styles.progressVal,
-                              {
-                                color:
-                                  shift.status === 'done'
-                                    ? Colors.success
-                                    : Colors.accent,
-                              },
-                            ]}
-                          >
-                            {shift.progressLabel}
-                          </Text>
-                        </View>
-                        <View style={styles.progressBar}>
-                          <View
-                            style={[
-                              styles.progressFill,
-                              {
-                                width: `${shift.progress}%`,
-                                backgroundColor:
-                                  shift.status === 'done'
-                                    ? Colors.success
-                                    : Colors.accent,
-                              },
-                            ]}
-                          />
-                        </View>
-                      </View>
-                    )}
-
-                    {canAction && (
-                      <TouchableOpacity
-                        style={styles.signInBtn}
-                        onPress={() => handleShiftAction(shift)}
-                      >
-                        <View
-                          style={{ flexDirection: 'row', alignItems: 'center' }}
-                        >
-                          {ongoing ? (
-                            <CheckCircle size={16} color="#fff" />
-                          ) : (
-                            <Camera size={16} color="#fff" />
-                          )}
-                          <Text style={styles.signInText}>
-                            {ongoing ? '  Ongoing Shift' : '  Sign In Now'}
-                          </Text>
-                        </View>
-                      </TouchableOpacity>
-                    )}
-                  </View>
-                );
-              })}
-            </View>
-          ))}
-        </ScrollView>
-
-        {/* Bottom Navigation */}
         <NavBar
           variant="light"
           items={[
@@ -339,36 +425,41 @@ export default function ShiftsScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.bgAlt },
-  safe: { flex: 1 },
+  container: { flex: 1, backgroundColor: Colors.headerStart },
+  safeTop: { backgroundColor: Colors.headerStart },
+  safeBody: { flex: 1, backgroundColor: Colors.bgAlt },
 
   header: {
-    backgroundColor: Colors.bg,
+    backgroundColor: Colors.headerStart,
     paddingHorizontal: 18,
-    paddingTop: 14,
-    paddingBottom: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.border,
+    paddingTop: 8,
+    paddingBottom: 22,
   },
-  backRow: {
+  hdrRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    marginBottom: 10,
+    justifyContent: 'space-between',
+    marginBottom: 3,
   },
-  backBtn: {
-    width: 30,
-    height: 30,
-    backgroundColor: Colors.bgAlt,
-    borderRadius: 9,
-    alignItems: 'center',
-    justifyContent: 'center',
+  hdrTitle: { fontSize: 17, fontWeight: '800', color: Colors.white },
+  countBadge: {
+    backgroundColor: 'rgba(121,31,61,0.2)',
+    borderWidth: 1,
+    borderColor: 'rgba(121,31,61,0.3)',
+    borderRadius: 7,
+    paddingHorizontal: 9,
+    paddingVertical: 3,
   },
-  backIcon: { fontSize: 13, color: '#666' },
-  headerTitle: { fontSize: 16, fontWeight: '800', color: Colors.textPrimary },
-  filterRow: { flexDirection: 'row', gap: 6, paddingBottom: 2 },
+  countBadgeText: {
+    fontSize: FontSizes.xs,
+    fontWeight: '700',
+    color: '#f5c2d0',
+  },
+  hdrSub: { fontSize: FontSizes.xs, color: 'rgba(255,255,255,0.35)' },
+  filterRow: { flexDirection: 'row', gap: 6, paddingBottom: 12, marginTop: 4 },
 
-  body: { padding: 14 },
+  body: { flex: 1 },
+  bodyContent: { paddingHorizontal: 14, paddingBottom: 14 },
   loaderWrap: {
     alignItems: 'center',
     justifyContent: 'center',
@@ -413,7 +504,6 @@ const styles = StyleSheet.create({
     minWidth: 0,
   },
   siSite: { fontSize: 13, fontWeight: '700', color: Colors.textPrimary },
-  siId: { fontSize: FontSizes.xs, color: Colors.textMuted, marginTop: 1 },
   siBadge: {
     borderRadius: 7,
     paddingHorizontal: 9,
@@ -425,6 +515,7 @@ const styles = StyleSheet.create({
   siBadgeText: { fontSize: 10, fontWeight: '700' },
 
   siMeta: { flexDirection: 'row', gap: 14, paddingLeft: 8, flexWrap: 'wrap' },
+  metaRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   siMetaItem: { fontSize: FontSizes.xs, color: Colors.textSecondary },
 
   progressWrap: { marginTop: 10, paddingLeft: 8 },
@@ -443,7 +534,6 @@ const styles = StyleSheet.create({
   },
   progressFill: { height: '100%', borderRadius: 2 },
 
-  /* New Sign In Button */
   signInBtn: {
     marginTop: 14,
     backgroundColor: Colors.accent,
@@ -451,9 +541,31 @@ const styles = StyleSheet.create({
     borderRadius: Radii.md,
     alignItems: 'center',
   },
+  signInRow: { flexDirection: 'row', alignItems: 'center' },
   signInText: {
     color: '#fff',
     fontWeight: '700',
     fontSize: 15,
+  },
+
+  footerLoader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 16,
+  },
+  footerLoaderText: {
+    fontSize: FontSizes.sm,
+    color: Colors.textMuted,
+    fontWeight: '600',
+  },
+  endHint: {
+    textAlign: 'center',
+    fontSize: FontSizes.xs,
+    color: Colors.textMuted,
+    marginTop: 4,
+    marginBottom: 12,
+    fontWeight: '600',
   },
 });

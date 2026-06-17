@@ -1,12 +1,13 @@
 import React, { useEffect, useRef } from 'react';
 import { Animated, StyleSheet, View, ViewStyle } from 'react-native';
-import { Colors, Radii, Shadows } from '../theme';
+import { Colors, Radii, Shadows, Spacing } from '../theme';
 
 interface ShimmerBoxProps {
   width?: number | `${number}%`;
   height?: number;
   borderRadius?: number;
   style?: ViewStyle;
+  tone?: 'light' | 'dark';
 }
 
 export function ShimmerBox({
@@ -14,8 +15,11 @@ export function ShimmerBox({
   height = 16,
   borderRadius = Radii.sm,
   style,
+  tone = 'light',
 }: ShimmerBoxProps) {
   const pulse = useRef(new Animated.Value(0.35)).current;
+  const baseColor = tone === 'dark' ? '#2A2A45' : '#E4E4E8';
+  const highlightColor = tone === 'dark' ? '#3D3D5C' : '#F7F7FA';
 
   useEffect(() => {
     const loop = Animated.loop(
@@ -40,11 +44,16 @@ export function ShimmerBox({
     <View
       style={[
         styles.base,
-        { width, height, borderRadius },
+        { width, height, borderRadius, backgroundColor: baseColor },
         style,
       ]}
     >
-      <Animated.View style={[styles.highlight, { opacity: pulse }]} />
+      <Animated.View
+        style={[
+          styles.highlight,
+          { opacity: pulse, backgroundColor: highlightColor },
+        ]}
+      />
     </View>
   );
 }
@@ -84,11 +93,11 @@ export function PatrolListShimmer({ count = 3 }: { count?: number }) {
   return (
     <>
       {Array.from({ length: count }).map((_, i) => (
-        <View key={i} style={[styles.patrolRow, styles.cardShadow]}>
-          <ShimmerBox width={10} height={10} borderRadius={5} />
+        <View key={i} style={styles.patrolRow}>
+          <ShimmerBox width={9} height={9} borderRadius={9} />
           <View style={{ flex: 1, gap: 6 }}>
-            <ShimmerBox width="75%" height={12} />
-            <ShimmerBox width="35%" height={10} />
+            <ShimmerBox width="78%" height={12} />
+            <ShimmerBox width="42%" height={10} />
           </View>
         </View>
       ))}
@@ -116,16 +125,36 @@ export function PatrolTimelineShimmer() {
 
 export function DashboardShiftShimmer() {
   return (
-    <View style={[styles.dashboardShift, styles.cardShadow]}>
-      <View style={{ flex: 1, gap: 8 }}>
+    <View style={styles.dashboardShiftCard}>
+      <View style={styles.dashboardShiftLeft}>
         <ShimmerBox width={80} height={10} />
-        <ShimmerBox width="65%" height={14} />
-        <ShimmerBox width="50%" height={10} />
+        <ShimmerBox width="92%" height={14} />
+        <ShimmerBox width="55%" height={10} />
       </View>
-      <View style={{ alignItems: 'flex-end', gap: 8 }}>
-        <ShimmerBox width={70} height={20} borderRadius={16} />
-        <ShimmerBox width={80} height={30} borderRadius={10} />
+      <View style={styles.dashboardShiftRight}>
+        <ShimmerBox width={72} height={20} borderRadius={16} />
+        <ShimmerBox width={84} height={30} borderRadius={10} />
       </View>
+    </View>
+  );
+}
+
+function DashboardStatCardShimmer() {
+  return (
+    <View style={styles.dashboardStatCard}>
+      <ShimmerBox width={30} height={30} borderRadius={9} />
+      <ShimmerBox width={40} height={20} style={{ marginTop: 6 }} />
+      <ShimmerBox width="72%" height={10} style={{ marginTop: 4 }} />
+    </View>
+  );
+}
+
+export function DashboardStatsShimmer() {
+  return (
+    <View style={styles.dashboardStatsGrid}>
+      {Array.from({ length: 4 }).map((_, i) => (
+        <DashboardStatCardShimmer key={i} />
+      ))}
     </View>
   );
 }
@@ -171,6 +200,38 @@ export function IncidentListShimmer({ count = 3 }: { count?: number }) {
   );
 }
 
+export function ProfileShimmer() {
+  return (
+    <>
+      <View style={styles.profileAvatarWrap}>
+        <ShimmerBox width={110} height={110} borderRadius={60} />
+      </View>
+      <View style={[styles.profileCard, styles.cardShadow]}>
+        <ShimmerBox width={100} height={12} style={{ marginBottom: 16 }} />
+        {Array.from({ length: 5 }).map((_, i) => (
+          <View key={i} style={{ marginBottom: 14 }}>
+            <ShimmerBox width={80} height={10} style={{ marginBottom: 6 }} />
+            <ShimmerBox width="85%" height={14} />
+          </View>
+        ))}
+      </View>
+      <View style={[styles.profileCard, styles.cardShadow]}>
+        <ShimmerBox width={110} height={12} style={{ marginBottom: 14 }} />
+        {Array.from({ length: 2 }).map((_, i) => (
+          <View key={i} style={styles.profileActionRow}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 }}>
+              <ShimmerBox width={35} height={35} borderRadius={10} />
+              <ShimmerBox width="50%" height={14} />
+            </View>
+            <ShimmerBox width={18} height={18} borderRadius={4} />
+          </View>
+        ))}
+      </View>
+      <ShimmerBox height={52} borderRadius={Radii.md} />
+    </>
+  );
+}
+
 const styles = StyleSheet.create({
   base: {
     backgroundColor: '#E4E4E8',
@@ -208,8 +269,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
-    padding: 12,
-    marginBottom: 8,
+    padding: Spacing.md,
+    marginBottom: 7,
+    backgroundColor: Colors.bgCard,
+    borderRadius: Radii.md,
+    ...Shadows.card,
   },
   patrolTimelineWrap: {
     padding: 16,
@@ -223,13 +287,38 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     borderRadius: Radii.xl,
   },
-  dashboardShift: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+  dashboardShiftCard: {
+    backgroundColor: Colors.bgCard,
+    borderRadius: Radii.xl,
     padding: 14,
     marginTop: 6,
     marginBottom: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    ...Shadows.card,
+  },
+  dashboardShiftLeft: {
+    flex: 1,
+    minWidth: 0,
+    gap: 8,
+  },
+  dashboardShiftRight: {
+    alignItems: 'flex-end',
+    gap: 8,
+    flexShrink: 0,
+  },
+  dashboardStatsGrid: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 14,
+  },
+  dashboardStatCard: {
+    flex: 1,
+    backgroundColor: Colors.bgCard,
+    borderRadius: Radii.md,
+    padding: 12,
+    ...Shadows.card,
   },
   incidentCard: {
     borderRadius: Radii.lg,
@@ -247,5 +336,23 @@ const styles = StyleSheet.create({
     paddingTop: 10,
     marginLeft: 6,
     marginRight: 2,
+  },
+  profileAvatarWrap: {
+    alignItems: 'center',
+    marginBottom: 15,
+  },
+  profileCard: {
+    padding: 14,
+    marginBottom: 14,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  profileActionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border,
   },
 });

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -6,13 +6,15 @@ import {
   TouchableOpacity,
   StyleSheet,
   StatusBar,
-  ScrollView,
-  KeyboardAvoidingView,
-  Platform,
   Alert,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Colors, FontSizes, Radii, Spacing } from '../theme';
-import { User, Eye, EyeOff, ArrowLeft } from 'lucide-react-native';
+import { Eye, EyeOff } from 'lucide-react-native';
+import AppLogo from '../components/AppLogo';
+import AuthKeyboardScroll, {
+  AuthKeyboardScrollHandle,
+} from '../components/AuthKeyboardScroll';
 import { useAuthNavigation } from '../navigation/utils';
 import { AUTH_ROUTES } from '../navigation/constants';
 import type { AuthStackScreenProps } from '../navigation/types';
@@ -24,6 +26,16 @@ export default function SignupScreen({ }: SignupScreenProps) {
   const [showPass, setShowPass] = useState(false);
   const [showConfirmPass, setShowConfirmPass] = useState(false);
   const [loading, setLoading] = useState(false);
+  const keyboardScrollRef = useRef<AuthKeyboardScrollHandle>(null);
+  const nameFieldRef = useRef<View>(null);
+  const emailFieldRef = useRef<View>(null);
+  const passwordFieldRef = useRef<View>(null);
+  const confirmPasswordFieldRef = useRef<View>(null);
+  const phoneFieldRef = useRef<View>(null);
+
+  const scrollToField = (fieldRef: React.RefObject<View | null>) => {
+    keyboardScrollRef.current?.scrollToField(fieldRef);
+  };
 
   const [form, setForm] = useState({
     name: '',
@@ -79,15 +91,11 @@ export default function SignupScreen({ }: SignupScreenProps) {
         backgroundColor={Colors.headerStart}
       />
 
-      <KeyboardAvoidingView
-        style={{ flex: 1 }}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      >
-        <ScrollView showsVerticalScrollIndicator={false}>
-          {/* Header */}
+      <SafeAreaView style={styles.safe} edges={['top']}>
+        <AuthKeyboardScroll ref={keyboardScrollRef} wrapFullScreen={false}>
           <View style={styles.header}>
-            <View style={styles.headerIcon}>
-              <User size={22} color={Colors.accent} />
+            <View style={styles.logoWrap}>
+              <AppLogo variant="splash" centered={false} />
             </View>
             <Text style={styles.headerTitle}>Create Account</Text>
             <Text style={styles.headerSub}>
@@ -95,41 +103,49 @@ export default function SignupScreen({ }: SignupScreenProps) {
             </Text>
           </View>
 
-          {/* Body */}
           <View style={styles.body}>
             {/* Name */}
             <Text style={styles.label}>FULL NAME</Text>
-            <View style={styles.inputWrap}>
+            <View ref={nameFieldRef} collapsable={false} style={styles.inputWrap}>
               <TextInput
                 style={styles.input}
                 placeholder="John Doe"
+                placeholderTextColor="#888"
                 value={form.name}
                 onChangeText={v => handleChange('name', v)}
+                onFocus={() => scrollToField(nameFieldRef)}
+                underlineColorAndroid="transparent"
               />
             </View>
 
             {/* Email */}
             <Text style={styles.label}>EMAIL ADDRESS</Text>
-            <View style={styles.inputWrap}>
+            <View ref={emailFieldRef} collapsable={false} style={styles.inputWrap}>
               <TextInput
                 style={styles.input}
                 placeholder="email@company.com"
+                placeholderTextColor="#888"
                 keyboardType="email-address"
                 autoCapitalize="none"
                 value={form.email}
                 onChangeText={v => handleChange('email', v)}
+                onFocus={() => scrollToField(emailFieldRef)}
+                underlineColorAndroid="transparent"
               />
             </View>
 
             {/* Password */}
             <Text style={styles.label}>PASSWORD</Text>
-            <View style={styles.inputWrap}>
+            <View ref={passwordFieldRef} collapsable={false} style={styles.inputWrap}>
               <TextInput
                 style={styles.input}
                 placeholder="••••••••"
+                placeholderTextColor="#888"
                 secureTextEntry={!showPass}
                 value={form.password}
                 onChangeText={v => handleChange('password', v)}
+                onFocus={() => scrollToField(passwordFieldRef)}
+                underlineColorAndroid="transparent"
               />
               <TouchableOpacity onPress={() => setShowPass(!showPass)}>
                 {showPass ? (
@@ -142,13 +158,20 @@ export default function SignupScreen({ }: SignupScreenProps) {
 
             {/* Confirm Password */}
             <Text style={styles.label}>CONFIRM PASSWORD</Text>
-            <View style={styles.inputWrap}>
+            <View
+              ref={confirmPasswordFieldRef}
+              collapsable={false}
+              style={styles.inputWrap}
+            >
               <TextInput
                 style={styles.input}
                 placeholder="••••••••"
+                placeholderTextColor="#888"
                 secureTextEntry={!showConfirmPass}
                 value={form.confirmPassword}
                 onChangeText={v => handleChange('confirmPassword', v)}
+                onFocus={() => scrollToField(confirmPasswordFieldRef)}
+                underlineColorAndroid="transparent"
               />
               <TouchableOpacity
                 onPress={() => setShowConfirmPass(!showConfirmPass)}
@@ -163,13 +186,16 @@ export default function SignupScreen({ }: SignupScreenProps) {
 
             {/* Phone */}
             <Text style={styles.label}>PHONE (optional)</Text>
-            <View style={styles.inputWrap}>
+            <View ref={phoneFieldRef} collapsable={false} style={styles.inputWrap}>
               <TextInput
                 style={styles.input}
                 placeholder="Enter phone number"
-                keyboardType="phone-pad" // ✅ FIXED
+                placeholderTextColor="#888"
+                keyboardType="phone-pad"
                 value={form.phone}
                 onChangeText={v => handleChange('phone', v)}
+                onFocus={() => scrollToField(phoneFieldRef)}
+                underlineColorAndroid="transparent"
               />
             </View>
 
@@ -196,31 +222,27 @@ export default function SignupScreen({ }: SignupScreenProps) {
               </Text>
             </TouchableOpacity>
           </View>
-        </ScrollView>
-      </KeyboardAvoidingView>
+        </AuthKeyboardScroll>
+      </SafeAreaView>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.bg },
+  safe: { flex: 1, backgroundColor: Colors.bg },
 
   header: {
     backgroundColor: Colors.headerStart,
     paddingHorizontal: 24,
-    paddingTop: 60,
-    paddingBottom: 60,
+    paddingTop: 16,
+    paddingBottom: 32,
     borderBottomLeftRadius: 28,
     borderBottomRightRadius: 28,
   },
 
-  headerIcon: {
-    width: 50,
-    height: 50,
-    backgroundColor: Colors.accentAlpha25,
-    borderRadius: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
+  logoWrap: {
+    alignItems: 'flex-start',
     marginBottom: 14,
   },
 
@@ -237,6 +259,8 @@ const styles = StyleSheet.create({
   },
 
   body: {
+    flexGrow: 1,
+    backgroundColor: Colors.bg,
     padding: Spacing.lg,
     paddingTop: 30,
   },
@@ -258,12 +282,15 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 13,
     marginBottom: 20,
+    overflow: 'hidden',
   },
 
   input: {
     flex: 1,
     fontSize: 12,
     color: Colors.textPrimary,
+    backgroundColor: Colors.bgInput,
+    padding: 0,
   },
 
   signupBtn: {

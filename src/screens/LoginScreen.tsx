@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -6,14 +6,15 @@ import {
   TouchableOpacity,
   StyleSheet,
   StatusBar,
-  ScrollView,
-  KeyboardAvoidingView,
-  Platform,
   Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Colors, FontSizes, Radii, Spacing, Shadows } from '../theme';
-import { Mail, Shield, User, KeyRound } from 'lucide-react-native';
+import { Colors, FontSizes, Radii, Spacing } from '../theme';
+import AppLogo from '../components/AppLogo';
+import AuthKeyboardScroll, {
+  AuthKeyboardScrollHandle,
+} from '../components/AuthKeyboardScroll';
+import { Mail, Shield, User, KeyRound, Eye, EyeOff, Lock } from 'lucide-react-native';
 import { sendGuardOtp, verifyGuardOtp } from '../services/guardApi';
 import { useAuthNavigation } from '../navigation/utils';
 import { AUTH_ROUTES } from '../navigation/constants';
@@ -32,11 +33,39 @@ export default function LoginScreen({ }: LoginScreenProps) {
   const [otpSent, setOtpSent] = useState(false);
   const [devOtp, setDevOtp] = useState<string | null>(null); // TODO: remove — dev-only OTP display
   const [loading, setLoading] = useState(false);
+  const [managerEmail, setManagerEmail] = useState('');
+  const [managerPassword, setManagerPassword] = useState('');
+  const [showManagerPass, setShowManagerPass] = useState(false);
+  const [rememberManager, setRememberManager] = useState(false);
+  const keyboardScrollRef = useRef<AuthKeyboardScrollHandle>(null);
+  const phoneFieldRef = useRef<View>(null);
+  const otpFieldRef = useRef<View>(null);
+  const managerEmailFieldRef = useRef<View>(null);
+  const managerPasswordFieldRef = useRef<View>(null);
+
+  const scrollToField = (fieldRef: React.RefObject<View | null>) => {
+    keyboardScrollRef.current?.scrollToField(fieldRef);
+  };
+
+  const resetManagerForm = () => {
+    setManagerEmail('');
+    setManagerPassword('');
+    setShowManagerPass(false);
+  };
 
   const resetOtpFlow = () => {
     setOtpSent(false);
     setOtp('');
     setDevOtp(null);
+  };
+
+  const resetFormsForRole = (nextRole: 'guard' | 'manager') => {
+    if (nextRole === 'guard') {
+      resetManagerForm();
+    } else {
+      resetOtpFlow();
+      setPhone('');
+    }
   };
 
   const handleGuardSubmit = async () => {
@@ -92,22 +121,49 @@ export default function LoginScreen({ }: LoginScreenProps) {
       setLoading(false);
     }
   };
+
+  const handleManagerSubmit = async () => {
+    const email = managerEmail.trim();
+    const password = managerPassword.trim();
+
+    if (!email) {
+      Alert.alert('Error', 'Please enter your email address');
+      return;
+    }
+
+    if (!password) {
+      Alert.alert('Error', 'Please enter your password');
+      return;
+    }
+
+    try {
+      setLoading(true);
+      // TODO: replace with manager login API when available
+      dispatch(
+        setAuth({
+          role: 'manager',
+          token: null,
+          guardId: null,
+        }),
+      );
+    } catch {
+      Alert.alert('Error', 'Something went wrong');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <View style={styles.container}>
       <StatusBar
         barStyle="light-content"
         backgroundColor={Colors.headerStart}
       />
-      <SafeAreaView style={{ flex: 1 }} edges={['top', 'bottom']}>
-        <KeyboardAvoidingView
-          style={{ flex: 1 }}
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        >
-          <ScrollView bounces={false} showsVerticalScrollIndicator={false}>
-          {/* Header */}
+      <SafeAreaView style={styles.safe} edges={['top']}>
+        <AuthKeyboardScroll ref={keyboardScrollRef} wrapFullScreen={false}>
           <View style={styles.header}>
-            <View style={styles.headerIcon}>
-              <Shield size={22} color={Colors.accent} />
+            <View style={styles.logoWrap}>
+              <AppLogo variant="splash" centered={false} />
             </View>
             <Text style={styles.headerTitle}>Welcome Back</Text>
             <Text style={styles.headerSub}>
@@ -115,7 +171,6 @@ export default function LoginScreen({ }: LoginScreenProps) {
             </Text>
           </View>
 
-          {/* Body */}
           <View style={styles.body}>
             {/* Role Tabs (keep only Guard active flow, Manager optional) */}
             <View style={styles.roleTabs}>
@@ -126,7 +181,7 @@ export default function LoginScreen({ }: LoginScreenProps) {
                 ]}
                 onPress={() => {
                   setRole('guard');
-                  resetOtpFlow();
+                  resetFormsForRole('guard');
                 }}
               >
                 <View style={{ flexDirection: 'row', alignItems: 'center' }}>
@@ -153,7 +208,7 @@ export default function LoginScreen({ }: LoginScreenProps) {
                 ]}
                 onPress={() => {
                   setRole('manager');
-                  resetOtpFlow();
+                  resetFormsForRole('manager');
                 }}
               >
                 <View style={{ flexDirection: 'row', alignItems: 'center' }}>
@@ -179,7 +234,11 @@ export default function LoginScreen({ }: LoginScreenProps) {
               <>
                 <Text style={styles.label}>PHONE NUMBER</Text>
 
-                <View style={styles.inputWrap}>
+                <View
+                  ref={phoneFieldRef}
+                  collapsable={false}
+                  style={styles.inputWrap}
+                >
                   <TextInput
                     style={styles.input}
                     value={phone}
@@ -187,10 +246,12 @@ export default function LoginScreen({ }: LoginScreenProps) {
                       setPhone(value);
                       if (otpSent) resetOtpFlow();
                     }}
+                    onFocus={() => scrollToField(phoneFieldRef)}
                     placeholder="923350964001"
                     placeholderTextColor="#888"
                     keyboardType="phone-pad"
                     editable={!loading}
+                    underlineColorAndroid="transparent"
                   />
                   <Mail size={18} color={Colors.textSecondary} />
                 </View>
@@ -203,16 +264,22 @@ export default function LoginScreen({ }: LoginScreenProps) {
                       </Text>
                     )}
                     <Text style={styles.label}>ENTER OTP</Text>
-                    <View style={styles.inputWrap}>
+                    <View
+                      ref={otpFieldRef}
+                      collapsable={false}
+                      style={styles.inputWrap}
+                    >
                       <TextInput
                         style={styles.input}
                         value={otp}
                         onChangeText={setOtp}
+                        onFocus={() => scrollToField(otpFieldRef)}
                         placeholder="123456"
                         placeholderTextColor="#888"
                         keyboardType="number-pad"
                         maxLength={6}
                         editable={!loading}
+                        underlineColorAndroid="transparent"
                       />
                       <KeyRound size={18} color={Colors.textSecondary} />
                     </View>
@@ -248,27 +315,114 @@ export default function LoginScreen({ }: LoginScreenProps) {
               </>
             )}
 
-            {/* Manager login stays unchanged (you can plug email/password later) */}
             {role === 'manager' && (
-              <Text style={{ color: Colors.textSecondary, marginTop: 20 }}>
-                Manager login coming soon...
-              </Text>
+              <>
+                <Text style={styles.label}>EMAIL ADDRESS</Text>
+                <View
+                  ref={managerEmailFieldRef}
+                  collapsable={false}
+                  style={styles.inputWrap}
+                >
+                  <TextInput
+                    style={styles.input}
+                    value={managerEmail}
+                    onChangeText={setManagerEmail}
+                    onFocus={() => scrollToField(managerEmailFieldRef)}
+                    placeholder="manager@company.com"
+                    placeholderTextColor="#888"
+                    keyboardType="email-address"
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    editable={!loading}
+                    underlineColorAndroid="transparent"
+                  />
+                  <Mail size={18} color={Colors.textSecondary} />
+                </View>
+
+                <Text style={styles.label}>PASSWORD</Text>
+                <View
+                  ref={managerPasswordFieldRef}
+                  collapsable={false}
+                  style={styles.inputWrap}
+                >
+                  <TextInput
+                    style={styles.input}
+                    value={managerPassword}
+                    onChangeText={setManagerPassword}
+                    onFocus={() => scrollToField(managerPasswordFieldRef)}
+                    placeholder="••••••••"
+                    placeholderTextColor="#888"
+                    secureTextEntry={!showManagerPass}
+                    editable={!loading}
+                    underlineColorAndroid="transparent"
+                  />
+                  <TouchableOpacity
+                    onPress={() => setShowManagerPass(!showManagerPass)}
+                    disabled={loading}
+                  >
+                    {showManagerPass ? (
+                      <Eye size={18} color={Colors.textSecondary} />
+                    ) : (
+                      <EyeOff size={18} color={Colors.textSecondary} />
+                    )}
+                  </TouchableOpacity>
+                </View>
+
+                <View style={styles.managerRow}>
+                  <TouchableOpacity
+                    style={styles.rememberRow}
+                    onPress={() => setRememberManager(!rememberManager)}
+                    disabled={loading}
+                    activeOpacity={0.8}
+                  >
+                    <View
+                      style={[
+                        styles.checkbox,
+                        rememberManager && styles.checkboxActive,
+                      ]}
+                    >
+                      {rememberManager ? (
+                        <Text style={styles.checkmark}>✓</Text>
+                      ) : null}
+                    </View>
+                    <Text style={styles.rememberText}>Remember me</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity disabled={loading} activeOpacity={0.8}>
+                    <Text style={styles.forgot}>Forgot password?</Text>
+                  </TouchableOpacity>
+                </View>
+
+                <TouchableOpacity
+                  style={styles.loginBtn}
+                  onPress={handleManagerSubmit}
+                  disabled={loading}
+                  activeOpacity={0.85}
+                >
+                  <View style={styles.managerBtnInner}>
+                    <Lock size={16} color={Colors.white} />
+                    <Text style={styles.loginBtnText}>
+                      {loading ? 'Signing in...' : 'SIGN IN'}
+                    </Text>
+                  </View>
+                </TouchableOpacity>
+              </>
             )}
 
-            {/* Signup */}
-            <TouchableOpacity
-              style={styles.signupWrap}
-              onPress={() => navigation.navigate(AUTH_ROUTES.SIGNUP)}
-              disabled={loading}
-            >
-              <Text style={styles.signupText}>
-                Don’t have an account?{' '}
-                <Text style={{ color: Colors.accent }}>Sign Up</Text>
-              </Text>
-            </TouchableOpacity>
+            {role === 'guard' && (
+              <TouchableOpacity
+                style={styles.signupWrap}
+                onPress={() => navigation.navigate(AUTH_ROUTES.SIGNUP)}
+                disabled={loading}
+              >
+                <Text style={styles.signupText}>
+                  Don’t have an account?{' '}
+                  <Text style={{ color: Colors.accent }}>Sign Up</Text>
+                </Text>
+              </TouchableOpacity>
+            )}
           </View>
-          </ScrollView>
-        </KeyboardAvoidingView>
+        </AuthKeyboardScroll>
       </SafeAreaView>
     </View>
   );
@@ -276,21 +430,17 @@ export default function LoginScreen({ }: LoginScreenProps) {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.bg },
+  safe: { flex: 1, backgroundColor: Colors.bg },
   header: {
     backgroundColor: Colors.headerStart,
     paddingHorizontal: 24,
-    paddingTop: 60,
-    paddingBottom: 62,
+    paddingTop: 16,
+    paddingBottom: 32,
     borderBottomLeftRadius: 28,
     borderBottomRightRadius: 28,
   },
-  headerIcon: {
-    width: 50,
-    height: 50,
-    backgroundColor: Colors.accentAlpha25,
-    borderRadius: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
+  logoWrap: {
+    alignItems: 'flex-start',
     marginBottom: 14,
   },
   headerTitle: {
@@ -301,7 +451,12 @@ const styles = StyleSheet.create({
   },
   headerSub: { fontSize: 11, color: Colors.textOnDarkMuted },
 
-  body: { padding: Spacing.lg, paddingTop: 30 },
+  body: {
+    flexGrow: 1,
+    backgroundColor: Colors.bg,
+    padding: Spacing.lg,
+    paddingTop: 30,
+  },
 
   roleTabs: { flexDirection: 'row', gap: 8, marginBottom: 30 },
   roleTab: {
@@ -334,8 +489,15 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 13,
     marginBottom: 20,
+    overflow: 'hidden',
   },
-  input: { flex: 1, fontSize: 12, color: Colors.textPrimary },
+  input: {
+    flex: 1,
+    fontSize: 12,
+    color: Colors.textPrimary,
+    backgroundColor: Colors.bgInput,
+    padding: 0,
+  },
   inputIcon: { fontSize: 13, color: '#888' },
 
   forgotWrap: { alignItems: 'flex-end', marginBottom: 4 },
@@ -381,7 +543,19 @@ const styles = StyleSheet.create({
   rememberRow: {
     flexDirection: 'row',
     alignItems: 'center',
+  },
+
+  managerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     marginBottom: 16,
+  },
+
+  managerBtnInner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
   },
 
   checkbox: {

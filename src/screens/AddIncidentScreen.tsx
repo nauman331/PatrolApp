@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -17,10 +17,17 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRoute } from '@react-navigation/native';
 import { useSelector } from 'react-redux';
 import { launchCamera, launchImageLibrary } from 'react-native-image-picker';
+import ReactNativeBlobUtil from 'react-native-blob-util';
 import SignatureCanvas from 'react-native-signature-canvas';
 import { Colors, FontSizes, Radii, Shadows } from '../theme';
 import {
+  SelfieWatermarkProcessor,
+  type SelfieWatermarkJob,
+} from '../components/SelfieWatermarkProcessor';
+import { formatCaptureTimestamp } from '../services/locationUtils';
+import {
   AlertTriangle,
+  ArrowLeft,
   Camera,
   Car,
   Eye,
@@ -49,6 +56,8 @@ import { fetchGuardIncidents } from '../store/slices/incidentsSlice';
 
 type AddIncidentRoute = GuardStackScreenProps<'AddIncident'>['route'];
 
+const MAX_INCIDENT_PHOTOS = 5;
+
 interface IncidentPhoto {
   uri: string;
   base64: string;
@@ -56,11 +65,20 @@ interface IncidentPhoto {
 }
 
 const SIGNATURE_PAD_STYLE = `
-  .m-signature-pad { box-shadow: none; border: none; margin: 0; }
-  .m-signature-pad--body { border: none; }
+  .m-signature-pad { box-shadow: none; border: none; margin: 0; background-color: #ffffff; }
+  .m-signature-pad--body { border: none; background-color: #ffffff; }
   .m-signature-pad--footer { display: none; margin: 0; }
-  body, html { width: 100%; height: 100%; }
-  canvas { width: 100% !important; height: 100% !important; }
+  body, html {
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    background-color: #ffffff !important;
+  }
+  canvas {
+    width: 100% !important;
+    height: 100% !important;
+    background-color: #ffffff !important;
+  }
 `;
 
 interface PersonForm {
@@ -162,6 +180,11 @@ function resizeList<T>(
   ];
 }
 
+async function uriToBase64(uri: string): Promise<string> {
+  const path = uri.startsWith('file://') ? uri.replace('file://', '') : uri;
+  return ReactNativeBlobUtil.fs.readFile(path, 'base64');
+}
+
 async function requestCameraPermission(): Promise<boolean> {
   if (Platform.OS !== 'android') return true;
   const granted = await PermissionsAndroid.request(
@@ -245,8 +268,11 @@ export default function AddIncidentScreen() {
   const dispatch = useAppDispatch();
   const guardId = useSelector((state: RootState) => state.auth?.guardId ?? null);
   const signatureRef = useRef<any>(null);
+  const pendingPhotoRef = useRef<{ timestamp: string } | null>(null);
 
   const [photos, setPhotos] = useState<IncidentPhoto[]>([]);
+  const [watermarkJob, setWatermarkJob] = useState<SelfieWatermarkJob | null>(null);
+  const [watermarking, setWatermarking] = useState(false);
   const [signatureUri, setSignatureUri] = useState('');
   const [signaturePadActive, setSignaturePadActive] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -368,8 +394,7 @@ export default function AddIncidentScreen() {
   };
 
   const handleAddPhoto = async () => {
-    if (photos.length >= 5) {
-      Alert.alert('Limit reached', 'You can add up to 5 photos.');
+    if (photos.length >= MAX_INCIDENT_PHOTOS || watermarking) {
       return;
     }
 
@@ -385,10 +410,9 @@ export default function AddIncidentScreen() {
         onPress: async () => {
           const result = await launchCamera({
             mediaType: 'photo',
-            quality: 0.4,
-            maxWidth: 1024,
-            maxHeight: 1024,
-            includeBase64: true,
+            quality: 0.8,
+            maxWidth: 1280,
+            maxHeight: 1280,
             saveToPhotos: false,
           });
           appendPhotoResult(result);
@@ -399,10 +423,9 @@ export default function AddIncidentScreen() {
         onPress: async () => {
           const result = await launchImageLibrary({
             mediaType: 'photo',
-            quality: 0.4,
-            maxWidth: 1024,
-            maxHeight: 1024,
-            includeBase64: true,
+            quality: 0.8,
+            maxWidth: 1280,
+            maxHeight: 1280,
             selectionLimit: 1,
           });
           appendPhotoResult(result);
@@ -412,26 +435,68 @@ export default function AddIncidentScreen() {
     ]);
   };
 
+  const startPhotoWatermark = useCallback(
+    (asset: { uri?: string; width?: number; height?: number }) => {
+      if (!asset.uri) {
+        Alert.alert('Error', 'Could not read photo data.');
+        return;
+      }
+
+      const now = new Date();
+      pendingPhotoRef.current = { timestamp: formatPhotoTimestamp(now) };
+      setWatermarking(true);
+      setWatermarkJob({
+        sourceUri: asset.uri,
+        timestamp: formatCaptureTimestamp(now),
+        width: asset.width,
+        height: asset.height,
+      });
+    },
+    [],
+  );
+
   const appendPhotoResult = (result: {
     didCancel?: boolean;
-    assets?: Array<{ uri?: string; base64?: string }>;
+    assets?: Array<{ uri?: string; width?: number; height?: number }>;
   }) => {
     if (result.didCancel) return;
     const asset = result.assets?.[0];
-    if (!asset?.uri || !asset.base64) {
+    if (!asset?.uri) {
       Alert.alert('Error', 'Could not read photo data.');
       return;
     }
-    const now = new Date();
-    setPhotos(prev => [
-      ...prev,
-      {
-        uri: asset.uri!,
-        base64: asset.base64!,
-        timestamp: formatPhotoTimestamp(now),
-      },
-    ]);
+    startPhotoWatermark(asset);
   };
+
+  const handleWatermarkComplete = useCallback(async (uri: string) => {
+    try {
+      const base64 = await uriToBase64(uri);
+      const pending = pendingPhotoRef.current;
+      setPhotos(prev => [
+        ...prev,
+        {
+          uri,
+          base64,
+          timestamp: pending?.timestamp ?? formatPhotoTimestamp(new Date()),
+        },
+      ]);
+    } catch {
+      Alert.alert('Error', 'Could not process photo watermark.');
+    } finally {
+      pendingPhotoRef.current = null;
+      setWatermarkJob(null);
+      setWatermarking(false);
+    }
+  }, []);
+
+  const handleWatermarkError = useCallback(() => {
+    Alert.alert('Error', 'Could not apply watermark to photo.');
+    pendingPhotoRef.current = null;
+    setWatermarkJob(null);
+    setWatermarking(false);
+  }, []);
+
+  const photosFull = photos.length >= MAX_INCIDENT_PHOTOS;
 
   const toggleEmergencyService = (service: string) => {
     setForm(prev => {
@@ -580,6 +645,7 @@ export default function AddIncidentScreen() {
   };
 
   const handleClearSignature = () => {
+    if (signatureUri) return;
     signatureRef.current?.clearSignature();
     setSignatureUri('');
     unlockScrollForSignature();
@@ -588,23 +654,37 @@ export default function AddIncidentScreen() {
   const handleSignatureOK = (sig: string) => {
     unlockScrollForSignature();
     if (sig?.trim()) {
-      setSignatureUri(sig.startsWith('data:') ? sig : toDataUri(sig));
+      setSignatureUri(
+        sig.startsWith('data:') ? sig : toDataUri(sig, 'image/png'),
+      );
     }
   };
 
+  const signatureSaved = Boolean(signatureUri.trim());
+
   return (
     <View style={styles.container}>
-      <StatusBar barStyle="dark-content" backgroundColor={Colors.bg} />
-      <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
-        <View style={styles.header}>
-          <TouchableOpacity onPress={() => navigation.goBack()}>
-            <Text style={styles.back}>←</Text>
-          </TouchableOpacity>
-          <Text style={styles.title}>Report Incident</Text>
-        </View>
+      <SelfieWatermarkProcessor
+        job={watermarkJob}
+        onComplete={handleWatermarkComplete}
+        onError={handleWatermarkError}
+      />
+      <StatusBar barStyle="light-content" backgroundColor={Colors.headerStart} />
 
+      <SafeAreaView style={styles.safeTop} edges={['top']}>
+        <View style={styles.header}>
+          <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
+            <ArrowLeft size={20} color={Colors.white} />
+          </TouchableOpacity>
+          <Text style={styles.hdrTitle}>Report Incident</Text>
+          <View style={styles.headerSpacer} />
+        </View>
+      </SafeAreaView>
+
+      <SafeAreaView style={styles.safeBody} edges={['bottom']}>
         <ScrollView
           style={styles.body}
+          contentContainerStyle={styles.bodyContent}
           showsVerticalScrollIndicator={false}
           scrollEnabled={!signaturePadActive}
           keyboardShouldPersistTaps="handled"
@@ -930,77 +1010,107 @@ export default function AddIncidentScreen() {
             />
           </View>
 
-          <View style={styles.card}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-              <Camera size={14} color={Colors.success} style={styles.icon} />
-              <Text style={[styles.label, { color: Colors.textSecondary }]}>
-                Incident Photos
+          <View style={[styles.card, Shadows.card]}>
+            <View style={styles.cardLabelRow}>
+              <Camera size={16} color={Colors.success} />
+              <Text style={styles.cardLabel}>Incident Photos</Text>
+              <Text style={styles.photoCount}>
+                {photos.length}/{MAX_INCIDENT_PHOTOS}
               </Text>
             </View>
             <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
-              style={{ marginTop: 8 }}
+              style={styles.photoScroll}
+              contentContainerStyle={styles.photoScrollContent}
             >
+              <TouchableOpacity
+                style={[
+                  styles.addPhotoBtn,
+                  (photosFull || watermarking) && styles.addPhotoBtnDisabled,
+                ]}
+                onPress={handleAddPhoto}
+                disabled={photosFull || watermarking}
+                activeOpacity={0.85}
+              >
+                {watermarking ? (
+                  <ActivityIndicator size="small" color={Colors.accent} />
+                ) : (
+                  <>
+                    <Camera size={22} color={Colors.accent} />
+                    <Text style={styles.addPhotoLabel}>Add</Text>
+                  </>
+                )}
+              </TouchableOpacity>
               {photos.map((photo, i) => (
                 <Image key={i} source={{ uri: photo.uri }} style={styles.photo} />
               ))}
-              <TouchableOpacity
-                style={styles.addPhotoBtn}
-                onPress={handleAddPhoto}
-              >
-                <Text style={styles.addPhotoText}>＋</Text>
-              </TouchableOpacity>
             </ScrollView>
-            <Text style={styles.helperText}>You can add up to 5 photos</Text>
+            <Text style={styles.helperText}>
+              {photosFull
+                ? 'Maximum 5 photos added'
+                : 'Logo and timestamp are added to each photo'}
+            </Text>
           </View>
 
-          <View style={styles.card}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-              <PenLine size={14} color={Colors.accent} style={styles.icon} />
-              <Text style={[styles.label, { color: Colors.textSecondary }]}>
-                Draw your signature below, then tap Save
+          <View style={[styles.card, Shadows.card]}>
+            <View style={styles.cardLabelRow}>
+              <PenLine size={16} color={Colors.accent} />
+              <Text style={styles.cardLabel}>
+                {signatureSaved ? 'Signature saved' : 'Draw your signature, then tap Save'}
               </Text>
             </View>
-            <View
-              style={styles.signatureBox}
-              collapsable={false}
-              onStartShouldSetResponder={() => {
-                lockScrollForSignature();
-                return true;
-              }}
-              onMoveShouldSetResponder={() => true}
-              onResponderTerminationRequest={() => false}
-              onResponderRelease={unlockScrollForSignature}
-              onResponderTerminate={unlockScrollForSignature}
-            >
-              <SignatureCanvas
-                ref={signatureRef}
-                onOK={handleSignatureOK}
-                onEmpty={() => setSignatureUri('')}
-                onBegin={lockScrollForSignature}
-                onEnd={unlockScrollForSignature}
-                nestedScrollEnabled
-                descriptionText=""
-                clearText=""
-                confirmText=""
-                imageType="image/jpeg"
-                webStyle={SIGNATURE_PAD_STYLE}
-                backgroundColor="rgba(255,255,255,1)"
-                penColor="#000000"
-              />
-            </View>
-            <View style={styles.signatureActions}>
-              <TouchableOpacity onPress={handleClearSignature}>
-                <Text style={styles.clearText}>Clear</Text>
-              </TouchableOpacity>
-              <TouchableOpacity onPress={handleSaveSignature}>
-                <Text style={styles.clearText}>Save Signature</Text>
-              </TouchableOpacity>
-            </View>
-            {signatureUri ? (
-              <Text style={styles.helperText}>Signature saved</Text>
-            ) : null}
+            {signatureSaved ? (
+              <View style={styles.signatureSavedBox}>
+                <View style={styles.signaturePreviewWrap}>
+                  <Image
+                    source={{ uri: signatureUri }}
+                    style={styles.signaturePreview}
+                    resizeMode="contain"
+                  />
+                </View>
+                <Text style={styles.signatureSavedText}>Signature locked</Text>
+              </View>
+            ) : (
+              <>
+                <View
+                  style={styles.signatureBox}
+                  collapsable={false}
+                  onStartShouldSetResponder={() => {
+                    lockScrollForSignature();
+                    return true;
+                  }}
+                  onMoveShouldSetResponder={() => true}
+                  onResponderTerminationRequest={() => false}
+                  onResponderRelease={unlockScrollForSignature}
+                  onResponderTerminate={unlockScrollForSignature}
+                >
+                  <SignatureCanvas
+                    ref={signatureRef}
+                    onOK={handleSignatureOK}
+                    onEmpty={() => setSignatureUri('')}
+                    onBegin={lockScrollForSignature}
+                    onEnd={unlockScrollForSignature}
+                    nestedScrollEnabled
+                    descriptionText=""
+                    clearText=""
+                    confirmText=""
+                    imageType="image/png"
+                    webStyle={SIGNATURE_PAD_STYLE}
+                    backgroundColor="#FFFFFF"
+                    penColor="#000000"
+                  />
+                </View>
+                <View style={styles.signatureActions}>
+                  <TouchableOpacity onPress={handleClearSignature}>
+                    <Text style={styles.clearText}>Clear</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity onPress={handleSaveSignature}>
+                    <Text style={styles.clearText}>Save Signature</Text>
+                  </TouchableOpacity>
+                </View>
+              </>
+            )}
           </View>
         </ScrollView>
 
@@ -1031,25 +1141,52 @@ export default function AddIncidentScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.bg },
-  safe: { flex: 1 },
+  container: { flex: 1, backgroundColor: Colors.headerStart },
+  safeTop: { backgroundColor: Colors.headerStart },
+  safeBody: { flex: 1, backgroundColor: Colors.bgAlt },
 
   header: {
+    backgroundColor: Colors.headerStart,
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 18,
-    paddingBottom: 12,
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 14,
   },
-  back: { fontSize: 24, fontWeight: 'bold' },
-  title: {
-    fontSize: 18,
+  backBtn: {
+    width: 36,
+    height: 36,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  hdrTitle: {
+    fontSize: 17,
     fontWeight: '800',
-    color: Colors.textPrimary,
-    marginLeft: 60,
+    color: Colors.white,
   },
+  headerSpacer: { width: 36 },
 
-  body: { flex: 1, padding: 16 },
+  body: { flex: 1 },
+  bodyContent: { padding: 14, paddingBottom: 110 },
   icon: { marginBottom: 7 },
+
+  cardLabelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 12,
+  },
+  cardLabel: {
+    flex: 1,
+    fontSize: FontSizes.sm,
+    fontWeight: '700',
+    color: Colors.textSecondary,
+  },
+  photoCount: {
+    fontSize: FontSizes.xs,
+    fontWeight: '700',
+    color: Colors.textMuted,
+  },
 
   card: {
     backgroundColor: Colors.bgCard,
@@ -1168,11 +1305,18 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
 
+  photoScroll: {
+    marginTop: 4,
+  },
+  photoScrollContent: {
+    alignItems: 'center',
+    gap: 10,
+    paddingRight: 4,
+  },
   photo: {
     width: 80,
     height: 80,
     borderRadius: 12,
-    marginRight: 10,
     borderWidth: 2,
     borderColor: Colors.border,
   },
@@ -1183,9 +1327,21 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 2,
-    borderColor: Colors.border,
+    borderStyle: 'dashed',
+    borderColor: Colors.accent,
+    backgroundColor: Colors.accentLight,
+    gap: 4,
   },
-  addPhotoText: { fontSize: 28, color: Colors.accent },
+  addPhotoBtnDisabled: {
+    opacity: 0.45,
+    borderColor: Colors.border,
+    backgroundColor: Colors.bgAlt,
+  },
+  addPhotoLabel: {
+    fontSize: FontSizes.xs,
+    fontWeight: '700',
+    color: Colors.accent,
+  },
 
   helperText: {
     fontSize: 11,
@@ -1201,6 +1357,35 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     backgroundColor: '#fff',
     marginBottom: 8,
+  },
+  signatureSavedBox: {
+    height: 160,
+    borderWidth: 1.5,
+    borderColor: Colors.border,
+    borderRadius: Radii.md,
+    overflow: 'hidden',
+    backgroundColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 12,
+  },
+  signaturePreviewWrap: {
+    width: '100%',
+    height: 110,
+    backgroundColor: '#FFFFFF',
+    borderRadius: Radii.sm,
+    overflow: 'hidden',
+  },
+  signaturePreview: {
+    width: '100%',
+    height: '100%',
+    backgroundColor: '#FFFFFF',
+  },
+  signatureSavedText: {
+    marginTop: 8,
+    fontSize: FontSizes.xs,
+    fontWeight: '700',
+    color: Colors.success,
   },
   signatureActions: {
     flexDirection: 'row',
@@ -1218,7 +1403,7 @@ const styles = StyleSheet.create({
     padding: 16,
     borderTopWidth: 1,
     borderColor: Colors.border,
-    backgroundColor: Colors.bg,
+    backgroundColor: Colors.bgAlt,
   },
 
   cancelBtn: {

@@ -9,7 +9,10 @@ import AddPatrolReport from '../screens/AddPatrolReport';
 import IncidentsScreen from '../screens/IncidentsScreen';
 import AddIncidentScreen from '../screens/AddIncidentScreen';
 import ViewIncidentReportScreen from '../screens/ViewIncidentReportScreen';
+import GuardSopsScreen from '../screens/GuardSopsScreen';
 import ProfileScreen from '../screens/ProfileScreen';
+import PrivacyPolicyScreen from '../screens/PrivacyPolicyScreen';
+import TermsConditionsScreen from '../screens/TermsConditionsScreen';
 import { GuardStackParamList } from './types';
 import { GUARD_ROUTES, AUTH_ROUTES, ROOT_ROUTES } from './constants';
 import { Colors } from '../theme';
@@ -87,10 +90,22 @@ export function GuardNavigator() {
                 }}
             />
             <Stack.Screen
+                name={GUARD_ROUTES.SOPS}
+                component={GuardSopsScreen}
+            />
+            <Stack.Screen
                 name={GUARD_ROUTES.PROFILE}
                 component={ProfileScreen}
                 options={{
                 }}
+            />
+            <Stack.Screen
+                name={GUARD_ROUTES.PRIVACY_POLICY}
+                component={PrivacyPolicyScreen}
+            />
+            <Stack.Screen
+                name={GUARD_ROUTES.TERMS_CONDITIONS}
+                component={TermsConditionsScreen}
             />
         </Stack.Navigator>
     );

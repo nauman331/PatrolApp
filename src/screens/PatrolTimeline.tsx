@@ -46,10 +46,17 @@ import {
   findActiveReportForRoster,
   getCompletedCount,
   getNextScanner,
+  isPatrolReportActive,
   isScannerComplete,
 } from '../services/patrolUtils';
+import { formatFullDisplayDate } from '../services/guardJobsMapper';
 import { usePatrolNfcScan } from '../hooks/usePatrolNfcScan';
 import { stopNfc } from '../services/nfcReader';
+import {
+  getActiveShiftSession,
+  type ActiveShiftSession,
+  promptCheckInRequired,
+} from '../services/activeShiftSession';
 
 type PatrolTimelineRoute = GuardStackScreenProps<'PatrolTimeline'>['route'];
 
@@ -63,25 +70,6 @@ function formatPatrolTime(value?: string | null): string {
   return d.toLocaleTimeString(undefined, {
     hour: '2-digit',
     minute: '2-digit',
-  });
-}
-
-function formatPatrolDate(value?: string | null): string {
-  if (!value) {
-    return new Date().toLocaleDateString(undefined, {
-      weekday: 'short',
-      month: 'short',
-      day: 'numeric',
-      year: 'numeric',
-    });
-  }
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return value;
-  return d.toLocaleDateString(undefined, {
-    weekday: 'short',
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
   });
 }
 
@@ -142,6 +130,12 @@ export default function PatrolTimeline() {
   );
   const [patrolDate, setPatrolDate] = useState<string | null>(null);
   const [lastScannedGate, setLastScannedGate] = useState<string | null>(null);
+  const [shiftRosterId, setShiftRosterId] = useState<string | number | undefined>(
+    rosterId,
+  );
+  const [activeSession, setActiveSession] = useState<ActiveShiftSession | null>(
+    null,
+  );
   const autoStartAttemptedRef = useRef(false);
   const isMountedRef = useRef(true);
   const locationRef = useRef(coordinates ?? '');
@@ -154,14 +148,38 @@ export default function PatrolTimeline() {
     };
   }, []);
 
+  useEffect(() => {
+    getActiveShiftSession().then(session => {
+      if (!isMountedRef.current) return;
+      setActiveSession(session);
+      if (rosterId == null && session?.rosterId != null) {
+        setShiftRosterId(session.rosterId);
+      } else if (rosterId != null) {
+        setShiftRosterId(rosterId);
+      }
+    });
+  }, [rosterId]);
+
   const loadPatrols = useCallback(
     async (opts?: { silent?: boolean }) => {
       if (!opts?.silent && isMountedRef.current) setLoading(true);
       try {
+        const session =
+          rosterId != null ? null : await getActiveShiftSession();
+        const resolvedRosterId = rosterId ?? session?.rosterId ?? shiftRosterId;
+
         const result = await guardTodayPatrolling(guardId);
         if (!isMountedRef.current) return null;
 
         if (!result.success) {
+          const emptyList = result.data?.reports ?? [];
+          if (emptyList.length === 0) {
+            setReports([]);
+            setActiveReport(null);
+            setPatrolDate(result.data?.date ?? null);
+            return { list: [], active: null };
+          }
+
           if (!opts?.silent) {
             Alert.alert('Error', result.message ?? 'Failed to load patrols.');
           }
@@ -171,7 +189,7 @@ export default function PatrolTimeline() {
         }
 
         const list = result.data?.reports ?? [];
-        const active = findActiveReportForRoster(list, rosterId);
+        const active = findActiveReportForRoster(list, resolvedRosterId);
         setReports(list);
         setActiveReport(active);
         setPatrolDate(result.data?.date ?? list[0]?.started_at ?? null);
@@ -188,7 +206,7 @@ export default function PatrolTimeline() {
         }
       }
     },
-    [guardId, rosterId],
+    [guardId, rosterId, shiftRosterId],
   );
 
   const getScanCoordinates = useCallback(async () => {
@@ -213,11 +231,23 @@ export default function PatrolTimeline() {
   }, []);
 
   const startPatrol = useCallback(async () => {
-    if (rosterId == null) {
-      Alert.alert('Error', 'Roster is required to start patrolling.');
+    const session = await getActiveShiftSession();
+    if (!session) {
+      promptCheckInRequired(() => navigation.navigate(GUARD_ROUTES.SHIFTS));
       return false;
     }
-    if (siteId == null) {
+
+    const patrolRosterId = rosterId ?? shiftRosterId ?? session.rosterId;
+    if (String(session.rosterId) !== String(patrolRosterId)) {
+      Alert.alert(
+        'Shift mismatch',
+        'Start patrolling from your checked-in ongoing shift.',
+      );
+      return false;
+    }
+
+    const patrolSiteId = siteId ?? session.siteId;
+    if (patrolSiteId == null) {
       Alert.alert('Error', 'Site is required to start patrolling.');
       return false;
     }
@@ -233,8 +263,8 @@ export default function PatrolTimeline() {
 
     if (isMountedRef.current) setStarting(true);
     try {
-      const result = await guardStartPatrol(rosterId, {
-        site_id: siteId,
+      const result = await guardStartPatrol(patrolRosterId, {
+        site_id: patrolSiteId,
         guard_id: guardId ?? undefined,
         coordinates: coords,
       });
@@ -260,11 +290,13 @@ export default function PatrolTimeline() {
     }
   }, [
     rosterId,
+    shiftRosterId,
     siteId,
     coordinates,
     guardId,
     loadPatrols,
     getScanCoordinates,
+    navigation,
   ]);
 
   const activeReportRef = useRef<PatrollingReport | null>(null);
@@ -272,7 +304,6 @@ export default function PatrolTimeline() {
 
   const {
     scanning: nfcScanning,
-    handleScan: handleNfcScan,
     handleScanCheckpoint,
     scanModal,
   } = usePatrolNfcScan({
@@ -282,7 +313,7 @@ export default function PatrolTimeline() {
       if (!report) return null;
       return {
         patrolling_report_id: report.id,
-        roster_id: report.roster_id ?? rosterId,
+        roster_id: report.roster_id ?? rosterId ?? shiftRosterId,
         guard_id: report.guard_id ?? guardId ?? undefined,
         report,
       };
@@ -290,7 +321,7 @@ export default function PatrolTimeline() {
     hasActivePatrol: () => activeReportRef.current != null,
     onSuccess: (report, gateName) => {
       if (!isMountedRef.current) return;
-      setActiveReport(report);
+      setActiveReport(isPatrolReportActive(report) ? report : null);
       setReports(prev => {
         const idx = prev.findIndex(r => r.id === report.id);
         if (idx >= 0) {
@@ -315,6 +346,13 @@ export default function PatrolTimeline() {
 
       (async () => {
         try {
+          const session = await getActiveShiftSession();
+          if (cancelled || !isMountedRef.current) return;
+          setActiveSession(session);
+          if (rosterId == null && session?.rosterId != null) {
+            setShiftRosterId(session.rosterId);
+          }
+
           const loaded = await loadPatrolsRef.current();
           if (cancelled || !isMountedRef.current) return;
 
@@ -325,6 +363,16 @@ export default function PatrolTimeline() {
             !autoStartAttemptedRef.current
           ) {
             autoStartAttemptedRef.current = true;
+            const session = await getActiveShiftSession();
+            if (
+              !session ||
+              String(session.rosterId) !== String(rosterId)
+            ) {
+              promptCheckInRequired(() =>
+                navigation.navigate(GUARD_ROUTES.SHIFTS),
+              );
+              return;
+            }
             if (!loaded?.active) {
               await startPatrolRef.current();
             }
@@ -337,7 +385,7 @@ export default function PatrolTimeline() {
       return () => {
         cancelled = true;
       };
-    }, [autoStart, rosterId, siteId]),
+    }, [autoStart, rosterId, siteId, navigation]),
   );
 
   const handleRefresh = async () => {
@@ -345,12 +393,16 @@ export default function PatrolTimeline() {
     await loadPatrols({ silent: true });
   };
 
+  const resolvedRosterId = rosterId ?? shiftRosterId ?? activeSession?.rosterId;
+  const hasCheckedInShift =
+    activeSession != null &&
+    resolvedRosterId != null &&
+    String(activeSession.rosterId) === String(resolvedRosterId);
+  const canStartPatrol = hasCheckedInShift && !activeReport;
+
   const handleStartNewPatrol = () => {
-    if (!fromOngoingShift) {
-      Alert.alert(
-        'Start from shift',
-        'Open your ongoing shift and tap Patrolling to start a patrol round.',
-      );
+    if (!hasCheckedInShift) {
+      promptCheckInRequired(() => navigation.navigate(GUARD_ROUTES.SHIFTS));
       return;
     }
     startPatrol();
@@ -365,6 +417,14 @@ export default function PatrolTimeline() {
   const allComplete = totalScanners > 0 && completedCount >= totalScanners;
 
   const historyReports = reports.filter(r => r.id !== activeReport?.id);
+  const patrolHeaderDate = formatFullDisplayDate(patrolDate);
+  const patrolHeaderSub = [
+    siteName ?? activeSession?.site,
+    patrolHeaderDate,
+  ]
+    .filter(Boolean)
+    .join(' · ');
+  const screenTitle = activeReport ? 'Patrolling' : 'Patrol';
 
   const dotColors: Record<ScannerStatus, string> = {
     done: Colors.success,
@@ -383,50 +443,56 @@ export default function PatrolTimeline() {
   return (
     <View style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor={Colors.headerStart} />
-      <SafeAreaView style={styles.safe} edges={['top', 'left', 'right']}>
+
+      <SafeAreaView style={styles.safeTop} edges={['top']}>
         <View style={styles.header}>
-          <View style={styles.headerLeft}>
-            {fromOngoingShift ? (
-              <TouchableOpacity
-                style={styles.backBtn}
-                onPress={() => navigation.goBack()}
-              >
-                <ArrowLeft size={18} color={Colors.white} />
-              </TouchableOpacity>
-            ) : null}
-            <View style={{ flex: 1 }}>
-              <Text style={styles.headerTitle}>Patrolling</Text>
-              <Text style={styles.headerSub}>
-                {siteName ?? 'Today'} · {formatPatrolDate(patrolDate)}
-              </Text>
+          <View style={styles.hdrRow}>
+            <View style={styles.hdrTitleWrap}>
+              {fromOngoingShift ? (
+                <TouchableOpacity
+                  style={styles.backBtn}
+                  onPress={() => navigation.goBack()}
+                >
+                  <ArrowLeft size={18} color={Colors.white} />
+                </TouchableOpacity>
+              ) : null}
+              <Text style={styles.hdrTitle}>{screenTitle}</Text>
+            </View>
+
+            <View style={styles.hdrActions}>
+              <View style={styles.countBadge}>
+                <Text style={styles.countBadgeText}>
+                  {loading ? '...' : `${reports.length} ROUNDS`}
+                </Text>
+              </View>
+
+              {canStartPatrol ? (
+                <TouchableOpacity
+                  style={[styles.addBtn, starting && styles.addBtnDisabled]}
+                  onPress={handleStartNewPatrol}
+                  disabled={starting}
+                >
+                  {starting ? (
+                    <ActivityIndicator size="small" color={Colors.white} />
+                  ) : (
+                    <Text style={styles.addBtnText}>+ Start</Text>
+                  )}
+                </TouchableOpacity>
+              ) : null}
             </View>
           </View>
-
-          {fromOngoingShift ? (
-            <TouchableOpacity
-              style={[styles.addBtn, starting && styles.addBtnDisabled]}
-              onPress={handleStartNewPatrol}
-              disabled={starting}
-            >
-              {starting ? (
-                <ActivityIndicator size="small" color={Colors.white} />
-              ) : (
-                <Text style={styles.addBtnText}>+ Start</Text>
-              )}
-            </TouchableOpacity>
-          ) : null}
+          <Text style={styles.hdrSub}>{patrolHeaderSub}</Text>
         </View>
+      </SafeAreaView>
 
+      <SafeAreaView style={styles.safeBody} edges={['bottom']}>
         <View style={styles.body}>
         {showShimmer ? (
           <PatrolTimelineShimmer />
         ) : (
           <ScrollView
             style={styles.scroll}
-            contentContainerStyle={[
-              styles.scrollContent,
-              { paddingBottom: 24 },
-            ]}
+            contentContainerStyle={styles.scrollContent}
             showsVerticalScrollIndicator={false}
             refreshControl={
               <RefreshControl
@@ -475,9 +541,9 @@ export default function PatrolTimeline() {
                 <Route size={28} color={Colors.textMuted} />
                 <Text style={styles.emptyTitle}>No active patrol</Text>
                 <Text style={styles.emptySub}>
-                  {fromOngoingShift
+                  {hasCheckedInShift
                     ? 'Tap + Start to begin a new patrol round for this shift.'
-                    : 'Start patrolling from your ongoing shift screen.'}
+                    : 'Check in to a shift first, then start patrolling from the ongoing shift screen.'}
                 </Text>
               </View>
             )}
@@ -582,7 +648,7 @@ export default function PatrolTimeline() {
                             <>
                               <Text style={styles.scanPrompt}>
                                 Hold your phone on the physical NFC tag at this
-                                gate, then tap Scan NFC below.
+                                gate, then tap the scan button above.
                               </Text>
                               <TouchableOpacity
                                 style={styles.scanGateBtn}
@@ -615,6 +681,7 @@ export default function PatrolTimeline() {
                     report.scanners?.length ?? report.scanner_count;
                   const pct =
                     total > 0 ? Math.round((done / total) * 100) : 0;
+                  const roundActive = isPatrolReportActive(report);
                   return (
                     <View
                       key={report.id}
@@ -636,20 +703,20 @@ export default function PatrolTimeline() {
                         <View
                           style={[
                             styles.statusBadge,
-                            report.completed_at
-                              ? styles.statusDone
-                              : styles.statusActive,
+                            roundActive
+                              ? styles.statusActive
+                              : styles.statusDone,
                           ]}
                         >
                           <Text
                             style={[
                               styles.statusBadgeText,
-                              report.completed_at
-                                ? styles.statusDoneText
-                                : styles.statusActiveText,
+                              roundActive
+                                ? styles.statusActiveText
+                                : styles.statusDoneText,
                             ]}
                           >
-                            {report.completed_at ? 'Done' : 'Active'}
+                            {roundActive ? 'Active' : 'Done'}
                           </Text>
                         </View>
                       </View>
@@ -662,42 +729,17 @@ export default function PatrolTimeline() {
         )}
         </View>
 
-        {activeReport && !allComplete ? (
-          <View style={styles.scanDock}>
-            <TouchableOpacity
-              style={[styles.scanDockBtn, nfcScanning && styles.scanDockBtnDisabled]}
-              onPress={handleNfcScan}
-              disabled={nfcScanning}
-              activeOpacity={0.9}
-            >
-              {nfcScanning ? (
-                <>
-                  <ActivityIndicator color={Colors.white} size="small" />
-                  <Text style={styles.scanDockText}>Reading NFC tag...</Text>
-                </>
-              ) : (
-                <>
-                  <ScanLine size={20} color={Colors.white} />
-                  <Text style={styles.scanDockText}>SCAN NFC TAG</Text>
-                </>
-              )}
-            </TouchableOpacity>
-          </View>
-        ) : null}
-
-        <SafeAreaView edges={['bottom']} style={styles.navWrap}>
-          <NavBar
-            variant="light"
-            items={[
-              { icon: Home, label: 'Home' },
-              { icon: Route, label: 'Patrol', active: true },
-              { icon: AlertTriangle, label: 'Incidents' },
-              { icon: ClipboardList, label: 'Shifts' },
-              { icon: User, label: 'Profile' },
-            ]}
-            onPress={i => navigateGuardBottomTab(navigation, i)}
-          />
-        </SafeAreaView>
+        <NavBar
+          variant="light"
+          items={[
+            { icon: Home, label: 'Home' },
+            { icon: Route, label: 'Patrol', active: true },
+            { icon: AlertTriangle, label: 'Incidents' },
+            { icon: ClipboardList, label: 'Shifts' },
+            { icon: User, label: 'Profile' },
+          ]}
+          onPress={i => navigateGuardBottomTab(navigation, i)}
+        />
         {scanModal}
       </SafeAreaView>
     </View>
@@ -705,21 +747,34 @@ export default function PatrolTimeline() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.bgAlt },
-  safe: { flex: 1, backgroundColor: Colors.bg },
+  container: { flex: 1, backgroundColor: Colors.headerStart },
+  safeTop: { backgroundColor: Colors.headerStart },
+  safeBody: { flex: 1, backgroundColor: Colors.bgAlt },
   header: {
     backgroundColor: Colors.headerStart,
+    paddingHorizontal: 18,
+    paddingTop: 8,
+    paddingBottom: 22,
+  },
+  hdrRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingBottom: 14,
+    marginBottom: 3,
+    gap: 10,
   },
-  headerLeft: {
+  hdrTitleWrap: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
     flex: 1,
+    minWidth: 0,
+  },
+  hdrActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    flexShrink: 0,
   },
   backBtn: {
     width: 34,
@@ -729,12 +784,21 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  headerTitle: { fontSize: 18, fontWeight: '800', color: Colors.white },
-  headerSub: {
-    fontSize: FontSizes.xs,
-    color: 'rgba(255,255,255,0.75)',
-    marginTop: 2,
+  hdrTitle: { fontSize: 17, fontWeight: '800', color: Colors.white },
+  countBadge: {
+    backgroundColor: 'rgba(121,31,61,0.2)',
+    borderWidth: 1,
+    borderColor: 'rgba(121,31,61,0.3)',
+    borderRadius: 7,
+    paddingHorizontal: 9,
+    paddingVertical: 3,
   },
+  countBadgeText: {
+    fontSize: FontSizes.xs,
+    fontWeight: '700',
+    color: '#f5c2d0',
+  },
+  hdrSub: { fontSize: FontSizes.xs, color: 'rgba(255,255,255,0.35)' },
   addBtn: {
     backgroundColor: Colors.accent,
     borderRadius: 10,
@@ -747,10 +811,8 @@ const styles = StyleSheet.create({
   addBtnText: { fontSize: 11, fontWeight: '700', color: Colors.white },
   body: { flex: 1 },
   scroll: { flex: 1 },
-  navWrap: { backgroundColor: Colors.bg },
-  scrollContent: { paddingTop: 14 },
+  scrollContent: { paddingTop: 14, paddingBottom: 24, paddingHorizontal: 14 },
   summaryCard: {
-    marginHorizontal: 16,
     marginBottom: 10,
     backgroundColor: Colors.bgCard,
     borderRadius: Radii.xl,
@@ -828,7 +890,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    marginHorizontal: 16,
     marginBottom: 10,
     backgroundColor: Colors.successLight,
     borderRadius: Radii.md,
@@ -841,7 +902,6 @@ const styles = StyleSheet.create({
     color: Colors.success,
   },
   emptyCard: {
-    marginHorizontal: 16,
     marginBottom: 10,
     backgroundColor: Colors.bgCard,
     borderRadius: Radii.xl,
@@ -860,7 +920,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     lineHeight: 18,
   },
-  section: { paddingHorizontal: 16, paddingBottom: 8 },
+  section: { paddingBottom: 8 },
   sectionTitle: {
     fontSize: FontSizes.xs,
     fontWeight: '700',
@@ -1019,29 +1079,4 @@ const styles = StyleSheet.create({
   statusBadgeText: { fontSize: 10, fontWeight: '700' },
   statusActiveText: { color: Colors.accent },
   statusDoneText: { color: Colors.success },
-  scanDock: {
-    paddingHorizontal: 16,
-    paddingTop: 8,
-    paddingBottom: 8,
-    backgroundColor: Colors.bg,
-    borderTopWidth: 1,
-    borderTopColor: Colors.border,
-  },
-  scanDockBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 10,
-    backgroundColor: Colors.success,
-    borderRadius: Radii.lg,
-    paddingVertical: 15,
-    minHeight: 52,
-  },
-  scanDockBtnDisabled: { opacity: 0.8 },
-  scanDockText: {
-    color: Colors.white,
-    fontWeight: '800',
-    fontSize: 14,
-    letterSpacing: 0.5,
-  },
 });

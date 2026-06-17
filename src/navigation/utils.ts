@@ -8,7 +8,7 @@ import {
 
 /**
  * Custom hook for auth stack navigation
- * Use in auth screens (Login, Signup, Splash)
+ * Use in auth screens (Splash, Onboarding, Login, Signup)
  */
 export function useAuthNavigation(): AuthNavigationProp {
     return useNavigation<AuthNavigationProp>();

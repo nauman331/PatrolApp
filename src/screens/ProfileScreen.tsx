@@ -1,6 +1,4 @@
-
-
-import React, { useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -11,66 +9,266 @@ import {
   StatusBar,
   TextInput,
   Alert,
+  ActivityIndicator,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Colors, FontSizes, Radii, Shadows } from '../theme';
 import { NavBar } from '../components';
+import { ProfileShimmer } from '../components/Shimmer';
 import {
   AlertTriangle,
   Home,
   Route,
   User,
   ClipboardList,
-  Shield,
-  Settings,
   FileText,
   ChevronRight,
+  Shield,
+  Trash2,
 } from 'lucide-react-native';
-import { useDispatch } from 'react-redux';
-import { useSelector } from 'react-redux';
+import { useAppDispatch, useAppSelector } from '../store/hooks';
 import { clearAuth } from '../store/slices/authSlice';
+import { fetchGuardIncidents, selectIncidents } from '../store/slices/incidentsSlice';
 import { logout } from '../services/authApi';
 import { useNavigation } from '@react-navigation/native';
-import { GUARD_ROUTES, MANAGER_ROUTES } from '../navigation/constants';
+import { GUARD_ROUTES, MANAGER_ROUTES, navigateGuardBottomTab } from '../navigation/constants';
+import {
+  deleteUserAccount,
+  fetchUserProfile,
+  updateUserProfile,
+  type UserProfile,
+} from '../services/userApi';
+import { formatFullDisplayDate } from '../services/guardJobsMapper';
 
 interface Props {
   onLogout?: () => void;
-  user?: {
-    name: string;
-    email: string;
-    badgeNumber: string;
-    role: string;
-    joinDate: string;
-    totalIncidents: number;
+}
+
+type ProfileForm = {
+  name: string;
+  email: string;
+  phone: string;
+  security_license_no: string;
+};
+
+function formatMemberSince(dateStr: string): string {
+  if (!dateStr) return '—';
+  const d = new Date(dateStr);
+  if (Number.isNaN(d.getTime())) return dateStr;
+  return d.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+}
+
+function formatUserType(userType: string): string {
+  if (!userType) return '—';
+  return userType.charAt(0).toUpperCase() + userType.slice(1);
+}
+
+function profileToForm(profile: UserProfile): ProfileForm {
+  return {
+    name: profile.name ?? '',
+    email: profile.email ?? '',
+    phone: profile.phone ?? '',
+    security_license_no: profile.security_license_no ?? '',
   };
 }
 
-export default function ProfileScreen({
-  onLogout,
-  user,
-}: Props) {
-  const navigation = useNavigation<any>();
-  const dispatch = useDispatch();
-  const userRole = useSelector((state: any) => state?.auth?.userRole ?? 'guard');
+type ProfileFieldProps = {
+  label: string;
+  value: string;
+  isEditing: boolean;
+  editable?: boolean;
+  keyName?: keyof ProfileForm;
+  form: ProfileForm;
+  onChangeField: (key: keyof ProfileForm, text: string) => void;
+  keyboardType?: 'default' | 'email-address' | 'phone-pad';
+};
 
-  const currentUser = user || {
-    name: 'Alex Rivera',
-    email: 'alex.rivera@patrolapp.com',
-    badgeNumber: 'P-4782',
-    role: 'Senior Security Officer',
-    joinDate: 'March 2024',
-    totalIncidents: 47,
+function ProfileField({
+  label,
+  value,
+  isEditing,
+  editable = true,
+  keyName,
+  form,
+  onChangeField,
+  keyboardType = 'default',
+}: ProfileFieldProps) {
+  return (
+    <View>
+      <Text style={styles.label}>{label}</Text>
+      {isEditing && editable && keyName ? (
+        <View style={styles.inputBox}>
+          <TextInput
+            value={form[keyName]}
+            onChangeText={text => onChangeField(keyName, text)}
+            style={styles.input}
+            keyboardType={keyboardType}
+            autoCapitalize={keyboardType === 'email-address' ? 'none' : 'sentences'}
+          />
+        </View>
+      ) : (
+        <Text style={styles.value}>{value || '—'}</Text>
+      )}
+    </View>
+  );
+}
+
+export default function ProfileScreen({ onLogout }: Props) {
+  const navigation = useNavigation<any>();
+  const dispatch = useAppDispatch();
+  const userRole = useAppSelector(state => state.auth?.userRole ?? 'guard');
+  const guardId = useAppSelector(state => state.auth?.guardId ?? null);
+  const incidents = useAppSelector(selectIncidents);
+
+  const [profile, setProfile] = useState<UserProfile | null>(null);
+  const [form, setForm] = useState<ProfileForm>({
+    name: '',
+    email: '',
+    phone: '',
+    security_license_no: '',
+  });
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+
+  const loadProfile = useCallback(async () => {
+    if (!guardId) {
+      setLoadError('User ID not found. Please log in again.');
+      setLoading(false);
+      return;
+    }
+
+    setLoading(true);
+    setLoadError(null);
+
+    const result = await fetchUserProfile(guardId);
+    if (result.success && result.data) {
+      setProfile(result.data);
+      setForm(profileToForm(result.data));
+    } else {
+      setLoadError(result.message ?? 'Failed to load profile');
+    }
+
+    setLoading(false);
+  }, [guardId]);
+
+  useEffect(() => {
+    loadProfile();
+  }, [loadProfile]);
+
+  useEffect(() => {
+    if (userRole === 'guard') {
+      dispatch(fetchGuardIncidents());
+    }
+  }, [dispatch, userRole]);
+
+  const handleChangeField = useCallback((key: keyof ProfileForm, text: string) => {
+    setForm(prev => ({ ...prev, [key]: text }));
+  }, []);
+
+  const hasFormChanges = profile
+    ? form.name !== profile.name ||
+    form.email !== profile.email ||
+    form.phone !== profile.phone ||
+    form.security_license_no !== profile.security_license_no
+    : false;
+
+  const exitEditMode = () => {
+    if (profile) {
+      setForm(profileToForm(profile));
+    }
+    setIsEditing(false);
   };
 
-  const [isEditing, setIsEditing] = useState(false);
+  const handleEditPress = () => {
+    if (isEditing) {
+      if (hasFormChanges) {
+        Alert.alert(
+          'Discard Changes',
+          'You have unsaved changes. Discard them?',
+          [
+            { text: 'Keep Editing', style: 'cancel' },
+            { text: 'Discard', style: 'destructive', onPress: exitEditMode },
+          ],
+        );
+      } else {
+        exitEditMode();
+      }
+      return;
+    }
 
-  const [form, setForm] = useState({
-    name: currentUser.name,
-    email: currentUser.email,
-    badgeNumber: currentUser.badgeNumber,
-    role: currentUser.role,
-    joinDate: currentUser.joinDate,
-  });
+    Alert.alert('Edit Profile', 'Do you want to edit your profile information?', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Edit', onPress: () => setIsEditing(true) },
+    ]);
+  };
+
+  const handleSave = () => {
+    if (!profile || !guardId) return;
+
+    Alert.alert('Save Changes', 'Are you sure you want to save your profile changes?', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Save',
+        onPress: async () => {
+          setSaving(true);
+          const result = await updateUserProfile(guardId, {
+            name: form.name.trim(),
+            email: form.email.trim(),
+            phone: form.phone.trim(),
+            security_license_no: form.security_license_no.trim(),
+            status: profile.status,
+          });
+          setSaving(false);
+
+          if (result.success && result.data) {
+            setProfile(result.data);
+            setForm(profileToForm(result.data));
+            setIsEditing(false);
+            Alert.alert('Success', result.message ?? 'Profile updated successfully');
+          } else {
+            Alert.alert('Error', result.message ?? 'Failed to update profile');
+          }
+        },
+      },
+    ]);
+  };
+
+  const handleDeleteAccount = () => {
+    if (!guardId) return;
+
+    Alert.alert(
+      'Delete Account',
+      'This will permanently delete your account and all associated data. This action cannot be undone.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            setDeleting(true);
+            const result = await deleteUserAccount(guardId);
+            setDeleting(false);
+
+            if (result.success) {
+              if (onLogout) {
+                onLogout();
+                return;
+              }
+              await logout();
+              dispatch(clearAuth());
+            } else {
+              Alert.alert('Error', result.message ?? 'Failed to delete account');
+            }
+          },
+        },
+      ],
+    );
+  };
 
   const handleLogout = () => {
     Alert.alert('Logout', 'Are you sure you want to logout?', [
@@ -90,161 +288,247 @@ export default function ProfileScreen({
     ]);
   };
 
-  const Field = ({
-    label,
-    value,
-    keyName,
-  }: {
-    label: string;
-    value: string;
-    keyName: keyof typeof form;
-  }) => (
-    <View>
-      <Text style={styles.label}>{label}</Text>
+  const navigateTo = (screen: string) => {
+    navigation.navigate(screen);
+  };
 
-      {isEditing ? (
-        <View style={styles.inputBox}>
-          <TextInput
-            value={form[keyName]}
-            onChangeText={text =>
-              setForm(prev => ({ ...prev, [keyName]: text }))
-            }
-            style={styles.input}
-          />
-        </View>
-      ) : (
-        <Text style={styles.value}>{value}</Text>
-      )}
-    </View>
-  );
+  const privacyRoute =
+    userRole === 'manager'
+      ? MANAGER_ROUTES.PRIVACY_POLICY
+      : GUARD_ROUTES.PRIVACY_POLICY;
+  const termsRoute =
+    userRole === 'manager'
+      ? MANAGER_ROUTES.TERMS_CONDITIONS
+      : GUARD_ROUTES.TERMS_CONDITIONS;
+
+  const handleViewReports = () => {
+    if (userRole === 'manager') {
+      navigation.navigate(MANAGER_ROUTES.SHIFT_REPORT);
+      return;
+    }
+    navigation.navigate(GUARD_ROUTES.INCIDENTS);
+  };
 
   return (
     <View style={styles.container}>
-      <StatusBar barStyle="dark-content" backgroundColor={Colors.bg} />
-      <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
-        {/* Header */}
+      <StatusBar barStyle="light-content" backgroundColor={Colors.headerStart} />
+
+      <SafeAreaView style={styles.safeTop} edges={['top']}>
         <View style={styles.header}>
-          <TouchableOpacity onPress={() => navigation.goBack()}>
-            <Text style={styles.back}>←</Text>
-          </TouchableOpacity>
-
-          <Text style={styles.title}>Profile</Text>
-
-          <TouchableOpacity onPress={() => setIsEditing(!isEditing)}>
-            <Text style={styles.editText}>
-              {isEditing ? 'Cancel' : 'Edit'}
-            </Text>
-          </TouchableOpacity>
-        </View>
-
-        <ScrollView style={styles.body}>
-          {/* Avatar */}
-          <View style={styles.avatarContainer}>
-            <Image
-              source={require('../../assets/dummy.jpg')}
-              style={styles.avatar}
-            />
-          </View>
-
-          {/* PROFILE CARD */}
-          <View style={styles.card}>
-            <Text style={styles.sectionTitle}>Profile Info</Text>
-
-            <Field label="Full Name" value={form.name} keyName="name" />
-            <Field label="Badge Number" value={form.badgeNumber} keyName="badgeNumber" />
-            <Field label="Role" value={form.role} keyName="role" />
-            <Field label="Email" value={form.email} keyName="email" />
-            <Field label="Member Since" value={form.joinDate} keyName="joinDate" />
-          </View>
-
-
-          {/* SAVE BUTTON (BOTTOM RIGHT) */}
-          {isEditing && (
-            <View style={styles.saveWrap}>
+          <View style={styles.hdrRow}>
+            <Text style={styles.hdrTitle}>Profile</Text>
+            {!loading && !loadError ? (
               <TouchableOpacity
-                style={styles.saveBtn}
-                onPress={() => setIsEditing(false)}
+                onPress={handleEditPress}
+                disabled={saving || deleting}
               >
-                <Text style={styles.saveText}>Save Changes</Text>
-              </TouchableOpacity>
-            </View>
-          )}
-
-
-          {/* STATS */}
-          <View style={styles.card}>
-            <Text style={styles.sectionTitle}>Performance</Text>
-
-            <View style={styles.statsRow}>
-              <View style={styles.statItem}>
-                <Text style={styles.statNumber}>
-                  {currentUser.totalIncidents}
+                <Text style={styles.editText}>
+                  {isEditing ? 'Cancel' : 'Edit'}
                 </Text>
-                <Text style={styles.statLabel}>Incidents</Text>
-              </View>
-
-              <View style={styles.statItem}>
-                <Text style={styles.statNumber}>98%</Text>
-                <Text style={styles.statLabel}>Success Rate</Text>
-              </View>
-            </View>
+              </TouchableOpacity>
+            ) : (
+              <View style={styles.headerSpacer} />
+            )}
           </View>
+          <Text style={styles.hdrSub}>{formatFullDisplayDate()}</Text>
+        </View>
+      </SafeAreaView>
 
-          {/* QUICK ACTIONS */}
-          <View style={styles.card}>
-            <Text style={styles.sectionTitle}>Quick Actions</Text>
-
-            <TouchableOpacity style={styles.actionRow}>
-              <View style={styles.actionLeft}>
-                <View style={styles.box}>
-                  <ClipboardList size={18} color={Colors.accent} />
-                </View>
-                <Text style={styles.actionText}>View Reports</Text>
+      <SafeAreaView style={styles.safeBody} edges={['bottom']}>
+        <KeyboardAvoidingView
+          style={styles.keyboardAvoid}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          keyboardVerticalOffset={Platform.OS === 'ios' ? 8 : 0}
+        >
+          <ScrollView
+            style={styles.body}
+            contentContainerStyle={styles.bodyContent}
+            showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+          >
+            {loading ? (
+              <ProfileShimmer />
+            ) : loadError ? (
+              <View style={styles.errorCard}>
+                <Text style={styles.errorText}>{loadError}</Text>
+                <TouchableOpacity style={styles.retryBtn} onPress={loadProfile}>
+                  <Text style={styles.retryText}>Retry</Text>
+                </TouchableOpacity>
               </View>
-              <ChevronRight size={18} color="#999" />
-            </TouchableOpacity>
-
-            <TouchableOpacity style={styles.actionRow}>
-              <View style={styles.actionLeft}>
-                <View style={styles.box}>
-                  <Shield size={18} color={Colors.accent} />
+            ) : (
+              <>
+                <View style={styles.avatarContainer}>
+                  <Image
+                    source={require('../../assets/dummy.jpg')}
+                    style={styles.avatar}
+                  />
                 </View>
-                <Text style={styles.actionText}>Shift History</Text>
-              </View>
-              <ChevronRight size={18} color="#999" />
-            </TouchableOpacity>
 
-            <TouchableOpacity style={styles.actionRow}>
-              <View style={styles.actionLeft}>
-                <View style={styles.box}>
-                  <Settings size={18} color={Colors.accent} />
+                <View style={styles.card}>
+                  {/* <Text style={styles.sectionTitle}>Profile Info</Text> */}
+
+                  <ProfileField
+                    label="Full Name"
+                    value={form.name}
+                    keyName="name"
+                    isEditing={isEditing}
+                    form={form}
+                    onChangeField={handleChangeField}
+                  />
+                  <ProfileField
+                    label="Security License No."
+                    value={form.security_license_no}
+                    keyName="security_license_no"
+                    isEditing={isEditing}
+                    form={form}
+                    onChangeField={handleChangeField}
+                  />
+
+                  <ProfileField
+                    label="Email"
+                    value={form.email}
+                    keyName="email"
+                    keyboardType="email-address"
+                    isEditing={isEditing}
+                    form={form}
+                    onChangeField={handleChangeField}
+                  />
+                  <ProfileField
+                    label="Phone"
+                    value={form.phone}
+                    keyName="phone"
+                    keyboardType="phone-pad"
+                    isEditing={isEditing}
+                    form={form}
+                    onChangeField={handleChangeField}
+                  />
+
+                  {!isEditing && (
+                    <>
+                      <ProfileField
+                        label="Member Since"
+                        value={formatMemberSince(profile?.created_at ?? '')}
+                        editable={false}
+                        isEditing={isEditing}
+                        form={form}
+                        onChangeField={handleChangeField}
+                      />
+
+                      <ProfileField
+                        label="Role"
+                        value={formatUserType(profile?.user_type ?? '')}
+                        editable={false}
+                        isEditing={isEditing}
+                        form={form}
+                        onChangeField={handleChangeField}
+                      />
+                    </>
+                  )}
                 </View>
-                <Text style={styles.actionText}>Settings</Text>
-              </View>
-              <ChevronRight size={18} color="#999" />
-            </TouchableOpacity>
 
-            <TouchableOpacity style={styles.actionRow}>
-              <View style={styles.actionLeft}>
-                <View style={styles.box}>
-                  <FileText size={18} color={Colors.accent} />
+
+
+                {isEditing && (
+                  <View style={styles.saveWrap}>
+                    <TouchableOpacity
+                      style={[styles.saveBtn, saving && styles.btnDisabled]}
+                      onPress={handleSave}
+                      disabled={saving}
+                    >
+                      {saving ? (
+                        <ActivityIndicator color="#fff" size="small" />
+                      ) : (
+                        <Text style={styles.saveText}>Save Changes</Text>
+                      )}
+                    </TouchableOpacity>
+                  </View>
+                )}
+
+                {/* <View style={styles.card}>
+                  <Text style={styles.sectionTitle}>Performance</Text>
+
+                  <View style={styles.statsRow}>
+                    <View style={styles.statItem}>
+                      <Text style={styles.statNumber}>{incidents.length}</Text>
+                      <Text style={styles.statLabel}>Incidents</Text>
+                    </View>
+
+                    <View style={styles.statItem}>
+                      <Text style={styles.statNumber}>98%</Text>
+                      <Text style={styles.statLabel}>Success Rate</Text>
+                    </View>
+                  </View>
+                </View> */}
+
+                <View style={styles.card}>
+                  <Text style={styles.sectionTitle}>Quick Actions</Text>
+
+                  <TouchableOpacity style={styles.actionRow} onPress={handleViewReports}>
+                    <View style={styles.actionLeft}>
+                      <View style={styles.box}>
+                        <ClipboardList size={18} color={Colors.accent} />
+                      </View>
+                      <Text style={styles.actionText}>View Reports</Text>
+                    </View>
+                    <ChevronRight size={18} color="#999" />
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={styles.actionRow}
+                    onPress={() => navigateTo(privacyRoute)}
+                  >
+                    <View style={styles.actionLeft}>
+                      <View style={styles.box}>
+                        <Shield size={18} color={Colors.accent} />
+                      </View>
+                      <Text style={styles.actionText}>Privacy Policy</Text>
+                    </View>
+                    <ChevronRight size={18} color="#999" />
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[styles.actionRow, styles.actionRowLast]}
+                    onPress={() => navigateTo(termsRoute)}
+                  >
+                    <View style={styles.actionLeft}>
+                      <View style={styles.box}>
+                        <FileText size={18} color={Colors.accent} />
+                      </View>
+                      <Text style={styles.actionText}>Terms & Conditions</Text>
+                    </View>
+                    <ChevronRight size={18} color="#999" />
+                  </TouchableOpacity>
                 </View>
-                <Text style={styles.actionText}>Privacy & Terms</Text>
-              </View>
-              <ChevronRight size={18} color="#999" />
-            </TouchableOpacity>
-          </View>
 
 
-          {/* LOGOUT */}
-          <View style={styles.card}>
-            <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout}>
-              <Text style={styles.logoutText}>Logout</Text>
-            </TouchableOpacity>
-          </View>
-        </ScrollView>
 
-        {/* NAVBAR */}
+                <View style={styles.card}>
+                  <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout}>
+                    <Text style={styles.logoutText}>Logout</Text>
+                  </TouchableOpacity>
+                </View>
+
+                <View style={styles.card}>
+                  <TouchableOpacity
+                    style={[styles.deleteBtn, deleting && styles.btnDisabled]}
+                    onPress={handleDeleteAccount}
+                    disabled={deleting}
+                  >
+                    {deleting ? (
+                      <ActivityIndicator color={Colors.danger} size="small" />
+                    ) : (
+                      <>
+                        <Trash2 size={18} color={Colors.danger} />
+                        <Text style={styles.deleteText}>Delete Account</Text>
+                      </>
+                    )}
+                  </TouchableOpacity>
+                </View>
+              </>
+            )}
+          </ScrollView>
+        </KeyboardAvoidingView>
+
         <NavBar
           variant="light"
           items={[
@@ -267,14 +551,7 @@ export default function ProfileScreen({
               return;
             }
 
-            const guardScreens = [
-              GUARD_ROUTES.DASHBOARD,
-              GUARD_ROUTES.PATROL_TIMELINE,
-              GUARD_ROUTES.INCIDENTS,
-              GUARD_ROUTES.SHIFTS,
-              GUARD_ROUTES.PROFILE,
-            ];
-            navigation.navigate(guardScreens[i]);
+            navigateGuardBottomTab(navigation, i);
           }}
         />
       </SafeAreaView>
@@ -283,42 +560,49 @@ export default function ProfileScreen({
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.bg },
-  safe: { flex: 1 },
+  container: { flex: 1, backgroundColor: Colors.headerStart },
+  safeTop: { backgroundColor: Colors.headerStart },
+  safeBody: { flex: 1, backgroundColor: Colors.bgAlt },
 
   header: {
+    backgroundColor: Colors.headerStart,
+    paddingHorizontal: 18,
+    paddingTop: 8,
+    paddingBottom: 22,
+  },
+  hdrRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    padding: 15,
-    paddingBottom: 12,
+    marginBottom: 3,
   },
-  back: { fontSize: 24, fontWeight: 'bold' },
-  title: {
-    fontSize: 18,
-    fontWeight: '800',
-    // color: Colors.accentAlpha12,
-  },
+  hdrTitle: { fontSize: 17, fontWeight: '800', color: Colors.white },
+  hdrSub: { fontSize: FontSizes.xs, color: 'rgba(255,255,255,0.35)' },
   editText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: Colors.accent,
+    fontSize: FontSizes.sm,
+    fontWeight: '700',
+    color: '#f5c2d0',
+  },
+  headerSpacer: { width: 40 },
+
+  keyboardAvoid: { flex: 1 },
+  body: { flex: 1 },
+  bodyContent: {
+    paddingHorizontal: 14,
+    paddingTop: 14,
+    paddingBottom: 36,
+  },
+  actionLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
   },
   box: {
     height: 35,
     width: 35,
     borderRadius: 10,
-    // borderWidth: 1,
-    // borderColor: Colors.accent,
     padding: 9,
     backgroundColor: Colors.accentAlpha30,
-  },
-
-  body: { flex: 1, padding: 16 },
-  actionLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
   },
   avatarContainer: {
     alignItems: 'center',
@@ -329,30 +613,14 @@ const styles = StyleSheet.create({
     height: 110,
     borderRadius: 60,
     borderWidth: 1,
-    // borderColor: Colors.accent,
-  },
-  changePhotoBtn: {
-    marginTop: 12,
-    backgroundColor: Colors.bgAlt,
-    paddingHorizontal: 20,
-    paddingVertical: 8,
-    borderRadius: Radii.md,
-    borderWidth: 1,
-    borderColor: Colors.border,
-  },
-  changePhotoText: {
-    color: Colors.accent,
-    fontWeight: '600',
-    fontSize: 13,
   },
 
   card: {
-    backgroundColor: Colors.bgAlt,
+    backgroundColor: Colors.bgCard,
     borderRadius: Radii.lg,
     padding: 14,
-    marginBottom: 14,
-    borderWidth: 1,
-    borderColor: Colors.border,
+    marginBottom: 12,
+    borderLeftWidth: 0,
     ...Shadows.card,
   },
 
@@ -403,14 +671,13 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: Colors.border,
   },
+  actionRowLast: {
+    borderBottomWidth: 0,
+  },
   actionText: {
     fontSize: 14,
     fontWeight: '400',
     color: Colors.textPrimary,
-  },
-  arrow: {
-    fontSize: 18,
-    color: '#999',
   },
 
   logoutBtn: {
@@ -426,6 +693,22 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     fontSize: 16,
   },
+  deleteBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: Colors.dangerLight,
+    padding: 16,
+    borderRadius: Radii.md,
+    borderWidth: 1,
+    borderColor: '#fca5a5',
+  },
+  deleteText: {
+    color: Colors.danger,
+    fontWeight: '700',
+    fontSize: 16,
+  },
   saveWrap: {
     alignItems: 'flex-end',
     marginBottom: 14,
@@ -436,12 +719,17 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     paddingHorizontal: 18,
     borderRadius: 10,
+    minWidth: 130,
+    alignItems: 'center',
   },
 
   saveText: {
     color: '#fff',
     fontWeight: '700',
     fontSize: 13,
+  },
+  btnDisabled: {
+    opacity: 0.7,
   },
 
   inputBox: {
@@ -458,5 +746,32 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: Colors.textPrimary,
     paddingVertical: 6,
+  },
+
+  errorCard: {
+    backgroundColor: Colors.dangerLight,
+    borderRadius: Radii.lg,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#fca5a5',
+    alignItems: 'center',
+  },
+  errorText: {
+    color: Colors.danger,
+    fontWeight: '600',
+    fontSize: FontSizes.md,
+    textAlign: 'center',
+    marginBottom: 12,
+  },
+  retryBtn: {
+    backgroundColor: Colors.accent,
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: Radii.md,
+  },
+  retryText: {
+    color: '#fff',
+    fontWeight: '700',
+    fontSize: FontSizes.md,
   },
 });
