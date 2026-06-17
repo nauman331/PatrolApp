@@ -35,6 +35,8 @@
 	</dict>
 	<key>NSCameraUsageDescription</key>
 	<string>Camera access is required to capture your check-in selfie.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Photo library access is required to attach images to incident reports.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>Location is required to verify your shift check-in.</string>
 	<key>NFCReaderUsageDescription</key>

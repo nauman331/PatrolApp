@@ -16,7 +16,6 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Geolocation from '@react-native-community/geolocation';
 import {
-  launchCamera,
   type Asset,
 } from 'react-native-image-picker';
 import { Colors, FontSizes, Radii, Shadows } from '../theme';
@@ -52,6 +51,7 @@ import {
   fetchLocationFix,
   formatCaptureTimestamp,
 } from '../services/locationUtils';
+import { captureSelfieFromCamera } from '../services/captureSelfie';
 
 const appLogo = require('../../assets/opg-logo.png');
 
@@ -80,15 +80,6 @@ async function requestLocationPermission(): Promise<boolean> {
       PermissionsAndroid.RESULTS.GRANTED
   );
 }
-
-async function requestCameraPermission(): Promise<boolean> {
-  if (Platform.OS !== 'android') return true;
-  const granted = await PermissionsAndroid.request(
-    PermissionsAndroid.PERMISSIONS.CAMERA,
-  );
-  return granted === PermissionsAndroid.RESULTS.GRANTED;
-}
-
 
 export default function ShiftSignInScreen() {
   const navigation = useGuardNavigation();
@@ -195,38 +186,17 @@ export default function ShiftSignInScreen() {
   }, [refreshLocation]);
 
   const handleCaptureSelfie = async () => {
-    const allowed = await requestCameraPermission();
-    if (!allowed) {
-      Alert.alert('Permission required', 'Camera permission is needed for selfie.');
-      return;
-    }
-
-    const result = await launchCamera({
-      mediaType: 'photo',
-      cameraType: 'front',
-      saveToPhotos: false,
-      quality: 0.8,
-      includeExtra: true,
-      includeBase64: true,
-    });
-
-    if (result.didCancel) return;
-    if (result.errorCode) {
-      Alert.alert('Camera error', result.errorMessage ?? 'Could not open camera.');
-      return;
-    }
-
-    const asset = result.assets?.[0];
+    const asset = await captureSelfieFromCamera();
     const captureUri = asset?.uri ? resolveCaptureUri(asset) : '';
-    if (captureUri) {
-      pendingSelfieRef.current = asset ?? null;
+    if (captureUri && asset) {
+      pendingSelfieRef.current = asset;
       setWatermarking(true);
       setWatermarkJob({
         sourceUri: captureUri,
         timestamp: formatCaptureTimestamp(),
-        width: asset?.width,
-        height: asset?.height,
-        base64: asset?.base64,
+        width: asset.width,
+        height: asset.height,
+        base64: asset.base64,
       });
     }
   };

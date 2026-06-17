@@ -15,7 +15,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Geolocation from '@react-native-community/geolocation';
-import { launchCamera, type Asset } from 'react-native-image-picker';
+import { type Asset } from 'react-native-image-picker';
 import { useRoute } from '@react-navigation/native';
 import { useSelector } from 'react-redux';
 import { Colors, FontSizes, Radii, Shadows } from '../theme';
@@ -44,6 +44,7 @@ import {
   fetchLocationFix,
   formatCaptureTimestamp,
 } from '../services/locationUtils';
+import { captureSelfieFromCamera } from '../services/captureSelfie';
 import {
   SelfieWatermarkProcessor,
   type SelfieWatermarkJob,
@@ -234,37 +235,17 @@ export default function OngoingShiftScreen() {
   }, [refreshLocation]);
 
   const handleCaptureSelfie = async () => {
-    if (Platform.OS === 'android') {
-      const granted = await PermissionsAndroid.request(
-        PermissionsAndroid.PERMISSIONS.CAMERA,
-      );
-      if (granted !== PermissionsAndroid.RESULTS.GRANTED) {
-        Alert.alert('Permission required', 'Camera permission is needed.');
-        return;
-      }
-    }
-
-    const result = await launchCamera({
-      mediaType: 'photo',
-      cameraType: 'front',
-      saveToPhotos: false,
-      quality: 0.8,
-      includeExtra: true,
-      includeBase64: true,
-    });
-
-    if (result.didCancel || result.errorCode) return;
-    const asset = result.assets?.[0];
+    const asset = await captureSelfieFromCamera();
     const captureUri = asset?.uri ? resolveCaptureUri(asset) : '';
-    if (captureUri) {
-      pendingSelfieRef.current = asset ?? null;
+    if (captureUri && asset) {
+      pendingSelfieRef.current = asset;
       setWatermarking(true);
       setWatermarkJob({
         sourceUri: captureUri,
         timestamp: formatCaptureTimestamp(),
-        width: asset?.width,
-        height: asset?.height,
-        base64: asset?.base64,
+        width: asset.width,
+        height: asset.height,
+        base64: asset.base64,
       });
     }
   };
