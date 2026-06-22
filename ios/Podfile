@@ -31,6 +31,14 @@ target 'Patrolapp' do
       # :ccache_enabled => true
     )
 
+    # Stale .xcode.env.local caches an absolute Node path and causes xcodebuild
+    # error 65 with misleading "export CLANG_WARN_*" lines in the CLI output.
+    xcode_env_local = File.join(Pod::Config.instance.installation_root, '.xcode.env.local')
+    if File.exist?(xcode_env_local)
+      Pod::UI.puts 'Removing stale ios/.xcode.env.local (outdated Node path)'.yellow
+      File.delete(xcode_env_local)
+    end
+
     installer.pods_project.targets.each do |target|
       target.build_configurations.each do |config|
         config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '15.1'
