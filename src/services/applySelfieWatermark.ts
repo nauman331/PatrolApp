@@ -17,10 +17,7 @@ export type SelfieWatermarkJob = {
 };
 
 const MARKER_QUALITY = 92;
-const ANDROID_MARKER_OPTS =
-  Platform.OS === 'android' ? { maxSize: 2048 as const } : {};
-const IOS_MARKER_OPTS =
-  Platform.OS === 'ios' ? { maxSize: 2048 as const } : {};
+const MARKER_OPTS = { maxSize: 2048 as const };
 
 function normalizeFileUri(uri: string): string {
   if (!uri) return uri;
@@ -147,8 +144,7 @@ async function applyLogoWatermark(
       quality: MARKER_QUALITY,
       filename: `patrol_logo_${stamp}`,
       saveFormat: ImageFormat.jpg,
-      ...ANDROID_MARKER_OPTS,
-      ...IOS_MARKER_OPTS,
+      ...MARKER_OPTS,
     });
 
     const normalized = normalizeFileUri(markedLogo);
@@ -194,8 +190,7 @@ async function applyTimestampWatermark(
     quality: MARKER_QUALITY,
     filename: `patrol_wm_${stamp}`,
     saveFormat: ImageFormat.jpg,
-    ...ANDROID_MARKER_OPTS,
-    ...IOS_MARKER_OPTS,
+    ...MARKER_OPTS,
   });
 
   const normalized = normalizeFileUri(output);
@@ -203,12 +198,6 @@ async function applyTimestampWatermark(
     throw new Error('Watermarked image was not saved');
   }
   return normalized;
-}
-
-export async function resolveWatermarkSourceUri(
-  job: SelfieWatermarkJob,
-): Promise<string> {
-  return copyUriToCache(job.sourceUri, job.base64);
 }
 
 export async function applySelfieWatermark(
