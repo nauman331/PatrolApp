@@ -42,7 +42,18 @@ target 'Patrolapp' do
     installer.pods_project.targets.each do |target|
       target.build_configurations.each do |config|
         config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '15.1'
+
+        # Xcode 14+ on Apple Silicon: skip signing for pod resource bundles
+        if target.respond_to?(:product_type) &&
+           target.product_type == 'com.apple.product-type.bundle'
+          config.build_settings['CODE_SIGNING_ALLOWED'] = 'NO'
+        end
       end
+    end
+
+    # Apple Silicon (M1/M2/M3): keep simulator on arm64 — do not exclude arm64
+    installer.pods_project.build_configurations.each do |config|
+      config.build_settings.delete('EXCLUDED_ARCHS[sdk=iphonesimulator*]')
     end
   end
 end

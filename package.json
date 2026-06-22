@@ -6,6 +6,8 @@
     "android": "react-native run-android",
     "ios": "react-native run-ios",
     "ios:setup": "bash scripts/ios-setup.sh",
+    "setup": "bash scripts/ios-setup.sh",
+    "ios:device": "bash scripts/run-ios-device.sh",
     "lint": "eslint .",
     "start": "react-native start",
     "test": "jest",
