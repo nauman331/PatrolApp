@@ -52,14 +52,21 @@ export function findActiveReportForRoster(
   reports: PatrollingReport[],
   rosterId?: string | number,
 ): PatrollingReport | null {
-  if (rosterId == null) return null;
+  return findRunningReportsForRoster(reports, rosterId)[0] ?? null;
+}
+
+export function findRunningReportsForRoster(
+  reports: PatrollingReport[],
+  rosterId?: string | number,
+): PatrollingReport[] {
+  if (rosterId == null) return [];
 
   return reports
     .filter(
       r =>
         String(r.roster_id) === String(rosterId) && isPatrolReportActive(r),
     )
-    .sort((a, b) => Number(b.id) - Number(a.id))[0] ?? null;
+    .sort((a, b) => Number(b.id) - Number(a.id));
 }
 
 export function getNextScanner(report: PatrollingReport | null): PatrolScanner | null {
@@ -105,4 +112,26 @@ export function buildUidVariants(uid: string): string[] {
     plain.toLowerCase(),
   ];
   return [...new Set(candidates.filter(Boolean))];
+}
+
+export function resolveSiteIdForPatrol(
+  sessionSiteId: string | number | null | undefined,
+  rosterId: string | number | null | undefined,
+  reports: PatrollingReport[],
+): string | number | undefined {
+  if (sessionSiteId != null && String(sessionSiteId).trim() !== '') {
+    return sessionSiteId;
+  }
+  if (rosterId == null) return undefined;
+
+  const match = reports
+    .filter(
+      r =>
+        String(r.roster_id) === String(rosterId) &&
+        r.site_id != null &&
+        String(r.site_id).trim() !== '',
+    )
+    .sort((a, b) => Number(b.id) - Number(a.id))[0];
+
+  return match?.site_id;
 }

@@ -14,7 +14,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Geolocation from '@react-native-community/geolocation';
-import { useRoute, useFocusEffect } from '@react-navigation/native';
+import { useFocusEffect } from '@react-navigation/native';
 import { useSelector } from 'react-redux';
 import { Colors, FontSizes, Radii, Shadows } from '../theme';
 import { NavBar } from '../components';
@@ -34,29 +34,31 @@ import {
 } from 'lucide-react-native';
 import { useGuardNavigation } from '../navigation/utils';
 import { GUARD_ROUTES, navigateGuardBottomTab } from '../navigation/constants';
-import type { GuardStackScreenProps } from '../navigation/types';
 import type { RootState } from '../store/store';
 import {
   guardStartPatrol,
   guardTodayPatrolling,
+  getGuardMyJobs,
   type PatrollingReport,
 } from '../services/guardApi';
+import { findIncidentContextByRoster } from '../services/guardJobsMapper';
 import {
   findActiveReportForRoster,
+  findRunningReportsForRoster,
   getCompletedCount,
   isPatrolReportActive,
   isScannerComplete,
+  resolveSiteIdForPatrol,
 } from '../services/patrolUtils';
 import { formatFullDisplayDate } from '../services/guardJobsMapper';
 import { usePatrolNfcScan } from '../hooks/usePatrolNfcScan';
 import { stopNfc } from '../services/nfcReader';
 import {
   getActiveShiftSession,
+  patchActiveShiftSession,
   type ActiveShiftSession,
   promptCheckInRequired,
 } from '../services/activeShiftSession';
-
-type PatrolTimelineRoute = GuardStackScreenProps<'PatrolTimeline'>['route'];
 
 function formatPatrolTime(value?: string | null): string {
   if (!value) return '—';
@@ -96,18 +98,22 @@ function getCurrentLocation(enableHighAccuracy: boolean): Promise<string> {
   });
 }
 
+function isPatrolNotFoundMessage(message?: string | null): boolean {
+  if (!message?.trim()) return false;
+  const lower = message.toLowerCase();
+  return (
+    lower.includes('not found') ||
+    lower.includes('no patrol') ||
+    lower.includes('patrol not')
+  );
+}
+
 export default function PatrolTimeline() {
   const navigation = useGuardNavigation();
-  const route = useRoute<PatrolTimelineRoute>();
   const guardId = useSelector((state: RootState) => state.auth?.guardId ?? null);
 
-  const rosterId = route.params?.rosterId;
-  const siteId = route.params?.siteId;
-  const siteName = route.params?.site;
-  const coordinates = route.params?.coordinates;
-  const fromOngoingShift = rosterId != null;
-
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [starting, setStarting] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [reports, setReports] = useState<PatrollingReport[]>([]);
@@ -116,14 +122,13 @@ export default function PatrolTimeline() {
   );
   const [patrolDate, setPatrolDate] = useState<string | null>(null);
   const [lastScannedGate, setLastScannedGate] = useState<string | null>(null);
-  const [shiftRosterId, setShiftRosterId] = useState<string | number | undefined>(
-    rosterId,
-  );
   const [activeSession, setActiveSession] = useState<ActiveShiftSession | null>(
     null,
   );
   const isMountedRef = useRef(true);
-  const locationRef = useRef(coordinates ?? '');
+  const locationRef = useRef('');
+  const startingRef = useRef(false);
+  const activeReportRef = useRef<PatrollingReport | null>(null);
 
   useEffect(() => {
     isMountedRef.current = true;
@@ -137,61 +142,99 @@ export default function PatrolTimeline() {
     getActiveShiftSession().then(session => {
       if (!isMountedRef.current) return;
       setActiveSession(session);
-      if (rosterId == null && session?.rosterId != null) {
-        setShiftRosterId(session.rosterId);
-      } else if (rosterId != null) {
-        setShiftRosterId(rosterId);
-      }
     });
-  }, [rosterId]);
+  }, []);
 
   const loadPatrols = useCallback(
     async (opts?: { silent?: boolean }) => {
-      if (!opts?.silent && isMountedRef.current) setLoading(true);
+      if (!opts?.silent) {
+        setLoading(true);
+        setLoadError(null);
+      }
       try {
-        const session =
-          rosterId != null ? null : await getActiveShiftSession();
-        const resolvedRosterId = rosterId ?? session?.rosterId ?? shiftRosterId;
+        const session = await getActiveShiftSession();
+        if (isMountedRef.current) {
+          setActiveSession(session);
+        }
+
+        const resolvedRosterId = session?.rosterId;
+        if (resolvedRosterId == null) {
+          if (isMountedRef.current) {
+            setReports([]);
+            setActiveReport(null);
+            setPatrolDate(null);
+            setLoadError(null);
+          }
+          return { list: [], active: null, session };
+        }
 
         const result = await guardTodayPatrolling(guardId, resolvedRosterId);
         if (!isMountedRef.current) return null;
 
         if (!result.success) {
           const emptyList = result.data?.reports ?? [];
-          if (emptyList.length === 0) {
-            setReports([]);
-            setActiveReport(null);
-            setPatrolDate(result.data?.date ?? null);
-            return { list: [], active: null };
-          }
-
-          if (!opts?.silent) {
-            Alert.alert('Error', result.message ?? 'Failed to load patrols.');
-          }
           setReports([]);
           setActiveReport(null);
-          return null;
+          setPatrolDate(result.data?.date ?? null);
+          if (isMountedRef.current) {
+            setLoadError(
+              isPatrolNotFoundMessage(result.message) || emptyList.length === 0
+                ? 'Patrol not found.'
+                : result.message ?? 'Failed to load patrols.',
+            );
+          }
+          if (
+            !opts?.silent &&
+            !isPatrolNotFoundMessage(result.message) &&
+            emptyList.length > 0
+          ) {
+            Alert.alert('Error', result.message ?? 'Failed to load patrols.');
+          }
+          return { list: [], active: null, session };
         }
 
         const list = result.data?.reports ?? [];
-        const active = findActiveReportForRoster(list, resolvedRosterId);
+        const running = findRunningReportsForRoster(list, resolvedRosterId);
+        const active = running[0] ?? null;
         setReports(list);
         setActiveReport(active);
         setPatrolDate(result.data?.date ?? list[0]?.started_at ?? null);
-        return { list, active };
+        if (isMountedRef.current) {
+          setLoadError(
+            isPatrolNotFoundMessage(result.message) ? 'Patrol not found.' : null,
+          );
+        }
+
+        const resolvedSiteId = resolveSiteIdForPatrol(
+          session?.siteId,
+          resolvedRosterId,
+          list,
+        );
+        if (
+          session &&
+          resolvedSiteId != null &&
+          (session.siteId == null || String(session.siteId).trim() === '')
+        ) {
+          const patched = await patchActiveShiftSession({
+            siteId: resolvedSiteId,
+          });
+          if (patched && isMountedRef.current) {
+            setActiveSession(patched);
+          }
+        }
+
+        return { list, active, session };
       } catch {
         if (!opts?.silent && isMountedRef.current) {
           Alert.alert('Error', 'Failed to load patrols.');
         }
         return null;
       } finally {
-        if (isMountedRef.current) {
-          setLoading(false);
-          setRefreshing(false);
-        }
+        setLoading(false);
+        setRefreshing(false);
       }
     },
-    [guardId, rosterId, shiftRosterId],
+    [guardId],
   );
 
   const getScanCoordinates = useCallback(async () => {
@@ -216,23 +259,10 @@ export default function PatrolTimeline() {
   }, []);
 
   const startPatrol = useCallback(async () => {
-    const session = await getActiveShiftSession();
-    if (!session) {
-      promptCheckInRequired(() => navigation.navigate(GUARD_ROUTES.SHIFTS));
+    if (startingRef.current) {
       return false;
     }
-
-    const patrolRosterId = rosterId ?? shiftRosterId ?? session.rosterId;
-    if (String(session.rosterId) !== String(patrolRosterId)) {
-      Alert.alert(
-        'Shift mismatch',
-        'Start patrolling from your checked-in ongoing shift.',
-      );
-      return false;
-    }
-
-    const loaded = await loadPatrols({ silent: true });
-    if (loaded?.active) {
+    if (activeReportRef.current != null) {
       Alert.alert(
         'Patrol in progress',
         'Complete all NFC scans for the current patrol before starting a new one.',
@@ -240,23 +270,73 @@ export default function PatrolTimeline() {
       return false;
     }
 
-    const patrolSiteId = siteId ?? session.siteId;
-    if (patrolSiteId == null) {
-      Alert.alert('Error', 'Site is required to start patrolling.');
-      return false;
-    }
-
-    let coords = coordinates?.trim() || locationRef.current.trim();
-    if (!coords) {
-      coords = await getScanCoordinates();
-    }
-    if (!coords) {
-      Alert.alert('Error', 'Location is required to start patrolling.');
-      return false;
-    }
-
+    startingRef.current = true;
     if (isMountedRef.current) setStarting(true);
+
     try {
+      const session = await getActiveShiftSession();
+      if (!session) {
+        promptCheckInRequired(() => navigation.navigate(GUARD_ROUTES.SHIFTS));
+        return false;
+      }
+
+      const patrolRosterId = session.rosterId;
+
+      const loaded = await loadPatrols({ silent: true });
+      const running = findRunningReportsForRoster(
+        loaded?.list ?? [],
+        patrolRosterId,
+      );
+      if (running.length > 0) {
+        if (isMountedRef.current) {
+          setActiveReport(running[0]);
+        }
+        Alert.alert(
+          'Patrol already running',
+          running.length > 1
+            ? 'You already have patrol rounds in progress. Finish scanning all checkpoints on the latest patrol first.'
+            : 'Complete all NFC scans for the current patrol before starting a new one.',
+        );
+        return false;
+      }
+
+      const patrolReports = loaded?.list ?? reports;
+      let patrolSiteId = resolveSiteIdForPatrol(
+        session.siteId,
+        patrolRosterId,
+        patrolReports,
+      );
+      if (patrolSiteId == null) {
+        const jobs = await getGuardMyJobs(guardId);
+        patrolSiteId = findIncidentContextByRoster(
+          jobs.data ?? [],
+          patrolRosterId,
+        )?.siteId;
+      }
+      if (patrolSiteId == null) {
+        Alert.alert(
+          'Error',
+          'Site ID not found. Please check in to your shift again.',
+        );
+        return false;
+      }
+
+      if (session.siteId == null || String(session.siteId).trim() === '') {
+        const patched = await patchActiveShiftSession({ siteId: patrolSiteId });
+        if (patched && isMountedRef.current) {
+          setActiveSession(patched);
+        }
+      }
+
+      let coords = locationRef.current.trim();
+      if (!coords) {
+        coords = await getScanCoordinates();
+      }
+      if (!coords) {
+        Alert.alert('Error', 'Location is required to start patrolling.');
+        return false;
+      }
+
       const result = await guardStartPatrol(patrolRosterId, {
         site_id: patrolSiteId,
         guard_id: guardId ?? undefined,
@@ -266,12 +346,22 @@ export default function PatrolTimeline() {
       if (!isMountedRef.current) return false;
 
       if (!result.success || !result.data) {
+        if (isMountedRef.current && isPatrolNotFoundMessage(result.message)) {
+          setLoadError('Patrol not found.');
+        }
         Alert.alert('Error', result.message ?? 'Failed to start patrol.');
         return false;
       }
 
       setActiveReport(result.data);
       locationRef.current = coords;
+      if (result.data.site_id != null) {
+        await patchActiveShiftSession({ siteId: result.data.site_id });
+        const refreshed = await getActiveShiftSession();
+        if (refreshed && isMountedRef.current) {
+          setActiveSession(refreshed);
+        }
+      }
       await loadPatrols({ silent: true });
       return true;
     } catch {
@@ -280,20 +370,11 @@ export default function PatrolTimeline() {
       }
       return false;
     } finally {
+      startingRef.current = false;
       if (isMountedRef.current) setStarting(false);
     }
-  }, [
-    rosterId,
-    shiftRosterId,
-    siteId,
-    coordinates,
-    guardId,
-    loadPatrols,
-    getScanCoordinates,
-    navigation,
-  ]);
+  }, [guardId, loadPatrols, getScanCoordinates, navigation, reports]);
 
-  const activeReportRef = useRef<PatrollingReport | null>(null);
   activeReportRef.current = activeReport;
 
   const loadPatrolsRef = useRef(loadPatrols);
@@ -311,7 +392,7 @@ export default function PatrolTimeline() {
       return {
         patrolling_report_id: report.id,
         patrolling_id: report.id,
-        roster_id: report.roster_id ?? rosterId ?? shiftRosterId,
+        roster_id: report.roster_id ?? activeSession?.rosterId,
         guard_id: report.guard_id ?? guardId ?? undefined,
         report,
       };
@@ -336,27 +417,8 @@ export default function PatrolTimeline() {
 
   useFocusEffect(
     useCallback(() => {
-      let cancelled = false;
-
-      (async () => {
-        try {
-          const session = await getActiveShiftSession();
-          if (cancelled || !isMountedRef.current) return;
-          setActiveSession(session);
-          if (rosterId == null && session?.rosterId != null) {
-            setShiftRosterId(session.rosterId);
-          }
-
-          await loadPatrolsRef.current();
-        } catch {
-          // Prevent unhandled rejection crashes on focus load.
-        }
-      })();
-
-      return () => {
-        cancelled = true;
-      };
-    }, [rosterId]),
+      void loadPatrolsRef.current();
+    }, []),
   );
 
   const handleRefresh = async () => {
@@ -364,19 +426,33 @@ export default function PatrolTimeline() {
     await loadPatrols({ silent: true });
   };
 
-  const resolvedRosterId = rosterId ?? shiftRosterId ?? activeSession?.rosterId;
-  const hasCheckedInShift =
-    activeSession != null &&
-    resolvedRosterId != null &&
-    String(activeSession.rosterId) === String(resolvedRosterId);
-  const canStartPatrol = hasCheckedInShift && !activeReport;
+  const resolvedRosterId = activeSession?.rosterId;
+  const hasCheckedInShift = activeSession != null && resolvedRosterId != null;
+  const rosterReports = resolvedRosterId
+    ? reports.filter(r => String(r.roster_id) === String(resolvedRosterId))
+    : reports;
+  const completedRounds = rosterReports.filter(r => !isPatrolReportActive(r));
+  const runningRounds = rosterReports.filter(r => isPatrolReportActive(r));
+  const hasRunningPatrol = runningRounds.length > 0 || activeReport != null;
+  const canStartPatrol =
+    hasCheckedInShift && !hasRunningPatrol && !starting && !loading;
 
   const handleStartNewPatrol = () => {
+    if (startingRef.current || starting) {
+      return;
+    }
     if (!hasCheckedInShift) {
       promptCheckInRequired(() => navigation.navigate(GUARD_ROUTES.SHIFTS));
       return;
     }
-    startPatrol();
+    if (hasRunningPatrol) {
+      Alert.alert(
+        'Patrol already running',
+        'Complete all NFC scans for the current patrol before starting a new one.',
+      );
+      return;
+    }
+    void startPatrol();
   };
 
   const completedCount = activeReport ? getCompletedCount(activeReport) : 0;
@@ -385,15 +461,14 @@ export default function PatrolTimeline() {
     totalScanners > 0 ? Math.round((completedCount / totalScanners) * 100) : 0;
   const allComplete = totalScanners > 0 && completedCount >= totalScanners;
 
-  const rosterReports = resolvedRosterId
-    ? reports.filter(r => String(r.roster_id) === String(resolvedRosterId))
-    : reports;
-  const completedRounds = rosterReports.filter(r => !isPatrolReportActive(r));
-  const runningRounds = rosterReports.filter(r => isPatrolReportActive(r));
   const historyReports = rosterReports.filter(r => r.id !== activeReport?.id);
+  const extraRunningCount = Math.max(
+    0,
+    runningRounds.length - (activeReport ? 1 : 0),
+  );
   const patrolHeaderDate = formatFullDisplayDate(patrolDate);
   const patrolHeaderSub = [
-    siteName ?? activeSession?.site,
+    activeSession?.site,
     patrolHeaderDate,
   ]
     .filter(Boolean)
@@ -401,12 +476,6 @@ export default function PatrolTimeline() {
   const screenTitle = activeReport ? 'Patrolling' : 'Patrol';
 
   const showShimmer = loading || starting;
-
-  useEffect(() => {
-    if (coordinates?.trim()) {
-      locationRef.current = coordinates.trim();
-    }
-  }, [coordinates]);
 
   return (
     <View style={styles.container}>
@@ -416,7 +485,7 @@ export default function PatrolTimeline() {
         <View style={styles.header}>
           <View style={styles.hdrRow}>
             <View style={styles.hdrTitleWrap}>
-              {fromOngoingShift ? (
+              {navigation.canGoBack() ? (
                 <TouchableOpacity
                   style={styles.backBtn}
                   onPress={() => navigation.goBack()}
@@ -438,9 +507,9 @@ export default function PatrolTimeline() {
 
               {canStartPatrol ? (
                 <TouchableOpacity
-                  style={[styles.addBtn, starting && styles.addBtnDisabled]}
+                  style={[styles.addBtn, (starting || loading) && styles.addBtnDisabled]}
                   onPress={handleStartNewPatrol}
-                  disabled={starting}
+                  disabled={starting || loading}
                 >
                   {starting ? (
                     <ActivityIndicator size="small" color={Colors.white} />
@@ -472,6 +541,32 @@ export default function PatrolTimeline() {
               />
             }
           >
+            {loadError ? (
+              <View style={[styles.errorCard, Shadows.card]}>
+                <AlertTriangle size={28} color={Colors.danger} />
+                <Text style={styles.errorTitle}>{loadError}</Text>
+                <Text style={styles.errorSub}>
+                  Pull down to refresh or tap retry to load patrol data again.
+                </Text>
+                <TouchableOpacity
+                  style={styles.retryBtn}
+                  onPress={() => void loadPatrols()}
+                >
+                  <Text style={styles.retryBtnText}>Retry</Text>
+                </TouchableOpacity>
+              </View>
+            ) : null}
+
+            {extraRunningCount > 0 ? (
+              <View style={styles.warningBanner}>
+                <AlertTriangle size={16} color={Colors.warning} />
+                <Text style={styles.warningBannerText}>
+                  {extraRunningCount + 1} patrols are running. Finish the latest
+                  one first — older rounds cannot be scanned until it is complete.
+                </Text>
+              </View>
+            ) : null}
+
             {activeReport ? (
               <View style={[styles.summaryCard, Shadows.card]}>
                 <View style={styles.summaryTop}>
@@ -517,9 +612,12 @@ export default function PatrolTimeline() {
                 </Text>
                 {canStartPatrol ? (
                   <TouchableOpacity
-                    style={[styles.startMainBtn, starting && styles.addBtnDisabled]}
+                    style={[
+                      styles.startMainBtn,
+                      (starting || loading) && styles.addBtnDisabled,
+                    ]}
                     onPress={handleStartNewPatrol}
-                    disabled={starting}
+                    disabled={starting || loading}
                   >
                     {starting ? (
                       <ActivityIndicator size="small" color={Colors.white} />
@@ -872,6 +970,23 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: Colors.success,
   },
+  warningBanner: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+    marginBottom: 10,
+    backgroundColor: Colors.warningLight,
+    borderRadius: Radii.md,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  warningBannerText: {
+    flex: 1,
+    fontSize: FontSizes.sm,
+    fontWeight: '600',
+    color: Colors.warning,
+    lineHeight: 18,
+  },
   emptyCard: {
     marginBottom: 10,
     backgroundColor: Colors.bgCard,
@@ -879,6 +994,41 @@ const styles = StyleSheet.create({
     padding: 28,
     alignItems: 'center',
     gap: 8,
+  },
+  errorCard: {
+    backgroundColor: Colors.dangerLight,
+    borderRadius: Radii.xl,
+    padding: 24,
+    alignItems: 'center',
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(229,62,62,0.25)',
+  },
+  errorTitle: {
+    fontSize: FontSizes.md,
+    fontWeight: '700',
+    color: Colors.danger,
+    marginTop: 12,
+    textAlign: 'center',
+  },
+  errorSub: {
+    fontSize: FontSizes.xs,
+    color: Colors.textSecondary,
+    marginTop: 8,
+    textAlign: 'center',
+    lineHeight: 18,
+  },
+  retryBtn: {
+    marginTop: 14,
+    backgroundColor: Colors.danger,
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: Radii.md,
+  },
+  retryBtnText: {
+    color: Colors.white,
+    fontWeight: '700',
+    fontSize: FontSizes.sm,
   },
   emptyTitle: {
     fontSize: FontSizes.md,

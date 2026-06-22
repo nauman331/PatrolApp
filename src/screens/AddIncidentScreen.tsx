@@ -24,6 +24,7 @@ import {
   SelfieWatermarkProcessor,
   type SelfieWatermarkJob,
 } from '../components/SelfieWatermarkProcessor';
+import ImageViewerModal from '../components/ImageViewerModal';
 import { formatCaptureTimestamp } from '../services/locationUtils';
 import {
   AlertTriangle,
@@ -271,6 +272,7 @@ export default function AddIncidentScreen() {
   const pendingPhotoRef = useRef<{ timestamp: string } | null>(null);
 
   const [photos, setPhotos] = useState<IncidentPhoto[]>([]);
+  const [viewerUri, setViewerUri] = useState<string | null>(null);
   const [watermarkJob, setWatermarkJob] = useState<SelfieWatermarkJob | null>(null);
   const [watermarking, setWatermarking] = useState(false);
   const [signatureUri, setSignatureUri] = useState('');
@@ -669,6 +671,11 @@ export default function AddIncidentScreen() {
         onComplete={handleWatermarkComplete}
         onError={handleWatermarkError}
       />
+      <ImageViewerModal
+        visible={viewerUri != null}
+        uri={viewerUri}
+        onClose={() => setViewerUri(null)}
+      />
       <StatusBar barStyle="light-content" backgroundColor={Colors.headerStart} />
 
       <SafeAreaView style={styles.safeTop} edges={['top']}>
@@ -1043,13 +1050,19 @@ export default function AddIncidentScreen() {
                 )}
               </TouchableOpacity>
               {photos.map((photo, i) => (
-                <Image key={i} source={{ uri: photo.uri }} style={styles.photo} />
+                <TouchableOpacity
+                  key={i}
+                  activeOpacity={0.85}
+                  onPress={() => setViewerUri(photo.uri)}
+                >
+                  <Image source={{ uri: photo.uri }} style={styles.photo} />
+                </TouchableOpacity>
               ))}
             </ScrollView>
             <Text style={styles.helperText}>
               {photosFull
                 ? 'Maximum 5 photos added'
-                : 'Logo and timestamp are added to each photo'}
+                : 'Tap a photo to view full size. Logo and timestamp are added to each photo'}
             </Text>
           </View>
 

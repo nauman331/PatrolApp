@@ -1,128 +1,209 @@
-import React, { useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   View,
   Text,
   TouchableOpacity,
   StyleSheet,
-  ScrollView,
-  StatusBar,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { Colors, FontSizes, Radii, Shadows } from '../../theme';
 import { CheckCircle, XCircle, Clock } from 'lucide-react-native';
 import type { ManagerStackScreenProps } from '../../navigation/types';
-import { ManagerStackHeader, MANAGER_PAGE_BG, sharedStyles } from './managerShared';
+import { ManagerStackHeader, ManagerStackListLayout, ManagerStackShell, sharedStyles } from './managerShared';
+import AuthErrorBanner from '../../components/AuthErrorBanner';
+import {
+  ManagerAttendanceListShimmer,
+  ManagerAttendanceSummaryShimmer,
+} from '../../components/Shimmer';
+import {
+  getManagerGuardAttendance,
+  mapManagerStatusColor,
+  type ManagerAttendanceData,
+} from '../../services/managerApi';
 
 type Props = ManagerStackScreenProps<'ManagerGuardAttendance'>;
 
-const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun'] as const;
-
-const ATTENDANCE = [
-  { date: 'Mon, 14 Apr', shift: '06:00 – 14:00', checkIn: '05:58 AM', checkOut: '14:02 PM', status: 'present' as const },
-  { date: 'Sun, 13 Apr', shift: '06:00 – 14:00', checkIn: '06:05 AM', checkOut: '14:00 PM', status: 'late' as const },
-  { date: 'Sat, 12 Apr', shift: '06:00 – 14:00', checkIn: '—', checkOut: '—', status: 'absent' as const },
-  { date: 'Fri, 11 Apr', shift: '06:00 – 14:00', checkIn: '05:55 AM', checkOut: '14:01 PM', status: 'present' as const },
-  { date: 'Thu, 10 Apr', shift: '06:00 – 14:00', checkIn: '06:00 AM', checkOut: '14:00 PM', status: 'present' as const },
-];
-
-const statusConfig = {
-  present: { label: 'Present', color: Colors.success, icon: CheckCircle },
-  late: { label: 'Late', color: Colors.warning, icon: Clock },
-  absent: { label: 'Absent', color: Colors.danger, icon: XCircle },
+const statusIcons = {
+  present: CheckCircle,
+  late: Clock,
+  absent: XCircle,
 };
 
 export default function ManagerGuardAttendanceScreen({ route }: Props) {
-  const { name = 'Guard' } = route.params ?? {};
-  const [month, setMonth] = useState<(typeof MONTHS)[number]>('Apr');
+  const { guardId, name: routeName } = route.params ?? {};
+  const now = new Date();
+  const [month, setMonth] = useState(now.getMonth() + 1);
+  const [year, setYear] = useState(now.getFullYear());
+  const [data, setData] = useState<ManagerAttendanceData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const present = ATTENDANCE.filter(a => a.status === 'present').length;
-  const late = ATTENDANCE.filter(a => a.status === 'late').length;
-  const absent = ATTENDANCE.filter(a => a.status === 'absent').length;
+  const monthOptions = useMemo(() => {
+    const options: { month: number; year: number; label: string }[] = [];
+    for (let i = -5; i <= 0; i++) {
+      const d = new Date(now.getFullYear(), now.getMonth() + i, 1);
+      options.push({
+        month: d.getMonth() + 1,
+        year: d.getFullYear(),
+        label: d.toLocaleDateString(undefined, { month: 'short', year: 'numeric' }),
+      });
+    }
+    return options.reverse();
+  }, [now]);
+
+  const fetchAttendance = useCallback(async () => {
+    if (!guardId) {
+      setError('Guard not found');
+      setLoading(false);
+      return;
+    }
+
+    setError(null);
+    const result = await getManagerGuardAttendance(guardId, month, year);
+
+    if (result.success && result.data) {
+      setData(result.data);
+    } else {
+      setData(null);
+      setError(result.message ?? 'Failed to load attendance');
+    }
+
+    setLoading(false);
+    setRefreshing(false);
+  }, [guardId, month, year]);
+
+  useEffect(() => {
+    setLoading(true);
+    fetchAttendance();
+  }, [fetchAttendance]);
+
+  const onRefresh = useCallback(() => {
+    setRefreshing(true);
+    fetchAttendance();
+  }, [fetchAttendance]);
+
+  const name = data?.guard.name ?? routeName ?? 'Guard';
+  const summary = data?.summary;
+  const records = data?.records ?? [];
+  const showShimmer = loading && !data;
 
   return (
-    <View style={styles.container}>
-      <StatusBar barStyle="dark-content" backgroundColor={Colors.bg} />
-      <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
-        <ManagerStackHeader
-          title="Attendance"
-          subtitle={name}
-        />
-
-        <ScrollView showsVerticalScrollIndicator={false}>
-          <View style={styles.body}>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-              <View style={sharedStyles.chipRow}>
-                {MONTHS.map(m => (
+    <ManagerStackShell
+      header={<ManagerStackHeader title="Attendance" subtitle={name} />}
+    >
+      <ManagerStackListLayout
+        refreshing={refreshing}
+        onRefresh={onRefresh}
+        fixedContent={
+          <>
+            {error ? <AuthErrorBanner message={error} /> : null}
+            <View style={sharedStyles.chipRow}>
+              {monthOptions.map(opt => {
+                const active = opt.month === month && opt.year === year;
+                return (
                   <TouchableOpacity
-                    key={m}
+                    key={`${opt.year}-${opt.month}`}
                     style={[
                       sharedStyles.chip,
-                      month === m && sharedStyles.chipActive,
+                      active && sharedStyles.chipActive,
                     ]}
-                    onPress={() => setMonth(m)}
+                    onPress={() => {
+                      setMonth(opt.month);
+                      setYear(opt.year);
+                      setLoading(true);
+                    }}
                   >
                     <Text
                       style={[
                         sharedStyles.chipText,
-                        month === m && sharedStyles.chipTextActive,
+                        active && sharedStyles.chipTextActive,
                       ]}
                     >
-                      {m} 2026
+                      {opt.label}
                     </Text>
                   </TouchableOpacity>
-                ))}
-              </View>
-            </ScrollView>
-
-            <View style={styles.summaryRow}>
-              <View style={[styles.sumCard, Shadows.card]}>
-                <Text style={[styles.sumNum, { color: Colors.success }]}>{present}</Text>
-                <Text style={styles.sumLabel}>Present</Text>
-              </View>
-              <View style={[styles.sumCard, Shadows.card]}>
-                <Text style={[styles.sumNum, { color: Colors.warning }]}>{late}</Text>
-                <Text style={styles.sumLabel}>Late</Text>
-              </View>
-              <View style={[styles.sumCard, Shadows.card]}>
-                <Text style={[styles.sumNum, { color: Colors.danger }]}>{absent}</Text>
-                <Text style={styles.sumLabel}>Absent</Text>
-              </View>
+                );
+              })}
             </View>
-
-            {ATTENDANCE.map((row, i) => {
-              const cfg = statusConfig[row.status];
-              const Icon = cfg.icon;
-              return (
-                <View key={i} style={[styles.row, Shadows.card]}>
-                  <View style={styles.rowLeft}>
-                    <Text style={styles.date}>{row.date}</Text>
-                    <Text style={styles.shift}>{row.shift}</Text>
-                    <Text style={styles.times}>
-                      In: {row.checkIn} · Out: {row.checkOut}
-                    </Text>
-                  </View>
-                  <View style={[styles.statusBadge, { backgroundColor: `${cfg.color}18` }]}>
-                    <Icon size={14} color={cfg.color} />
-                    <Text style={[styles.statusText, { color: cfg.color }]}>
-                      {cfg.label}
-                    </Text>
-                  </View>
+            {showShimmer ? (
+              <ManagerAttendanceSummaryShimmer />
+            ) : (
+              <View style={styles.summaryRow}>
+                <View style={[styles.sumCard, Shadows.card]}>
+                  <Text style={[styles.sumNum, { color: Colors.success }]}>
+                    {summary?.present ?? 0}
+                  </Text>
+                  <Text style={styles.sumLabel}>Present</Text>
                 </View>
-              );
-            })}
-          </View>
-        </ScrollView>
-      </SafeAreaView>
-    </View>
+                <View style={[styles.sumCard, Shadows.card]}>
+                  <Text style={[styles.sumNum, { color: Colors.warning }]}>
+                    {summary?.late ?? 0}
+                  </Text>
+                  <Text style={styles.sumLabel}>Late</Text>
+                </View>
+                <View style={[styles.sumCard, Shadows.card]}>
+                  <Text style={[styles.sumNum, { color: Colors.danger }]}>
+                    {summary?.absent ?? 0}
+                  </Text>
+                  <Text style={styles.sumLabel}>Absent</Text>
+                </View>
+              </View>
+            )}
+          </>
+        }
+      >
+        {showShimmer ? (
+          <ManagerAttendanceListShimmer />
+        ) : records.length === 0 ? (
+          <Text style={styles.emptyText}>No attendance records.</Text>
+        ) : (
+          records.map(row => {
+            const statusKey = row.status as keyof typeof statusIcons;
+            const Icon = statusIcons[statusKey] ?? Clock;
+            const color = mapManagerStatusColor(row.status_color);
+
+            return (
+              <View
+                key={`${row.roster_id}-${row.date}`}
+                style={[styles.row, Shadows.card]}
+              >
+                <View style={styles.rowLeft}>
+                  <Text style={styles.date}>{row.date_label}</Text>
+                  <Text style={styles.site}>{row.site_name}</Text>
+                  <Text style={styles.shift}>{row.shift_time}</Text>
+                  <Text style={styles.times}>
+                    In: {row.checkin_time ?? '—'} · Out:{' '}
+                    {row.checkout_time ?? '—'}
+                  </Text>
+                </View>
+                <View
+                  style={[
+                    styles.statusBadge,
+                    { backgroundColor: `${color}18` },
+                  ]}
+                >
+                  <Icon size={14} color={color} />
+                  <Text style={[styles.statusText, { color }]}>
+                    {row.status_label}
+                  </Text>
+                </View>
+              </View>
+            );
+          })
+        )}
+      </ManagerStackListLayout>
+    </ManagerStackShell>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: MANAGER_PAGE_BG },
-  safe: { flex: 1 },
-  body: { padding: 14 },
-
-  summaryRow: { flexDirection: 'row', gap: 8, marginBottom: 14 },
+  emptyText: {
+    fontSize: FontSizes.sm,
+    color: Colors.textMuted,
+    textAlign: 'center',
+    marginTop: 24,
+  },
+  summaryRow: { flexDirection: 'row', gap: 8, marginBottom: 8 },
   sumCard: {
     flex: 1,
     backgroundColor: Colors.bgCard,
@@ -132,7 +213,6 @@ const styles = StyleSheet.create({
   },
   sumNum: { fontSize: 22, fontWeight: '800' },
   sumLabel: { fontSize: FontSizes.xs, color: Colors.textMuted, marginTop: 2 },
-
   row: {
     backgroundColor: Colors.bgCard,
     borderRadius: Radii.md,
@@ -142,9 +222,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
   },
-  rowLeft: { flex: 1 },
+  rowLeft: { flex: 1, paddingRight: 8 },
   date: { fontSize: 12, fontWeight: '700', color: Colors.textPrimary },
-  shift: { fontSize: FontSizes.xs, color: Colors.textMuted, marginTop: 1 },
+  site: { fontSize: FontSizes.xs, color: Colors.textMuted, marginTop: 1 },
+  shift: { fontSize: FontSizes.xs, color: Colors.textSecondary, marginTop: 1 },
   times: { fontSize: FontSizes.xs, color: Colors.textSecondary, marginTop: 3 },
   statusBadge: {
     flexDirection: 'row',

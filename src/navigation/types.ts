@@ -12,7 +12,6 @@ export type AuthStackParamList = {
     Splash: undefined;
     Onboarding: undefined;
     Login: undefined;
-    Signup: undefined;
 };
 
 /**
@@ -30,7 +29,7 @@ export type GuardStackParamList = {
               site?: string;
               time?: string;
               zones?: string;
-              status?: 'active' | 'upcoming';
+              status?: 'active' | 'upcoming' | 'ready';
           }
         | undefined;
     OngoingShift:
@@ -81,6 +80,7 @@ export type ManagerStackParamList = {
     ManagerGuardDetails: {
         guardId?: string;
         name?: string;
+        rosterId?: number;
     };
     ManagerGuardAttendance: {
         guardId?: string;
@@ -88,10 +88,15 @@ export type ManagerStackParamList = {
     };
     ManagerReports: undefined;
     ManagerShiftReport: {
-        shiftId?: string;
+        guardId?: number;
+        siteId?: number;
+        date?: string;
         guardName?: string;
         site?: string;
     } | undefined;
+    ManagerIncidentDetail: {
+        incidentId: number;
+    };
     ManagerRoster: undefined;
     ManagerProfile: undefined;
     PrivacyPolicy: undefined;

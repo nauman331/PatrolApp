@@ -34,6 +34,16 @@ export async function clearActiveShiftSession(): Promise<void> {
   await AsyncStorage.removeItem(ACTIVE_SHIFT_KEY);
 }
 
+export async function patchActiveShiftSession(
+  patch: Partial<ActiveShiftSession>,
+): Promise<ActiveShiftSession | null> {
+  const current = await getActiveShiftSession();
+  if (!current) return null;
+  const next = { ...current, ...patch };
+  await saveActiveShiftSession(next);
+  return next;
+}
+
 export function promptCheckInRequired(onGoToShifts?: () => void): void {
   Alert.alert(
     'Shift not active',

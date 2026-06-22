@@ -1,172 +1,218 @@
-import React from 'react';
+import React, { useCallback, useState } from 'react';
 import {
   View,
   Text,
-  TouchableOpacity,
   StyleSheet,
-  ScrollView,
-  StatusBar,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { useFocusEffect } from '@react-navigation/native';
 import { Colors, FontSizes, Radii, Shadows } from '../../theme';
 import { SectionHeader } from '../../components';
-import { Mail, Download } from 'lucide-react-native';
+import { MapPin, Clock, Footprints } from 'lucide-react-native';
 import type { ManagerStackScreenProps } from '../../navigation/types';
-import { ManagerStackHeader, MANAGER_PAGE_BG } from './managerShared';
+import { ManagerStackHeader, ManagerStackListLayout, ManagerStackShell } from './managerShared';
+import AuthErrorBanner from '../../components/AuthErrorBanner';
+import {
+  ManagerShiftReportFixedShimmer,
+  ManagerShiftReportListShimmer,
+} from '../../components/Shimmer';
+import {
+  getManagerPatrolReportDetail,
+  type ManagerPatrolReportDetailData,
+} from '../../services/managerApi';
 
 type Props = ManagerStackScreenProps<'ManagerShiftReport'>;
 
-const SUMMARY = [
-  { value: '6', label: 'Patrols', highlight: true },
-  { value: '3', label: 'Incidents', highlight: false },
-  { value: '11', label: 'Photos', highlight: false },
-  { value: '92%', label: 'Compliance', highlight: false },
-];
-
-const BARS = [
-  { label: '5AM', height: 35, color: Colors.border },
-  { label: '6AM', height: 55, color: '#1a56db' },
-  { label: '7AM', height: 48, color: '#1a56db' },
-  { label: '8AM', height: 65, color: '#1a56db' },
-  { label: '9AM', height: 28, color: Colors.danger },
-  { label: '10AM', height: 18, color: Colors.border },
-  { label: '11AM', height: 10, color: Colors.border },
-];
-
-const PHOTOS = ['07:02 AM', '07:04 AM', '08:05 AM', '08:47 AM', '08:49 AM', '08:51 AM'];
-
-const ACTIVITY_LOG = [
-  { dot: Colors.success, text: 'Sign In — Selfie Verified', time: '06:01 AM' },
-  { dot: '#1a56db', text: 'Patrol — Gate A NFC Scan', time: '07:02 AM' },
-  { dot: Colors.danger, text: 'Incident Filed — Food Court', time: '08:47 AM' },
-  { dot: Colors.info, text: 'Voice Note Submitted', time: '08:55 AM' },
-];
-
 export default function ManagerShiftReportScreen({ route }: Props) {
-  const { guardName = 'Ahmed Khan', site = 'Mall of Lahore' } = route.params ?? {};
+  const {
+    guardId,
+    siteId,
+    date,
+    guardName: routeGuardName,
+    site: routeSite,
+  } = route.params ?? {};
+
+  const [data, setData] = useState<ManagerPatrolReportDetailData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const fetchDetail = useCallback(async () => {
+    if (!guardId || !siteId || !date) {
+      setError('Missing report parameters');
+      setLoading(false);
+      return;
+    }
+
+    setError(null);
+    const result = await getManagerPatrolReportDetail(guardId, siteId, date);
+
+    if (result.success && result.data) {
+      setData(result.data);
+    } else {
+      setData(null);
+      setError(result.message ?? 'Failed to load patrol report');
+    }
+
+    setLoading(false);
+    setRefreshing(false);
+  }, [guardId, siteId, date]);
+
+  useFocusEffect(
+    useCallback(() => {
+      setLoading(true);
+      fetchDetail();
+    }, [fetchDetail]),
+  );
+
+  const onRefresh = useCallback(() => {
+    setRefreshing(true);
+    fetchDetail();
+  }, [fetchDetail]);
+
+  const guardName = data?.guard.name ?? routeGuardName ?? 'Guard';
+  const siteName = data?.site.name ?? routeSite ?? 'Site';
+  const summary = data?.summary;
+  const patrols = data?.patrols ?? [];
+  const showShimmer = loading && !data;
+
+  const summaryCards = summary
+    ? [
+        { value: String(summary.patrols_count), label: 'Patrols', highlight: true },
+        {
+          value: String(summary.completed_count),
+          label: 'Completed',
+          highlight: false,
+        },
+        {
+          value: `${summary.compliance_percentage}%`,
+          label: 'Compliance',
+          highlight: false,
+        },
+        {
+          value: `${summary.nfc_scans_completed}/${summary.nfc_scans_total}`,
+          label: 'NFC Scans',
+          highlight: false,
+        },
+      ]
+    : [];
 
   return (
-    <View style={styles.container}>
-      <StatusBar barStyle="dark-content" backgroundColor={Colors.bg} />
-      <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
+    <ManagerStackShell
+      header={
         <ManagerStackHeader
-          title="Shift Report"
-          subtitle={`${site} · ${guardName}`}
-          rightAction={
-            <View style={styles.headerActions}>
-              <TouchableOpacity style={styles.exportBtn}>
-                <Download size={14} color="#1a56db" />
-                <Text style={styles.exportText}>Export</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.emailBtn}>
-                <Mail size={14} color="#fff" />
-              </TouchableOpacity>
-            </View>
-          }
+          title="Patrol Report"
+          subtitle={`${siteName} · ${guardName}${data?.date_label ? ` · ${data.date_label}` : ''}`}
         />
-
-        <ScrollView showsVerticalScrollIndicator={false}>
-          <View style={styles.body}>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-              <View style={styles.summaryRow}>
-                {SUMMARY.map((s, i) => (
-                  <View
-                    key={i}
-                    style={[
-                      styles.sumCard,
-                      s.highlight && styles.sumCardHL,
-                      Shadows.card,
-                    ]}
-                  >
-                    <Text style={[styles.sumNum, s.highlight && styles.sumNumHL]}>
-                      {s.value}
-                    </Text>
-                    <Text style={styles.sumLabel}>{s.label}</Text>
-                  </View>
-                ))}
-              </View>
-            </ScrollView>
-
-            <View style={[styles.chartSection, Shadows.card]}>
-              <Text style={styles.chartTitle}>Hourly Patrol Activity</Text>
-              <View style={styles.barChart}>
-                {BARS.map((bar, i) => (
-                  <View key={i} style={styles.barCol}>
+      }
+    >
+      <ManagerStackListLayout
+        refreshing={refreshing}
+        onRefresh={onRefresh}
+        fixedContent={
+          <>
+            {error ? <AuthErrorBanner message={error} /> : null}
+            {showShimmer ? (
+              <ManagerShiftReportFixedShimmer />
+            ) : (
+              <>
+                <View style={styles.summaryRow}>
+                  {summaryCards.map((s, i) => (
                     <View
+                      key={i}
                       style={[
-                        styles.bar,
-                        { height: bar.height, backgroundColor: bar.color },
+                        styles.sumCard,
+                        s.highlight && styles.sumCardHL,
+                        Shadows.card,
                       ]}
-                    />
-                    <Text style={styles.barLabel}>{bar.label}</Text>
-                  </View>
-                ))}
-              </View>
-            </View>
-
-            <SectionHeader title="Photo Evidence" action="Gallery" />
-            <View style={styles.photoGrid}>
-              {PHOTOS.map((ts, i) => (
-                <View key={i} style={styles.photoItem}>
-                  <Text style={{ fontSize: 16, opacity: 0.45 }}>📸</Text>
-                  <Text style={styles.photoTs}>{ts}</Text>
+                    >
+                      <Text
+                        style={[styles.sumNum, s.highlight && styles.sumNumHL]}
+                      >
+                        {s.value}
+                      </Text>
+                      <Text style={styles.sumLabel}>{s.label}</Text>
+                    </View>
+                  ))}
                 </View>
-              ))}
-            </View>
 
-            <View style={[styles.logSection, Shadows.card]}>
-              <Text style={styles.logTitle}>Activity Log</Text>
-              {ACTIVITY_LOG.map((row, i) => (
-                <View
-                  key={i}
-                  style={[
-                    styles.logRow,
-                    i < ACTIVITY_LOG.length - 1 && styles.logRowBorder,
-                  ]}
-                >
-                  <View style={styles.logLeft}>
-                    <View style={[styles.logDot, { backgroundColor: row.dot }]} />
-                    <Text style={styles.logText}>{row.text}</Text>
+                {data?.site.address ? (
+                  <View style={[styles.siteCard, Shadows.card]}>
+                    <MapPin size={14} color={Colors.accent} />
+                    <Text style={styles.siteAddress}>{data.site.address}</Text>
                   </View>
-                  <Text style={styles.logTime}>{row.time}</Text>
+                ) : null}
+              </>
+            )}
+          </>
+        }
+        listHeader={<SectionHeader title="Patrols" />}
+      >
+        {showShimmer ? (
+          <ManagerShiftReportListShimmer />
+        ) : (
+          <>
+            {patrols.length === 0 ? (
+              <Text style={styles.emptyText}>No patrols recorded.</Text>
+            ) : (
+              patrols.map(patrol => (
+                <View key={patrol.id} style={[styles.patrolCard, Shadows.card]}>
+                  <View style={styles.patrolHeader}>
+                    <Footprints size={14} color={Colors.accent} />
+                    <Text style={styles.patrolTitle}>
+                      Patrol #{patrol.id} · {patrol.compliance_percentage}%
+                      compliance
+                    </Text>
+                  </View>
+                  <View style={styles.patrolMeta}>
+                    <Clock size={12} color={Colors.textMuted} />
+                    <Text style={styles.patrolTime}>
+                      {patrol.started_at}
+                      {patrol.completed_at ? ` – ${patrol.completed_at}` : ''}
+                    </Text>
+                  </View>
+                  <Text style={styles.scannerSummary}>
+                    {patrol.scanners_completed}/{patrol.scanners_total} scanners
+                    completed
+                  </Text>
+
+                  {(patrol.scanners ?? []).map(scanner => (
+                    <View key={scanner.id} style={styles.scannerRow}>
+                      <View
+                        style={[
+                          styles.scannerDot,
+                          {
+                            backgroundColor:
+                              scanner.status === 'completed'
+                                ? Colors.success
+                                : Colors.textMuted,
+                          },
+                        ]}
+                      />
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.scannerName}>{scanner.name}</Text>
+                        <Text style={styles.scannerTime}>
+                          {scanner.scan_at ?? 'Not scanned'}
+                        </Text>
+                      </View>
+                    </View>
+                  ))}
                 </View>
-              ))}
-            </View>
-          </View>
-        </ScrollView>
-      </SafeAreaView>
-    </View>
+              ))
+            )}
+          </>
+        )}
+      </ManagerStackListLayout>
+    </ManagerStackShell>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: MANAGER_PAGE_BG },
-  safe: { flex: 1 },
-
-  headerActions: { flexDirection: 'row', gap: 6 },
-  exportBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    backgroundColor: Colors.infoLight,
-    borderWidth: 1,
-    borderColor: '#93c5fd',
-    borderRadius: Radii.sm,
-    paddingHorizontal: 10,
-    paddingVertical: 7,
+  emptyText: {
+    fontSize: FontSizes.sm,
+    color: Colors.textMuted,
+    marginBottom: 12,
   },
-  exportText: { fontSize: FontSizes.xs, fontWeight: '700', color: '#1a56db' },
-  emailBtn: {
-    width: 34,
-    height: 34,
-    borderRadius: 9,
-    backgroundColor: '#1a56db',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-
-  body: { padding: 14 },
-  summaryRow: { flexDirection: 'row', gap: 8, marginBottom: 14 },
+  summaryRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 8 },
   sumCard: {
     backgroundColor: Colors.bgCard,
     borderRadius: Radii.lg,
@@ -176,61 +222,59 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
     borderColor: Colors.border,
   },
-  sumCardHL: { borderColor: '#93c5fd', backgroundColor: Colors.infoLight },
+  sumCardHL: {
+    borderColor: Colors.accentAlpha25,
+    backgroundColor: Colors.accentLight,
+  },
   sumNum: { fontSize: 20, fontWeight: '800', color: Colors.textPrimary },
-  sumNumHL: { color: '#1a56db' },
+  sumNumHL: { color: Colors.accent },
   sumLabel: { fontSize: FontSizes.xs, color: Colors.textMuted, marginTop: 2 },
-
-  chartSection: {
+  siteCard: {
+    backgroundColor: Colors.bgCard,
+    borderRadius: Radii.md,
+    padding: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 8,
+  },
+  siteAddress: { fontSize: 12, color: Colors.textSecondary, flex: 1 },
+  patrolCard: {
     backgroundColor: Colors.bgCard,
     borderRadius: Radii.lg,
     padding: 14,
-    marginBottom: 14,
-    borderWidth: 1.5,
-    borderColor: Colors.border,
-  },
-  chartTitle: { fontSize: 12, fontWeight: '700', color: Colors.textPrimary, marginBottom: 12 },
-  barChart: { flexDirection: 'row', gap: 5, alignItems: 'flex-end', height: 80 },
-  barCol: { flex: 1, alignItems: 'center', gap: 3 },
-  bar: { width: '100%', borderRadius: 3 },
-  barLabel: { fontSize: FontSizes.xs, color: Colors.textMuted },
-
-  photoGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 5, marginBottom: 14 },
-  photoItem: {
-    width: '31%',
-    height: 64,
-    backgroundColor: Colors.bgCard,
-    borderRadius: 10,
+    marginBottom: 10,
     borderWidth: 1,
     borderColor: Colors.border,
-    alignItems: 'center',
-    justifyContent: 'center',
   },
-  photoTs: {
-    position: 'absolute',
-    bottom: 4,
-    fontSize: 8,
-    color: Colors.textMuted,
-    textAlign: 'center',
-  },
-
-  logSection: {
-    backgroundColor: Colors.bgCard,
-    borderRadius: Radii.lg,
-    padding: 14,
-    borderWidth: 1.5,
-    borderColor: Colors.border,
-  },
-  logTitle: { fontSize: 12, fontWeight: '700', color: Colors.textPrimary, marginBottom: 10 },
-  logRow: {
+  patrolHeader: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    paddingVertical: 7,
+    gap: 6,
+    marginBottom: 6,
   },
-  logRowBorder: { borderBottomWidth: 1, borderBottomColor: Colors.border },
-  logLeft: { flexDirection: 'row', alignItems: 'center', gap: 7 },
-  logDot: { width: 6, height: 6, borderRadius: 3 },
-  logText: { fontSize: 11, color: Colors.textSecondary },
-  logTime: { fontSize: FontSizes.xs, color: Colors.textMuted },
+  patrolTitle: { fontSize: 12, fontWeight: '700', color: Colors.textPrimary },
+  patrolMeta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginBottom: 4,
+  },
+  patrolTime: { fontSize: FontSizes.xs, color: Colors.textMuted },
+  scannerSummary: {
+    fontSize: FontSizes.xs,
+    color: Colors.textSecondary,
+    marginBottom: 10,
+  },
+  scannerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 6,
+    borderTopWidth: 1,
+    borderTopColor: Colors.border,
+  },
+  scannerDot: { width: 6, height: 6, borderRadius: 3 },
+  scannerName: { fontSize: 11, fontWeight: '600', color: Colors.textPrimary },
+  scannerTime: { fontSize: FontSizes.xs, color: Colors.textMuted },
 });

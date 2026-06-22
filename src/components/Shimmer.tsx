@@ -159,6 +159,56 @@ export function DashboardStatsShimmer() {
   );
 }
 
+export function ManagerListRowShimmer({ withBadge = false }: { withBadge?: boolean }) {
+  return (
+    <View style={styles.managerListRow}>
+      <ShimmerBox width={32} height={32} borderRadius={9} />
+      <View style={{ flex: 1, gap: 6 }}>
+        <ShimmerBox width="68%" height={12} />
+        <ShimmerBox width="82%" height={10} />
+      </View>
+      {withBadge ? (
+        <ShimmerBox width={44} height={10} borderRadius={4} />
+      ) : (
+        <ShimmerBox width={16} height={16} borderRadius={4} />
+      )}
+    </View>
+  );
+}
+
+export function ManagerDashboardShimmer({
+  includeHeader = true,
+}: {
+  includeHeader?: boolean;
+}) {
+  return (
+    <>
+      {includeHeader ? (
+        <View style={styles.managerHeaderShell}>
+          <ShimmerBox width={72} height={18} borderRadius={7} tone="dark" />
+          <ShimmerBox width="72%" height={22} tone="dark" style={{ marginTop: 18 }} />
+          <ShimmerBox width="58%" height={12} style={{ marginTop: 10 }} tone="dark" />
+        </View>
+      ) : null}
+      <View style={includeHeader ? styles.managerBodyShimmer : undefined}>
+        <DashboardStatsShimmer />
+        <ShimmerBox width={140} height={12} style={{ marginBottom: 10 }} />
+        {Array.from({ length: 2 }).map((_, i) => (
+          <ManagerListRowShimmer key={`alert-${i}`} withBadge />
+        ))}
+        <ShimmerBox width={120} height={12} style={{ marginTop: 8, marginBottom: 10 }} />
+        {Array.from({ length: 3 }).map((_, i) => (
+          <ManagerListRowShimmer key={`inc-${i}`} />
+        ))}
+        <ShimmerBox width={100} height={12} style={{ marginTop: 8, marginBottom: 10 }} />
+        {Array.from({ length: 3 }).map((_, i) => (
+          <ManagerListRowShimmer key={`guard-${i}`} />
+        ))}
+      </View>
+    </>
+  );
+}
+
 export function IncidentCardShimmer() {
   return (
     <View style={[styles.incidentCard, styles.cardShadow]}>
@@ -196,6 +246,391 @@ export function IncidentListShimmer({ count = 3 }: { count?: number }) {
       {Array.from({ length: count }).map((_, i) => (
         <IncidentCardShimmer key={i} />
       ))}
+    </>
+  );
+}
+
+export function ManagerGuardRowShimmer() {
+  return (
+    <View style={styles.managerGuardRow}>
+      <ShimmerBox width={40} height={40} borderRadius={12} />
+      <View style={{ flex: 1, gap: 5 }}>
+        <ShimmerBox width="52%" height={13} />
+        <ShimmerBox width="68%" height={10} />
+        <ShimmerBox width="42%" height={10} />
+      </View>
+      <View style={styles.managerGuardRowRight}>
+        <ShimmerBox width={58} height={18} borderRadius={Radii.pill} />
+        <ShimmerBox width={16} height={16} borderRadius={4} />
+      </View>
+    </View>
+  );
+}
+
+export function ManagerGuardsShimmer({ count = 6 }: { count?: number }) {
+  return (
+    <>
+      {Array.from({ length: count }).map((_, i) => (
+        <ManagerGuardRowShimmer key={i} />
+      ))}
+    </>
+  );
+}
+
+export function ManagerReportRowShimmer({
+  variant = 'patrol',
+}: {
+  variant?: 'patrol' | 'incident';
+}) {
+  return (
+    <View style={styles.managerGuardRow}>
+      <ShimmerBox width={36} height={36} borderRadius={10} />
+      <View style={{ flex: 1, gap: 5 }}>
+        <ShimmerBox
+          width={variant === 'incident' ? '62%' : '48%'}
+          height={12}
+        />
+        <ShimmerBox width="72%" height={10} />
+        <ShimmerBox width={variant === 'incident' ? '68%' : '56%'} height={10} />
+      </View>
+      <ShimmerBox width={16} height={16} borderRadius={4} />
+    </View>
+  );
+}
+
+export function ManagerReportsShimmer({
+  count = 5,
+  variant = 'patrol',
+}: {
+  count?: number;
+  variant?: 'patrol' | 'incident';
+}) {
+  return (
+    <>
+      {Array.from({ length: count }).map((_, i) => (
+        <ManagerReportRowShimmer key={i} variant={variant} />
+      ))}
+    </>
+  );
+}
+
+export function ManagerShiftRowShimmer() {
+  return (
+    <View style={styles.managerGuardRow}>
+      <ShimmerBox width={34} height={34} borderRadius={10} />
+      <View style={{ flex: 1, gap: 5 }}>
+        <ShimmerBox width="44%" height={12} />
+        <ShimmerBox width="78%" height={10} />
+        <ShimmerBox width="52%" height={10} />
+      </View>
+    </View>
+  );
+}
+
+export function ManagerSiteRowShimmer() {
+  return (
+    <View style={styles.managerGuardRow}>
+      <ShimmerBox width={36} height={36} borderRadius={10} />
+      <View style={{ flex: 1, gap: 5 }}>
+        <ShimmerBox width="58%" height={13} />
+        <ShimmerBox width="40%" height={10} />
+        <ShimmerBox width="46%" height={10} />
+        <ShimmerBox width="50%" height={10} />
+      </View>
+    </View>
+  );
+}
+
+export function ManagerRosterCalendarFixedShimmer() {
+  return (
+    <>
+      <View style={[styles.calendarHeaderShimmer, styles.cardShadow]}>
+        <ShimmerBox width={18} height={18} borderRadius={4} />
+        <ShimmerBox width={120} height={14} />
+        <ShimmerBox width={18} height={18} borderRadius={4} />
+      </View>
+      <View style={[styles.calendarShimmer, styles.cardShadow]}>
+        <View style={styles.weekRowShimmer}>
+          {Array.from({ length: 7 }).map((_, i) => (
+            <ShimmerBox key={i} width={24} height={10} style={{ flex: 1 }} />
+          ))}
+        </View>
+        <View style={styles.daysGridShimmer}>
+          {Array.from({ length: 35 }).map((_, i) => (
+            <View key={i} style={styles.dayCellShimmer}>
+              <ShimmerBox width={20} height={12} borderRadius={10} />
+            </View>
+          ))}
+        </View>
+      </View>
+    </>
+  );
+}
+
+export function ManagerRosterListShimmer({
+  variant = 'shifts',
+  count = 4,
+}: {
+  variant?: 'shifts' | 'sites' | 'calendar';
+  count?: number;
+}) {
+  const Row =
+    variant === 'sites' ? ManagerSiteRowShimmer : ManagerShiftRowShimmer;
+  return (
+    <>
+      {Array.from({ length: count }).map((_, i) => (
+        <Row key={i} />
+      ))}
+    </>
+  );
+}
+
+/** @deprecated use ManagerRosterCalendarFixedShimmer + ManagerRosterListShimmer */
+export function ManagerRosterShimmer({
+  variant = 'calendar',
+}: {
+  variant?: 'calendar' | 'shifts' | 'sites';
+}) {
+  if (variant === 'shifts') {
+    return (
+      <>
+        <View style={styles.sectionHdrShimmer}>
+          <ShimmerBox width={130} height={12} />
+          <ShimmerBox width={72} height={10} />
+        </View>
+        {Array.from({ length: 4 }).map((_, i) => (
+          <ManagerShiftRowShimmer key={i} />
+        ))}
+      </>
+    );
+  }
+
+  if (variant === 'sites') {
+    return (
+      <>
+        <View style={styles.sectionHdrShimmer}>
+          <ShimmerBox width={120} height={12} />
+          <ShimmerBox width={56} height={10} />
+        </View>
+        {Array.from({ length: 3 }).map((_, i) => (
+          <ManagerSiteRowShimmer key={i} />
+        ))}
+      </>
+    );
+  }
+
+  return (
+    <>
+      <View style={[styles.calendarHeaderShimmer, styles.cardShadow]}>
+        <ShimmerBox width={18} height={18} borderRadius={4} />
+        <ShimmerBox width={120} height={14} />
+        <ShimmerBox width={18} height={18} borderRadius={4} />
+      </View>
+      <View style={[styles.calendarShimmer, styles.cardShadow]}>
+        <View style={styles.weekRowShimmer}>
+          {Array.from({ length: 7 }).map((_, i) => (
+            <ShimmerBox key={i} width={24} height={10} style={{ flex: 1 }} />
+          ))}
+        </View>
+        <View style={styles.daysGridShimmer}>
+          {Array.from({ length: 35 }).map((_, i) => (
+            <View key={i} style={styles.dayCellShimmer}>
+              <ShimmerBox width={20} height={12} borderRadius={10} />
+            </View>
+          ))}
+        </View>
+      </View>
+      <View style={styles.sectionHdrShimmer}>
+        <ShimmerBox width={48} height={12} />
+        <ShimmerBox width={72} height={10} />
+      </View>
+      {Array.from({ length: 2 }).map((_, i) => (
+        <ManagerShiftRowShimmer key={i} />
+      ))}
+    </>
+  );
+}
+
+export function ManagerGuardDetailFixedShimmer() {
+  return (
+    <>
+      <View style={[styles.profileCardShimmer, styles.cardShadow]}>
+        <ShimmerBox width={64} height={64} borderRadius={20} style={{ marginBottom: 10 }} />
+        <ShimmerBox width={140} height={18} />
+        <ShimmerBox width={100} height={10} style={{ marginTop: 6 }} />
+        <ShimmerBox width={80} height={24} borderRadius={Radii.pill} style={{ marginTop: 10 }} />
+      </View>
+      <View style={[styles.infoGridShimmer, styles.cardShadow]}>
+        {Array.from({ length: 4 }).map((_, i) => (
+          <View key={i} style={{ width: '46%', gap: 6 }}>
+            <ShimmerBox width={24} height={16} />
+            <ShimmerBox width={50} height={10} />
+            <ShimmerBox width="80%" height={12} />
+          </View>
+        ))}
+      </View>
+      <ShimmerBox width={80} height={12} style={{ marginBottom: 10 }} />
+      {Array.from({ length: 2 }).map((_, i) => (
+        <ManagerListRowShimmer key={i} />
+      ))}
+    </>
+  );
+}
+
+export function ManagerGuardDetailListShimmer() {
+  return (
+    <>
+      <ShimmerBox width={100} height={12} style={{ marginBottom: 10 }} />
+      {Array.from({ length: 3 }).map((_, i) => (
+        <ManagerListRowShimmer key={`log-${i}`} />
+      ))}
+      <ShimmerBox width={160} height={44} borderRadius={Radii.md} style={{ marginTop: 8 }} />
+    </>
+  );
+}
+
+export function ManagerGuardDetailShimmer() {
+  return (
+    <>
+      <ManagerGuardDetailFixedShimmer />
+      <ManagerGuardDetailListShimmer />
+    </>
+  );
+}
+
+export function ManagerAttendanceListShimmer({ count = 5 }: { count?: number }) {
+  return (
+    <>
+      {Array.from({ length: count }).map((_, i) => (
+        <View key={i} style={styles.attendanceRowShimmer}>
+          <View style={{ flex: 1, gap: 5 }}>
+            <ShimmerBox width="38%" height={12} />
+            <ShimmerBox width="52%" height={10} />
+            <ShimmerBox width="44%" height={10} />
+            <ShimmerBox width="72%" height={10} />
+          </View>
+          <ShimmerBox width={62} height={22} borderRadius={Radii.pill} />
+        </View>
+      ))}
+    </>
+  );
+}
+
+export function ManagerAttendanceSummaryShimmer() {
+  return (
+    <View style={{ flexDirection: 'row', gap: 8, marginBottom: 8 }}>
+      {Array.from({ length: 3 }).map((_, i) => (
+        <View key={i} style={[styles.sumCardShimmer, styles.cardShadow]}>
+          <ShimmerBox width={28} height={22} />
+          <ShimmerBox width={48} height={10} style={{ marginTop: 4 }} />
+        </View>
+      ))}
+    </View>
+  );
+}
+
+export function ManagerAttendanceShimmer() {
+  return (
+    <>
+      <ManagerAttendanceSummaryShimmer />
+      <ManagerAttendanceListShimmer />
+    </>
+  );
+}
+
+export function ManagerShiftReportFixedShimmer() {
+  return (
+    <>
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 8 }}>
+        {Array.from({ length: 4 }).map((_, i) => (
+          <View key={i} style={[styles.sumCardShimmer, styles.cardShadow, { minWidth: 90 }]}>
+            <ShimmerBox width={36} height={20} />
+            <ShimmerBox width={52} height={10} style={{ marginTop: 4 }} />
+          </View>
+        ))}
+      </View>
+      <View style={[styles.managerGuardRow, styles.cardShadow, { marginBottom: 8 }]}>
+        <ShimmerBox width={14} height={14} borderRadius={4} />
+        <ShimmerBox width="70%" height={12} style={{ flex: 1 }} />
+      </View>
+    </>
+  );
+}
+
+export function ManagerShiftReportListShimmer() {
+  return (
+    <>
+      {Array.from({ length: 3 }).map((_, i) => (
+        <View key={i} style={[styles.patrolCardShimmer, styles.cardShadow]}>
+          <View style={{ flexDirection: 'row', gap: 6, marginBottom: 8 }}>
+            <ShimmerBox width={14} height={14} borderRadius={4} />
+            <ShimmerBox width="62%" height={12} />
+          </View>
+          <ShimmerBox width="48%" height={10} style={{ marginBottom: 6 }} />
+          <ShimmerBox width="55%" height={10} style={{ marginBottom: 10 }} />
+          {Array.from({ length: 2 }).map((_, j) => (
+            <View key={j} style={styles.scannerRowShimmer}>
+              <ShimmerBox width={6} height={6} borderRadius={3} />
+              <View style={{ flex: 1, gap: 4 }}>
+                <ShimmerBox width="40%" height={11} />
+                <ShimmerBox width="30%" height={10} />
+              </View>
+            </View>
+          ))}
+        </View>
+      ))}
+    </>
+  );
+}
+
+export function ManagerShiftReportShimmer() {
+  return (
+    <>
+      <ManagerShiftReportFixedShimmer />
+      <View style={styles.sectionHdrShimmer}>
+        <ShimmerBox width={56} height={12} />
+      </View>
+      <ManagerShiftReportListShimmer />
+    </>
+  );
+}
+
+export function ManagerIncidentDetailHeaderShimmer() {
+  return (
+    <View style={[styles.incidentCard, styles.cardShadow]}>
+      <View style={{ flexDirection: 'row', gap: 10, marginBottom: 12 }}>
+        <ShimmerBox width={36} height={36} borderRadius={10} />
+        <View style={{ flex: 1, gap: 6 }}>
+          <ShimmerBox width="75%" height={14} />
+          <ShimmerBox width="50%" height={10} />
+        </View>
+        <ShimmerBox width={52} height={22} borderRadius={Radii.sm} />
+      </View>
+      <ShimmerBox width="90%" height={12} style={{ marginBottom: 6 }} />
+      <ShimmerBox width="70%" height={12} />
+    </View>
+  );
+}
+
+export function ManagerIncidentDetailBodyShimmer() {
+  return (
+    <View style={[styles.profileCard, styles.cardShadow]}>
+      <ShimmerBox width={110} height={12} style={{ marginBottom: 14 }} />
+      {Array.from({ length: 4 }).map((_, i) => (
+        <View key={i} style={{ marginBottom: 12 }}>
+          <ShimmerBox width={80} height={10} style={{ marginBottom: 6 }} />
+          <ShimmerBox width="85%" height={14} />
+        </View>
+      ))}
+    </View>
+  );
+}
+
+export function ManagerIncidentDetailShimmer() {
+  return (
+    <>
+      <ManagerIncidentDetailHeaderShimmer />
+      <ManagerIncidentDetailBodyShimmer />
     </>
   );
 }
@@ -320,6 +755,104 @@ const styles = StyleSheet.create({
     padding: 12,
     ...Shadows.card,
   },
+  managerHeaderShimmer: {
+    paddingHorizontal: 24,
+    paddingTop: 16,
+    paddingBottom: 32,
+  },
+  managerHeaderShell: {
+    backgroundColor: Colors.headerStart,
+    paddingHorizontal: 20,
+    paddingTop: 20,
+    paddingBottom: 56,
+    borderBottomLeftRadius: 28,
+    borderBottomRightRadius: 28,
+  },
+  managerBodyShimmer: {
+    padding: 14,
+    marginTop: -10,
+  },
+  managerListRow: {
+    backgroundColor: Colors.bgCard,
+    borderRadius: Radii.md,
+    padding: 12,
+    marginBottom: 7,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    ...Shadows.card,
+  },
+  managerGuardRow: {
+    backgroundColor: Colors.bgCard,
+    borderRadius: Radii.md,
+    padding: 12,
+    marginBottom: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    ...Shadows.card,
+  },
+  managerGuardRowRight: {
+    alignItems: 'flex-end',
+    gap: 6,
+  },
+  sectionHdrShimmer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 10,
+    marginTop: 4,
+  },
+  calendarHeaderShimmer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: Colors.bgCard,
+    borderRadius: Radii.md,
+    padding: 12,
+    marginBottom: 10,
+  },
+  weekRowShimmer: {
+    flexDirection: 'row',
+    marginBottom: 8,
+    justifyContent: 'space-between',
+  },
+  daysGridShimmer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+  },
+  dayCellShimmer: {
+    width: `${100 / 7}%`,
+    aspectRatio: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  patrolCardShimmer: {
+    backgroundColor: Colors.bgCard,
+    borderRadius: Radii.lg,
+    padding: 14,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  scannerRowShimmer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 6,
+    borderTopWidth: 1,
+    borderTopColor: Colors.border,
+  },
+  attendanceRowShimmer: {
+    backgroundColor: Colors.bgCard,
+    borderRadius: Radii.md,
+    padding: 12,
+    marginBottom: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    ...Shadows.card,
+  },
   incidentCard: {
     borderRadius: Radii.lg,
     padding: 14,
@@ -354,5 +887,40 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     borderBottomWidth: 1,
     borderBottomColor: Colors.border,
+  },
+  profileCardShimmer: {
+    backgroundColor: Colors.bgCard,
+    borderRadius: Radii.lg,
+    padding: 20,
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  infoGridShimmer: {
+    backgroundColor: Colors.bgCard,
+    borderRadius: Radii.lg,
+    padding: 14,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
+    marginBottom: 12,
+  },
+  sumCardShimmer: {
+    flex: 1,
+    backgroundColor: Colors.bgCard,
+    borderRadius: Radii.md,
+    padding: 12,
+    alignItems: 'center',
+  },
+  chartShimmer: {
+    backgroundColor: Colors.bgCard,
+    borderRadius: Radii.lg,
+    padding: 14,
+    marginBottom: 14,
+  },
+  calendarShimmer: {
+    backgroundColor: Colors.bgCard,
+    borderRadius: Radii.lg,
+    padding: 12,
+    marginBottom: 14,
   },
 });

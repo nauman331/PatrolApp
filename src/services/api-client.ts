@@ -5,22 +5,38 @@
 
 import axios, { AxiosInstance, AxiosError, InternalAxiosRequestConfig } from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { API_BASE_URL } from '../config/env';
+import { API_URL } from '../config/env';
 
 // Timeout in milliseconds
 const REQUEST_TIMEOUT = 30000;
+
+function getStoreAuthToken(): string | null {
+  try {
+    // Lazy require avoids store -> slice -> api circular init issues.
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const appStore = require('../store/store').default;
+    const token = appStore.getState()?.auth?.token;
+    return typeof token === 'string' && token.trim() ? token.trim() : null;
+  } catch {
+    return null;
+  }
+}
 
 /**
  * Create axios instance with default config
  */
 const apiClient: AxiosInstance = axios.create({
-    baseURL: `${API_BASE_URL}/api`,
+    baseURL: API_URL,
     timeout: REQUEST_TIMEOUT,
     headers: {
         'Content-Type': 'application/json',
         Accept: 'application/json',
     },
 });
+
+if (__DEV__) {
+    console.log('[PatrolApp] API client baseURL:', API_URL);
+}
 
 /**
  * Request Interceptor
@@ -29,11 +45,13 @@ const apiClient: AxiosInstance = axios.create({
 apiClient.interceptors.request.use(
     async (config: InternalAxiosRequestConfig) => {
         try {
-            // Get auth token from AsyncStorage
-            const token = await AsyncStorage.getItem('authToken');
+            const token =
+                getStoreAuthToken() ?? (await AsyncStorage.getItem('authToken'));
 
             if (token) {
                 config.headers.Authorization = `Bearer ${token}`;
+            } else if (__DEV__) {
+                console.warn('[PatrolApp] API request without auth token:', config.url);
             }
         } catch (error) {
             console.error('Error getting auth token:', error);
@@ -52,31 +70,34 @@ apiClient.interceptors.request.use(
  */
 apiClient.interceptors.response.use(
     (response) => {
-        // Success - return response data
         return response;
     },
     async (error: AxiosError<any>) => {
-        const { response, message } = error;
+        const { response, message, config } = error;
+        const requestUrl = config?.baseURL
+            ? `${config.baseURL}${config.url ?? ''}`
+            : config?.url;
 
-        // Handle specific status codes
         if (response?.status === 401) {
-            // Unauthorized - token expired or invalid
-            console.warn('Unauthorized - clearing auth state');
+            console.warn('Unauthorized:', requestUrl);
             await AsyncStorage.removeItem('authToken');
-            await AsyncStorage.removeItem('userRole');
-            // App will automatically redirect to login via RootNavigator
+            await AsyncStorage.removeItem('guardId');
+            try {
+                // eslint-disable-next-line @typescript-eslint/no-require-imports
+                const appStore = require('../store/store').default;
+                const { clearAuth } = require('../store/slices/authSlice');
+                appStore.dispatch(clearAuth());
+            } catch {
+                // ignore if store is unavailable during teardown
+            }
         } else if (response?.status === 403) {
-            // Forbidden - no permission
-            console.warn('Forbidden - access denied');
+            console.warn('Forbidden - access denied:', requestUrl);
         } else if (response?.status === 404) {
-            // Not found
-            console.warn('Not found:', response.data?.message || 'Resource not found');
+            console.warn('Not found:', requestUrl, response.data?.message || 'Resource not found');
         } else if (response?.status === 500) {
-            // Server error
-            console.error('Server error:', response.data?.message || 'Internal server error');
+            console.error('Server error:', requestUrl, response.data?.message || 'Internal server error');
         } else if (message === 'Network Error') {
-            // Network error
-            console.error('Network error - check internet connection');
+            console.error('Network error:', requestUrl);
         }
 
         return Promise.reject(error);

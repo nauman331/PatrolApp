@@ -2,6 +2,7 @@ import { Image, Platform } from 'react-native';
 import ReactNativeBlobUtil from 'react-native-blob-util';
 import Marker, {
   ImageFormat,
+  Position,
   TextBackgroundType,
 } from 'react-native-image-marker';
 
@@ -34,6 +35,14 @@ function normalizeFileUri(uri: string): string {
 
 function stripFilePrefix(uri: string): string {
   return uri.startsWith('file://') ? uri.slice(7) : uri;
+}
+
+function markerImageSrc(uri: string): string {
+  const normalized = normalizeFileUri(uri);
+  if (Platform.OS === 'android' && normalized.startsWith('file://')) {
+    return stripFilePrefix(normalized);
+  }
+  return normalized;
 }
 
 async function fileExists(uri: string): Promise<boolean> {
@@ -157,6 +166,16 @@ async function ensureLogoCacheFile(): Promise<string | null> {
       await ReactNativeBlobUtil.fs.writeFile(dest, base64, 'base64');
     }
 
+    if (!(await ReactNativeBlobUtil.fs.exists(dest)) && Platform.OS === 'ios') {
+      const assetUri = Image.resolveAssetSource(appLogo)?.uri;
+      if (assetUri) {
+        await ReactNativeBlobUtil.config({ path: dest, fileCache: true }).fetch(
+          'GET',
+          assetUri,
+        );
+      }
+    }
+
     if (!(await ReactNativeBlobUtil.fs.exists(dest))) {
       return null;
     }
@@ -179,17 +198,16 @@ async function applyLogoWatermark(
 
   const markedLogo = await Marker.markImage({
     backgroundImage: {
-      src: sourceUri,
+      src: markerImageSrc(sourceUri),
       scale: 1,
     },
     watermarkImages: [
       {
-        src: logoUri,
+        src: markerImageSrc(logoUri),
         scale: Platform.OS === 'android' ? 0.15 : 0.2,
         alpha: 0.85,
         position: {
-          X: 14,
-          Y: 44,
+          position: Position.bottomRight,
         },
       },
     ],
@@ -213,22 +231,20 @@ async function applyTimestampWatermark(
 ): Promise<string> {
   const output = await Marker.markText({
     backgroundImage: {
-      src: sourceUri,
+      src: markerImageSrc(sourceUri),
       scale: 1,
     },
     watermarkTexts: [
       {
         text: timestamp,
         position: {
-          X: 14,
-          Y: 14,
+          position: Position.bottomRight,
         },
         style: {
-          color: '#FFFFFF',
+          color: '#E53E3E',
           fontSize: 11,
           bold: true,
           textAlign: 'right',
-          skewX: 0,
           textBackgroundStyle: {
             type: TextBackgroundType.stretchX,
             color: '#80000000',
@@ -281,10 +297,6 @@ export async function resolveWatermarkSourceUri(
 export async function applySelfieWatermark(
   job: SelfieWatermarkJob,
 ): Promise<string> {
-  if (Platform.OS === 'ios') {
-    throw new Error('iOS watermark is handled by SelfieWatermarkProcessor');
-  }
-
   const source = await copyUriToCache(job.sourceUri, job.base64);
   const stamp = Date.now();
 

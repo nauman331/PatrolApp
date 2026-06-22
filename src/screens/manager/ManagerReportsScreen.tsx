@@ -1,191 +1,364 @@
-import React, { useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   View,
   Text,
   TouchableOpacity,
   StyleSheet,
-  ScrollView,
+  TextInput,
+  ActivityIndicator,
 } from 'react-native';
 import { Colors, FontSizes, Radii, Shadows } from '../../theme';
 import {
-  Filter,
-  Mail,
-  Download,
   ChevronRight,
   Footprints,
   AlertTriangle,
+  Search,
 } from 'lucide-react-native';
 import { useManagerNavigation } from '../../navigation/utils';
 import { MANAGER_ROUTES } from '../../navigation/constants';
 import {
-  ManagerTabShell,
-  ManagerHeader,
+  ManagerCompactTabShell,
+  ManagerListLayout,
   MANAGER_TAB_INDEX,
   sharedStyles,
 } from './managerShared';
+import AuthErrorBanner from '../../components/AuthErrorBanner';
+import { ManagerReportsShimmer } from '../../components/Shimmer';
+import { useDebouncedValue } from '../../hooks/useDebouncedValue';
+import {
+  isDateThisWeek,
+  isDateToday,
+  todayIso,
+} from './managerDateFilters';
+import {
+  getManagerIncidentReports,
+  getManagerPatrolReports,
+  mapSeverityColor,
+  type ManagerIncidentReportItem,
+  type ManagerPatrolReportItem,
+  type ManagerPeriod,
+} from '../../services/managerApi';
 
 type ReportTab = 'patrol' | 'incident';
 
-const PATROL_REPORTS = [
-  { id: '1', guard: 'Ahmed Khan', site: 'Mall of Lahore', date: 'Apr 16, 2026', patrols: 6, compliance: '92%' },
-  { id: '2', guard: 'Muhammad Raza', site: 'DHA Clinic Block', date: 'Apr 16, 2026', patrols: 4, compliance: '88%' },
-  { id: '3', guard: 'Zara Ali', site: 'Packages Mall', date: 'Apr 15, 2026', patrols: 5, compliance: '95%' },
-];
-
-const INCIDENT_REPORTS = [
-  { id: '1', title: 'Food Court Disturbance', site: 'Mall of Lahore', severity: 'HIGH', date: 'Apr 16, 2026', guard: 'Ahmed Khan' },
-  { id: '2', title: 'Parking Gate Malfunction', site: 'Packages Mall', severity: 'MEDIUM', date: 'Apr 16, 2026', guard: 'Zara Ali' },
-  { id: '3', title: 'Suspicious Activity', site: 'DHA Clinic', severity: 'LOW', date: 'Apr 15, 2026', guard: 'Muhammad Raza' },
-];
-
 const DATE_FILTERS = ['Today', 'This Week', 'This Month', 'Custom'] as const;
+type DateFilter = (typeof DATE_FILTERS)[number];
 
-const sevColor: Record<string, string> = {
-  HIGH: Colors.danger,
-  MEDIUM: Colors.warning,
-  LOW: Colors.success,
-};
+function apiPeriodForFilter(filter: DateFilter): ManagerPeriod {
+  if (filter === 'This Month') return 'this_month';
+  if (filter === 'Custom') return 'custom';
+  return 'this_week';
+}
+
+function isFrontendDateFilter(filter: DateFilter): boolean {
+  return filter === 'Today' || filter === 'This Week';
+}
 
 export default function ManagerReportsScreen() {
   const navigation = useManagerNavigation();
   const [tab, setTab] = useState<ReportTab>('patrol');
-  const [dateFilter, setDateFilter] = useState<(typeof DATE_FILTERS)[number]>('Today');
+  const [dateFilter, setDateFilter] = useState<DateFilter>('Today');
+  const [search, setSearch] = useState('');
+  const debouncedSearch = useDebouncedValue(search, 400);
+
+  const [patrolReports, setPatrolReports] = useState<ManagerPatrolReportItem[]>(
+    [],
+  );
+  const [incidentReports, setIncidentReports] = useState<
+    ManagerIncidentReportItem[]
+  >([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [page, setPage] = useState(1);
+  const [hasMore, setHasMore] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [periodLabel, setPeriodLabel] = useState('');
+
+  const apiPeriod = apiPeriodForFilter(dateFilter);
+
+  const fetchReports = useCallback(
+    async (pageNum: number, append: boolean) => {
+      if (pageNum === 1 && !append) setLoading(true);
+      else setLoadingMore(true);
+      setError(null);
+
+      const params = {
+        period: apiPeriod,
+        search: debouncedSearch,
+        page: pageNum,
+        per_page: apiPeriod === 'this_week' ? 50 : 10,
+        ...(apiPeriod === 'custom'
+          ? { start_date: todayIso(), end_date: todayIso() }
+          : {}),
+      };
+
+      const result =
+        tab === 'patrol'
+          ? await getManagerPatrolReports(params)
+          : await getManagerIncidentReports(params);
+
+      if (result.success && result.data) {
+        if (tab === 'patrol') {
+          const patrolData = result.data as { reports: ManagerPatrolReportItem[] };
+          setPatrolReports(prev =>
+            append ? [...prev, ...patrolData.reports] : patrolData.reports,
+          );
+        } else {
+          const incidentData = result.data as {
+            reports: ManagerIncidentReportItem[];
+          };
+          setIncidentReports(prev =>
+            append ? [...prev, ...incidentData.reports] : incidentData.reports,
+          );
+        }
+        setPeriodLabel(
+          `${result.data.start_date} – ${result.data.end_date}`,
+        );
+        setHasMore(result.pagination?.has_more ?? false);
+        setPage(pageNum);
+      } else {
+        if (!append) {
+          setPatrolReports([]);
+          setIncidentReports([]);
+        }
+        setError(result.message ?? 'Failed to load reports');
+      }
+
+      setLoading(false);
+      setLoadingMore(false);
+      setRefreshing(false);
+    },
+    [apiPeriod, debouncedSearch, tab],
+  );
+
+  useEffect(() => {
+    fetchReports(1, false);
+  }, [fetchReports]);
+
+  const onRefresh = useCallback(() => {
+    setRefreshing(true);
+    fetchReports(1, false);
+  }, [fetchReports]);
+
+  const loadMore = useCallback(() => {
+    if (isFrontendDateFilter(dateFilter)) return;
+    if (!loadingMore && hasMore && !loading) {
+      fetchReports(page + 1, true);
+    }
+  }, [dateFilter, fetchReports, hasMore, loading, loadingMore, page]);
+
+  const filteredPatrolReports = useMemo(() => {
+    if (dateFilter === 'Today') {
+      return patrolReports.filter(r => isDateToday(r.date));
+    }
+    if (dateFilter === 'This Week') {
+      return patrolReports.filter(r => isDateThisWeek(r.date));
+    }
+    return patrolReports;
+  }, [dateFilter, patrolReports]);
+
+  const filteredIncidentReports = useMemo(() => {
+    if (dateFilter === 'Today') {
+      return incidentReports.filter(r => isDateToday(r.date));
+    }
+    if (dateFilter === 'This Week') {
+      return incidentReports.filter(r => isDateThisWeek(r.date));
+    }
+    return incidentReports;
+  }, [dateFilter, incidentReports]);
+
+  const activeReports =
+    tab === 'patrol' ? filteredPatrolReports : filteredIncidentReports;
+
+  const showShimmer =
+    loading &&
+    (tab === 'patrol' ? patrolReports.length === 0 : incidentReports.length === 0);
+
+  const handleDateFilter = (filter: DateFilter) => {
+    setDateFilter(filter);
+    if (!isFrontendDateFilter(filter)) {
+      setLoading(true);
+    }
+  };
+
+  const subtitle = useMemo(() => {
+    if (dateFilter === 'Today') return "Today's reports";
+    if (dateFilter === 'This Week') return "This week's reports";
+    if (periodLabel) return periodLabel;
+    return 'Patrol & incident reports across all sites';
+  }, [dateFilter, periodLabel]);
 
   return (
-    <ManagerTabShell activeIndex={MANAGER_TAB_INDEX.REPORTS}>
-      <ScrollView showsVerticalScrollIndicator={false} style={{ flex: 1 }}>
-        <ManagerHeader
-          title="Reports"
-          subtitle="Patrol & incident reports across all sites"
-        />
-
-        <View style={[sharedStyles.body, { marginTop: -10 }]}>
-          <View style={styles.tabRow}>
-            <TouchableOpacity
-              style={[styles.tab, tab === 'patrol' && styles.tabActive]}
-              onPress={() => setTab('patrol')}
-            >
-              <Footprints size={14} color={tab === 'patrol' ? '#1a56db' : Colors.textMuted} />
-              <Text style={[styles.tabText, tab === 'patrol' && styles.tabTextActive]}>
-                Patrol Reports
-              </Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.tab, tab === 'incident' && styles.tabActive]}
-              onPress={() => setTab('incident')}
-            >
-              <AlertTriangle size={14} color={tab === 'incident' ? '#1a56db' : Colors.textMuted} />
-              <Text style={[styles.tabText, tab === 'incident' && styles.tabTextActive]}>
-                Incident Reports
-              </Text>
-            </TouchableOpacity>
-          </View>
-
-          <View style={styles.toolbar}>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-              <View style={sharedStyles.chipRow}>
-                {DATE_FILTERS.map(f => (
-                  <TouchableOpacity
-                    key={f}
-                    style={[
-                      sharedStyles.chip,
-                      dateFilter === f && sharedStyles.chipActive,
-                    ]}
-                    onPress={() => setDateFilter(f)}
-                  >
-                    <Text
-                      style={[
-                        sharedStyles.chipText,
-                        dateFilter === f && sharedStyles.chipTextActive,
-                      ]}
-                    >
-                      {f}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-            </ScrollView>
-            <View style={styles.actions}>
-              <TouchableOpacity style={styles.iconBtn}>
-                <Filter size={14} color="#1a56db" />
+    <ManagerCompactTabShell
+      activeIndex={MANAGER_TAB_INDEX.REPORTS}
+      title="Reports"
+      subtitle={subtitle}
+    >
+      <ManagerListLayout
+        refreshing={refreshing}
+        onRefresh={onRefresh}
+        onEndReached={loadMore}
+        toolbar={
+          <>
+            {error ? <AuthErrorBanner message={error} /> : null}
+            <View style={styles.tabRow}>
+              <TouchableOpacity
+                style={[styles.tab, tab === 'patrol' && styles.tabActive]}
+                onPress={() => {
+                  setTab('patrol');
+                  setLoading(true);
+                }}
+              >
+                <Footprints
+                  size={14}
+                  color={tab === 'patrol' ? Colors.accent : Colors.textMuted}
+                />
+                <Text
+                  style={[
+                    styles.tabText,
+                    tab === 'patrol' && styles.tabTextActive,
+                  ]}
+                >
+                  Patrol Reports
+                </Text>
               </TouchableOpacity>
-              <TouchableOpacity style={styles.iconBtn}>
-                <Download size={14} color="#1a56db" />
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.emailBtn}>
-                <Mail size={14} color="#fff" />
-                <Text style={styles.emailText}>Email</Text>
+              <TouchableOpacity
+                style={[styles.tab, tab === 'incident' && styles.tabActive]}
+                onPress={() => {
+                  setTab('incident');
+                  setLoading(true);
+                }}
+              >
+                <AlertTriangle
+                  size={14}
+                  color={tab === 'incident' ? Colors.accent : Colors.textMuted}
+                />
+                <Text
+                  style={[
+                    styles.tabText,
+                    tab === 'incident' && styles.tabTextActive,
+                  ]}
+                >
+                  Incident Reports
+                </Text>
               </TouchableOpacity>
             </View>
-          </View>
-
-          {tab === 'patrol'
-            ? PATROL_REPORTS.map(r => (
+            <View style={[styles.searchRow, Shadows.card]}>
+              <Search size={16} color={Colors.textMuted} />
+              <TextInput
+                style={styles.searchInput}
+                placeholder="Search guard or site..."
+                placeholderTextColor={Colors.textMuted}
+                value={search}
+                onChangeText={setSearch}
+              />
+            </View>
+            <View style={sharedStyles.chipRow}>
+              {DATE_FILTERS.map(f => (
                 <TouchableOpacity
-                  key={r.id}
-                  style={[styles.reportRow, Shadows.card]}
-                  onPress={() =>
-                    navigation.navigate(MANAGER_ROUTES.SHIFT_REPORT, {
-                      shiftId: r.id,
-                      guardName: r.guard,
-                      site: r.site,
-                    })
-                  }
+                  key={f}
+                  style={[
+                    sharedStyles.chip,
+                    dateFilter === f && sharedStyles.chipActive,
+                  ]}
+                  onPress={() => handleDateFilter(f)}
                 >
-                  <View style={styles.reportIcon}>
-                    <Footprints size={16} color="#1a56db" />
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.reportTitle}>{r.guard}</Text>
-                    <Text style={styles.reportSub}>
-                      {r.site} · {r.date}
-                    </Text>
-                    <Text style={styles.reportMeta}>
-                      {r.patrols} patrols · {r.compliance} compliance
-                    </Text>
-                  </View>
-                  <ChevronRight size={16} color={Colors.textMuted} />
-                </TouchableOpacity>
-              ))
-            : INCIDENT_REPORTS.map(r => (
-                <View key={r.id} style={[styles.reportRow, Shadows.card]}>
-                  <View
+                  <Text
                     style={[
-                      styles.reportIcon,
-                      { backgroundColor: `${sevColor[r.severity]}18` },
+                      sharedStyles.chipText,
+                      dateFilter === f && sharedStyles.chipTextActive,
                     ]}
                   >
-                    <AlertTriangle size={16} color={sevColor[r.severity]} />
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.reportTitle}>{r.title}</Text>
-                    <Text style={styles.reportSub}>
-                      {r.site} · {r.date}
-                    </Text>
-                    <Text style={styles.reportMeta}>
-                      {r.guard} ·{' '}
-                      <Text style={{ color: sevColor[r.severity], fontWeight: '700' }}>
-                        {r.severity}
-                      </Text>
-                    </Text>
-                  </View>
-                  <TouchableOpacity style={styles.exportSmall}>
-                    <Download size={14} color="#1a56db" />
-                  </TouchableOpacity>
-                </View>
+                    {f}
+                  </Text>
+                </TouchableOpacity>
               ))}
-        </View>
-      </ScrollView>
-    </ManagerTabShell>
+            </View>
+          </>
+        }
+      >
+        {showShimmer ? (
+          <ManagerReportsShimmer variant={tab} />
+        ) : activeReports.length === 0 ? (
+          <Text style={styles.emptyText}>No reports found.</Text>
+        ) : tab === 'patrol' ? (
+          filteredPatrolReports.map((r, index) => (
+            <TouchableOpacity
+              key={`${r.guard_id}-${r.site_id}-${r.date}-${index}`}
+              style={[styles.reportRow, Shadows.card]}
+              onPress={() =>
+                navigation.navigate(MANAGER_ROUTES.SHIFT_REPORT, {
+                  guardId: r.guard_id,
+                  siteId: r.site_id,
+                  date: r.date,
+                  guardName: r.guard_name,
+                  site: r.site_name,
+                })
+              }
+            >
+              <View style={styles.reportIcon}>
+                <Footprints size={16} color={Colors.accent} />
+              </View>
+              <View style={styles.reportBody}>
+                <Text style={styles.reportTitle}>{r.guard_name}</Text>
+                <Text style={styles.reportSub}>{r.location_date}</Text>
+                <Text style={styles.reportMeta}>{r.summary_text}</Text>
+              </View>
+              <ChevronRight size={16} color={Colors.textMuted} />
+            </TouchableOpacity>
+          ))
+        ) : (
+          filteredIncidentReports.map(r => (
+            <TouchableOpacity
+              key={r.id}
+              style={[styles.reportRow, Shadows.card]}
+              onPress={() =>
+                navigation.navigate(MANAGER_ROUTES.INCIDENT_DETAIL, {
+                  incidentId: r.id,
+                })
+              }
+            >
+              <View
+                style={[
+                  styles.reportIcon,
+                  { backgroundColor: `${mapSeverityColor(r.severity)}18` },
+                ]}
+              >
+                <AlertTriangle
+                  size={16}
+                  color={mapSeverityColor(r.severity)}
+                />
+              </View>
+              <View style={styles.reportBody}>
+                <Text style={styles.reportTitle}>{r.title}</Text>
+                <Text style={styles.reportSub}>{r.location_date}</Text>
+                <Text style={styles.reportMeta}>
+                  {r.guard_name} ·{' '}
+                  <Text
+                    style={{
+                      color: mapSeverityColor(r.severity),
+                      fontWeight: '700',
+                    }}
+                  >
+                    {r.severity.toUpperCase()}
+                  </Text>
+                </Text>
+              </View>
+              <ChevronRight size={16} color={Colors.textMuted} />
+            </TouchableOpacity>
+          ))
+        )}
+        {loadingMore ? (
+          <ActivityIndicator color={Colors.accent} style={styles.loadMore} />
+        ) : null}
+      </ManagerListLayout>
+    </ManagerCompactTabShell>
   );
 }
 
 const styles = StyleSheet.create({
-  tabRow: {
-    flexDirection: 'row',
-    gap: 8,
-    marginBottom: 12,
-  },
+  tabRow: { flexDirection: 'row', gap: 8, marginBottom: 12 },
   tab: {
     flex: 1,
     flexDirection: 'row',
@@ -199,39 +372,38 @@ const styles = StyleSheet.create({
     borderColor: Colors.border,
   },
   tabActive: {
-    backgroundColor: Colors.infoLight,
-    borderColor: '#93c5fd',
+    backgroundColor: Colors.accentLight,
+    borderColor: Colors.accentAlpha25,
   },
-  tabText: { fontSize: FontSizes.xs, fontWeight: '700', color: Colors.textMuted },
-  tabTextActive: { color: '#1a56db' },
-
-  toolbar: { marginBottom: 12 },
-  actions: {
+  tabText: {
+    fontSize: FontSizes.xs,
+    fontWeight: '700',
+    color: Colors.textMuted,
+  },
+  tabTextActive: { color: Colors.accent },
+  searchRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+    backgroundColor: Colors.bgCard,
+    borderRadius: Radii.md,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    gap: 8,
+    marginBottom: 10,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: FontSizes.md,
+    color: Colors.textPrimary,
+    padding: 0,
+  },
+  emptyText: {
+    fontSize: FontSizes.sm,
+    color: Colors.textMuted,
+    textAlign: 'center',
     marginTop: 8,
   },
-  iconBtn: {
-    width: 34,
-    height: 34,
-    borderRadius: 9,
-    backgroundColor: Colors.infoLight,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  emailBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-    backgroundColor: '#1a56db',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: Radii.sm,
-    marginLeft: 'auto',
-  },
-  emailText: { fontSize: FontSizes.xs, fontWeight: '700', color: '#fff' },
-
+  loadMore: { marginVertical: 12 },
   reportRow: {
     backgroundColor: Colors.bgCard,
     borderRadius: Radii.md,
@@ -245,19 +417,17 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 10,
-    backgroundColor: Colors.infoLight,
+    backgroundColor: Colors.accentLight,
     alignItems: 'center',
     justifyContent: 'center',
+    flexShrink: 0,
   },
+  reportBody: { flex: 1, minWidth: 0 },
   reportTitle: { fontSize: 12, fontWeight: '700', color: Colors.textPrimary },
   reportSub: { fontSize: FontSizes.xs, color: Colors.textMuted, marginTop: 1 },
-  reportMeta: { fontSize: FontSizes.xs, color: Colors.textSecondary, marginTop: 2 },
-  exportSmall: {
-    width: 32,
-    height: 32,
-    borderRadius: 8,
-    backgroundColor: Colors.infoLight,
-    alignItems: 'center',
-    justifyContent: 'center',
+  reportMeta: {
+    fontSize: FontSizes.xs,
+    color: Colors.textSecondary,
+    marginTop: 2,
   },
 });

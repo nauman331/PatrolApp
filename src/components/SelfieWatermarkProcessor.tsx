@@ -1,15 +1,18 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Image,
+  Platform,
   StyleSheet,
   Text,
   View,
 } from 'react-native';
 import ViewShot from 'react-native-view-shot';
 import {
+  applySelfieWatermark,
   resolveWatermarkSourceUri,
   type SelfieWatermarkJob,
 } from '../services/applySelfieWatermark';
+import { Colors } from '../theme';
 
 export type { SelfieWatermarkJob };
 
@@ -50,9 +53,14 @@ function WatermarkCanvas({
   onError: (error: Error) => void;
 }) {
   const viewRef = useRef<ViewShot>(null);
+  const onCompleteRef = useRef(onComplete);
+  const onErrorRef = useRef(onError);
   const [sourceUri, setSourceUri] = useState<string | null>(null);
   const [imageReady, setImageReady] = useState(false);
   const capturedRef = useRef(false);
+
+  onCompleteRef.current = onComplete;
+  onErrorRef.current = onError;
 
   const aspectRatio =
     job.width && job.height && job.width > 0 ? job.height / job.width : 4 / 3;
@@ -72,7 +80,7 @@ function WatermarkCanvas({
         }
       } catch (error) {
         if (!cancelled) {
-          onError(
+          onErrorRef.current(
             error instanceof Error
               ? error
               : new Error('Could not read selfie image'),
@@ -84,7 +92,7 @@ function WatermarkCanvas({
     return () => {
       cancelled = true;
     };
-  }, [job, onError]);
+  }, [job]);
 
   useEffect(() => {
     if (!sourceUri || !imageReady || capturedRef.current) {
@@ -93,9 +101,25 @@ function WatermarkCanvas({
 
     let cancelled = false;
 
+    const runMarkerFallback = async (): Promise<boolean> => {
+      try {
+        const uri = await applySelfieWatermark(job);
+        if (cancelled || capturedRef.current) {
+          return true;
+        }
+        capturedRef.current = true;
+        onCompleteRef.current(normalizeCaptureUri(uri));
+        return true;
+      } catch {
+        return false;
+      }
+    };
+
     (async () => {
       await waitForNextFrame();
-      await new Promise(resolve => setTimeout(resolve, 250));
+      await new Promise<void>(resolve => {
+        setTimeout(resolve, Platform.OS === 'android' ? 450 : 250);
+      });
 
       if (cancelled || capturedRef.current) {
         return;
@@ -106,27 +130,25 @@ function WatermarkCanvas({
         if (cancelled || capturedRef.current) {
           return;
         }
-        if (!uri) {
-          onError(new Error('Could not capture watermarked selfie'));
+        if (uri) {
+          capturedRef.current = true;
+          onCompleteRef.current(normalizeCaptureUri(uri));
           return;
         }
-        capturedRef.current = true;
-        onComplete(normalizeCaptureUri(uri));
-      } catch (error) {
-        if (!cancelled && !capturedRef.current) {
-          onError(
-            error instanceof Error
-              ? error
-              : new Error('Could not capture watermarked selfie'),
-          );
-        }
+      } catch {
+        // fall through to marker fallback
+      }
+
+      const recovered = await runMarkerFallback();
+      if (!cancelled && !capturedRef.current && !recovered) {
+        onErrorRef.current(new Error('Could not apply watermark to selfie'));
       }
     })();
 
     return () => {
       cancelled = true;
     };
-  }, [sourceUri, imageReady, onComplete, onError]);
+  }, [sourceUri, imageReady, job]);
 
   const canvasStyle = useMemo(
     () => ({ width: CAPTURE_WIDTH, height: captureHeight }),
@@ -147,20 +169,25 @@ function WatermarkCanvas({
         ref={viewRef}
         options={{ format: 'jpg', quality: 0.92, result: 'tmpfile' }}
         style={canvasStyle}
-        collapsable={false}
       >
         <Image
           source={{ uri: sourceUri }}
           style={canvasStyle}
           resizeMode="cover"
           onLoad={() => setImageReady(true)}
-          onError={() => onError(new Error('Could not read selfie image'))}
+          onError={async () => {
+            try {
+              const uri = await applySelfieWatermark(job);
+              if (!capturedRef.current) {
+                capturedRef.current = true;
+                onCompleteRef.current(normalizeCaptureUri(uri));
+              }
+            } catch {
+              onErrorRef.current(new Error('Could not read selfie image'));
+            }
+          }}
         />
-        <Image
-          source={appLogo}
-          style={styles.logo}
-          resizeMode="contain"
-        />
+        <Image source={appLogo} style={styles.logo} resizeMode="contain" />
         <View style={styles.timestampWrap}>
           <Text style={styles.timestampText}>{job.timestamp}</Text>
         </View>
@@ -193,9 +220,9 @@ const styles = StyleSheet.create({
   offscreen: {
     position: 'absolute',
     top: 0,
-    left: 0,
+    left: -10000,
     width: CAPTURE_WIDTH,
-    opacity: 0.01,
+    opacity: 1,
     zIndex: -1,
   },
   logo: {
@@ -215,7 +242,7 @@ const styles = StyleSheet.create({
     alignItems: 'flex-end',
   },
   timestampText: {
-    color: '#FFFFFF',
+    color: Colors.danger,
     fontSize: 11,
     fontWeight: '700',
     textAlign: 'right',

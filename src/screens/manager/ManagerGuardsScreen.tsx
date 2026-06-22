@@ -1,161 +1,191 @@
-import React, { useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   View,
   Text,
   TouchableOpacity,
   StyleSheet,
-  ScrollView,
   TextInput,
 } from 'react-native';
 import { Colors, FontSizes, Radii, Shadows } from '../../theme';
-import { Search, ChevronRight, Filter } from 'lucide-react-native';
+import { Search, ChevronRight } from 'lucide-react-native';
 import { useManagerNavigation } from '../../navigation/utils';
 import { MANAGER_ROUTES } from '../../navigation/constants';
 import {
-  ManagerTabShell,
-  ManagerHeader,
+  ManagerCompactTabShell,
+  ManagerListLayout,
   MANAGER_TAB_INDEX,
   sharedStyles,
 } from './managerShared';
-
-type GuardStatus = 'on' | 'idle' | 'off';
-
-interface GuardItem {
-  id: string;
-  initials: string;
-  name: string;
-  site: string;
-  shift: string;
-  status: GuardStatus;
-  avatarBg: string;
-  avatarColor: string;
-}
-
-const GUARDS: GuardItem[] = [
-  { id: '1', initials: 'AK', name: 'Ahmed Khan', site: 'Mall of Lahore', shift: '06:00 – 14:00', status: 'on', avatarBg: '#fff3ed', avatarColor: '#d45a1a' },
-  { id: '2', initials: 'MR', name: 'Muhammad Raza', site: 'DHA Clinic Block', shift: '06:00 – 14:00', status: 'on', avatarBg: '#e8f0fe', avatarColor: '#1a56db' },
-  { id: '3', initials: 'ZA', name: 'Zara Ali', site: 'Packages Mall', shift: '14:00 – 22:00', status: 'idle', avatarBg: '#fde8e8', avatarColor: '#c53030' },
-  { id: '4', initials: 'HB', name: 'Hassan Baig', site: 'Packages Mall', shift: '22:00 – 06:00', status: 'off', avatarBg: '#e8f8f0', avatarColor: '#2e7d52' },
-  { id: '5', initials: 'AR', name: 'Ali Raza', site: 'Mall of Lahore', shift: '14:00 – 22:00', status: 'on', avatarBg: '#fef3c7', avatarColor: '#b45309' },
-];
-
-const FILTERS = ['All', 'On Duty', 'Idle', 'Off Duty'] as const;
-
-const statusLabel: Record<GuardStatus, string> = {
-  on: 'On Duty',
-  idle: 'On Break',
-  off: 'Off Duty',
-};
-
-const statusColor: Record<GuardStatus, string> = {
-  on: Colors.success,
-  idle: Colors.warning,
-  off: Colors.textMuted,
-};
+import AuthErrorBanner from '../../components/AuthErrorBanner';
+import { ManagerGuardsShimmer } from '../../components/Shimmer';
+import { useDebouncedValue } from '../../hooks/useDebouncedValue';
+import {
+  getManagerGuards,
+  guardAvatarPalette,
+  mapManagerStatusColor,
+  MANAGER_GUARD_FILTERS,
+  type ManagerGuardListItem,
+  type ManagerGuardStatusFilter,
+  type ManagerGuardsSummary,
+} from '../../services/managerApi';
 
 export default function ManagerGuardsScreen() {
   const navigation = useManagerNavigation();
   const [query, setQuery] = useState('');
-  const [filter, setFilter] = useState<(typeof FILTERS)[number]>('All');
+  const debouncedQuery = useDebouncedValue(query, 400);
+  const [filter, setFilter] = useState<ManagerGuardStatusFilter>('all');
+  const [guards, setGuards] = useState<ManagerGuardListItem[]>([]);
+  const [summary, setSummary] = useState<ManagerGuardsSummary | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const filtered = GUARDS.filter(g => {
-    const matchesQuery =
-      g.name.toLowerCase().includes(query.toLowerCase()) ||
-      g.site.toLowerCase().includes(query.toLowerCase());
-    const matchesFilter =
-      filter === 'All' ||
-      (filter === 'On Duty' && g.status === 'on') ||
-      (filter === 'Idle' && g.status === 'idle') ||
-      (filter === 'Off Duty' && g.status === 'off');
-    return matchesQuery && matchesFilter;
-  });
+  const fetchGuards = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+
+    const result = await getManagerGuards({
+      search: debouncedQuery,
+      status: 'all',
+      page: 1,
+      per_page: 50,
+    });
+
+    if (result.success && result.data) {
+      setSummary(result.data.summary);
+      setGuards(result.data.guards);
+    } else {
+      setGuards([]);
+      setSummary(null);
+      setError(result.message ?? 'Failed to load guards');
+    }
+
+    setLoading(false);
+    setRefreshing(false);
+  }, [debouncedQuery]);
+
+  useEffect(() => {
+    fetchGuards();
+  }, [fetchGuards]);
+
+  const filteredGuards = useMemo(() => {
+    return guards.filter(g => {
+      if (filter === 'on_duty') return g.status === 'on_duty';
+      if (filter === 'off_duty') return g.status === 'off_duty';
+      return true;
+    });
+  }, [guards, filter]);
+
+  const onRefresh = useCallback(() => {
+    setRefreshing(true);
+    fetchGuards();
+  }, [fetchGuards]);
+
+  const subtitle = summary
+    ? `${summary.on_duty} on duty · ${summary.total} total`
+    : 'Loading guards...';
+
+  const showShimmer = loading && guards.length === 0;
 
   return (
-    <ManagerTabShell activeIndex={MANAGER_TAB_INDEX.GUARDS}>
-      <ScrollView showsVerticalScrollIndicator={false} style={{ flex: 1 }}>
-        <ManagerHeader
-          title="Guards"
-          subtitle={`${GUARDS.filter(g => g.status === 'on').length} on duty · ${GUARDS.length} total`}
-        />
-
-        <View style={[sharedStyles.body, { marginTop: -10 }]}>
-          <View style={[styles.searchRow, Shadows.card]}>
-            <Search size={16} color={Colors.textMuted} />
-            <TextInput
-              style={styles.searchInput}
-              placeholder="Search guards or sites..."
-              placeholderTextColor={Colors.textMuted}
-              value={query}
-              onChangeText={setQuery}
-            />
-            <TouchableOpacity style={styles.filterBtn}>
-              <Filter size={14} color="#1a56db" />
-            </TouchableOpacity>
-          </View>
-
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            style={styles.filterScroll}
-          >
+    <ManagerCompactTabShell
+      activeIndex={MANAGER_TAB_INDEX.GUARDS}
+      title="Guards"
+      subtitle={subtitle}
+    >
+      <ManagerListLayout
+        refreshing={refreshing}
+        onRefresh={onRefresh}
+        toolbar={
+          <>
+            {error ? <AuthErrorBanner message={error} /> : null}
+            <View style={[styles.searchRow, Shadows.card]}>
+              <Search size={16} color={Colors.textMuted} />
+              <TextInput
+                style={styles.searchInput}
+                placeholder="Search guards or sites..."
+                placeholderTextColor={Colors.textMuted}
+                value={query}
+                onChangeText={setQuery}
+              />
+            </View>
             <View style={sharedStyles.chipRow}>
-              {FILTERS.map(f => (
+              {MANAGER_GUARD_FILTERS.map(f => (
                 <TouchableOpacity
-                  key={f}
+                  key={f.value}
                   style={[
                     sharedStyles.chip,
-                    filter === f && sharedStyles.chipActive,
+                    filter === f.value && sharedStyles.chipActive,
                   ]}
-                  onPress={() => setFilter(f)}
+                  onPress={() => setFilter(f.value)}
                 >
                   <Text
                     style={[
                       sharedStyles.chipText,
-                      filter === f && sharedStyles.chipTextActive,
+                      filter === f.value && sharedStyles.chipTextActive,
                     ]}
                   >
-                    {f}
+                    {f.label}
                   </Text>
                 </TouchableOpacity>
               ))}
             </View>
-          </ScrollView>
+          </>
+        }
+      >
+        {showShimmer ? (
+          <ManagerGuardsShimmer />
+        ) : filteredGuards.length === 0 ? (
+          <Text style={styles.emptyText}>No guards found.</Text>
+        ) : (
+          filteredGuards.map((g, index) => {
+            const palette = guardAvatarPalette[index % guardAvatarPalette.length];
+            const statusColor = mapManagerStatusColor(g.status_color);
 
-          {filtered.map(g => (
-            <TouchableOpacity
-              key={g.id}
-              style={[styles.guardRow, Shadows.card]}
-              onPress={() =>
-                navigation.navigate(MANAGER_ROUTES.GUARD_DETAILS, {
-                  guardId: g.id,
-                  name: g.name,
-                })
-              }
-            >
-              <View style={[styles.avatar, { backgroundColor: g.avatarBg }]}>
-                <Text style={[styles.avatarText, { color: g.avatarColor }]}>
-                  {g.initials}
-                </Text>
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.name}>{g.name}</Text>
-                <Text style={styles.site}>{g.site}</Text>
-                <Text style={styles.shift}>{g.shift}</Text>
-              </View>
-              <View style={styles.right}>
-                <View style={[styles.badge, { backgroundColor: `${statusColor[g.status]}18` }]}>
-                  <View style={[styles.dot, { backgroundColor: statusColor[g.status] }]} />
-                  <Text style={[styles.badgeText, { color: statusColor[g.status] }]}>
-                    {statusLabel[g.status]}
+            return (
+              <TouchableOpacity
+                key={`${g.id}-${g.roster_id}`}
+                style={[styles.guardRow, Shadows.card]}
+                onPress={() =>
+                  navigation.navigate(MANAGER_ROUTES.GUARD_DETAILS, {
+                    guardId: String(g.id),
+                    name: g.name,
+                    rosterId: g.roster_id,
+                  })
+                }
+              >
+                <View style={[styles.avatar, { backgroundColor: palette.bg }]}>
+                  <Text style={[styles.avatarText, { color: palette.color }]}>
+                    {g.initials}
                   </Text>
                 </View>
-                <ChevronRight size={16} color={Colors.textMuted} />
-              </View>
-            </TouchableOpacity>
-          ))}
-        </View>
-      </ScrollView>
-    </ManagerTabShell>
+                <View style={styles.guardBody}>
+                  <Text style={styles.name}>{g.name}</Text>
+                  <Text style={styles.site}>{g.site_name}</Text>
+                  <Text style={styles.shift}>{g.shift_time}</Text>
+                </View>
+                <View style={styles.right}>
+                  <View
+                    style={[
+                      styles.badge,
+                      { backgroundColor: `${statusColor}18` },
+                    ]}
+                  >
+                    <View
+                      style={[styles.dot, { backgroundColor: statusColor }]}
+                    />
+                    <Text style={[styles.badgeText, { color: statusColor }]}>
+                      {g.status_label}
+                    </Text>
+                  </View>
+                  <ChevronRight size={16} color={Colors.textMuted} />
+                </View>
+              </TouchableOpacity>
+            );
+          })
+        )}
+      </ManagerListLayout>
+    </ManagerCompactTabShell>
   );
 }
 
@@ -176,15 +206,12 @@ const styles = StyleSheet.create({
     color: Colors.textPrimary,
     padding: 0,
   },
-  filterBtn: {
-    width: 30,
-    height: 30,
-    borderRadius: 8,
-    backgroundColor: Colors.infoLight,
-    alignItems: 'center',
-    justifyContent: 'center',
+  emptyText: {
+    fontSize: FontSizes.sm,
+    color: Colors.textMuted,
+    textAlign: 'center',
+    marginTop: 8,
   },
-  filterScroll: { marginBottom: 4 },
   guardRow: {
     backgroundColor: Colors.bgCard,
     borderRadius: Radii.md,
@@ -194,12 +221,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 10,
   },
+  guardBody: { flex: 1, minWidth: 0 },
   avatar: {
     width: 40,
     height: 40,
     borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
+    flexShrink: 0,
   },
   avatarText: { fontSize: 13, fontWeight: '800' },
   name: { fontSize: 13, fontWeight: '700', color: Colors.textPrimary },

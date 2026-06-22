@@ -20,6 +20,8 @@ import {
 } from 'react-native-image-picker';
 import { Colors, FontSizes, Radii, Shadows } from '../theme';
 import { NavBar } from '../components';
+import ImageViewerModal from '../components/ImageViewerModal';
+import { SelfiePreviewImage } from '../components/SelfiePreviewImage';
 import {
   SelfieWatermarkProcessor,
   type SelfieWatermarkJob,
@@ -51,7 +53,8 @@ import {
   fetchLocationFix,
   formatCaptureTimestamp,
 } from '../services/locationUtils';
-import { captureSelfieFromCamera } from '../services/captureSelfie';
+import { captureFaceSelfieFromCamera } from '../services/captureSelfie';
+import { normalizeDisplayImageUri } from '../utils/imageUri';
 
 const appLogo = require('../../assets/opg-logo.png');
 
@@ -94,6 +97,7 @@ export default function ShiftSignInScreen() {
   const [locationFetched, setLocationFetched] = useState(false);
   const [signinNotes, setSigninNotes] = useState('');
   const [selfie, setSelfie] = useState<Asset | null>(null);
+  const [viewerUri, setViewerUri] = useState<string | null>(null);
   const [watermarkJob, setWatermarkJob] = useState<SelfieWatermarkJob | null>(null);
   const [watermarking, setWatermarking] = useState(false);
   const pendingSelfieRef = useRef<Asset | null>(null);
@@ -186,7 +190,7 @@ export default function ShiftSignInScreen() {
   }, [refreshLocation]);
 
   const handleCaptureSelfie = async () => {
-    const asset = await captureSelfieFromCamera();
+    const asset = await captureFaceSelfieFromCamera();
     const captureUri = asset?.uri ? resolveCaptureUri(asset) : '';
     if (captureUri && asset) {
       pendingSelfieRef.current = asset;
@@ -235,13 +239,21 @@ export default function ShiftSignInScreen() {
 
       if (result.success) {
         const signInTime = new Date().toISOString();
+        let siteIdToSave = shift.siteId;
+        if (siteIdToSave == null && shift.rosterId != null) {
+          const jobs = await getGuardMyJobs(guardId);
+          siteIdToSave = findIncidentContextByRoster(
+            jobs.data ?? [],
+            shift.rosterId,
+          )?.siteId;
+        }
         await saveActiveShiftSession({
           rosterId: shift.rosterId,
           site: shift.site,
           zones: shift.zones ?? '',
           signInTime,
           shiftId: shift.id,
-          siteId: shift.siteId,
+          siteId: siteIdToSave,
         });
         navigation.replace(GUARD_ROUTES.ONGOING_SHIFT, {
           rosterId: shift.rosterId,
@@ -249,7 +261,7 @@ export default function ShiftSignInScreen() {
           zones: shift.zones ?? '',
           signInTime,
           shiftId: shift.id,
-          siteId: shift.siteId,
+          siteId: siteIdToSave,
         });
       } else {
         Alert.alert('Check-in failed', result.message || 'Please try again.');
@@ -268,7 +280,7 @@ export default function ShiftSignInScreen() {
         onComplete={uri => {
           const asset = pendingSelfieRef.current;
           if (asset) {
-            setSelfie({ ...asset, uri });
+            setSelfie({ ...asset, uri: normalizeDisplayImageUri(uri) });
           }
           pendingSelfieRef.current = null;
           setWatermarkJob(null);
@@ -368,18 +380,30 @@ export default function ShiftSignInScreen() {
               </View>
 
               <TouchableOpacity
-                style={styles.camArea}
-                onPress={handleCaptureSelfie}
+                style={[
+                  styles.camArea,
+                  (selfie?.uri || watermarking) && styles.camAreaFilled,
+                  (!selfie?.uri || watermarking) && styles.camAreaCentered,
+                ]}
+                onPress={
+                  selfie?.uri && !watermarking
+                    ? () => setViewerUri(selfie.uri ?? null)
+                    : handleCaptureSelfie
+                }
                 activeOpacity={0.9}
                 disabled={watermarking}
               >
                 {watermarking ? (
-                  <>
+                  <View style={styles.camAreaLoading}>
                     <ActivityIndicator size="large" color={Colors.accent} />
                     <Text style={styles.camHint}>Applying watermark...</Text>
-                  </>
+                  </View>
                 ) : selfie?.uri ? (
-                  <Image source={{ uri: selfie.uri }} style={styles.selfiePreview} />
+                  <SelfiePreviewImage
+                    uri={selfie.uri}
+                    imageWidth={selfie.width}
+                    imageHeight={selfie.height}
+                  />
                 ) : (
                   <>
                     <Image source={appLogo} style={styles.selfiePlaceholderLogo} resizeMode="contain" />
@@ -389,9 +413,12 @@ export default function ShiftSignInScreen() {
               </TouchableOpacity>
 
               {selfie?.uri && !watermarking ? (
-                <TouchableOpacity style={styles.retakeBtn} onPress={handleCaptureSelfie}>
-                  <Text style={styles.retakeBtnText}>Retake selfie</Text>
-                </TouchableOpacity>
+                <>
+                  <Text style={styles.viewHint}>Tap image to view full size</Text>
+                  <TouchableOpacity style={styles.retakeBtn} onPress={handleCaptureSelfie}>
+                    <Text style={styles.retakeBtnText}>Retake selfie</Text>
+                  </TouchableOpacity>
+                </>
               ) : null}
             </View>
 
@@ -431,6 +458,12 @@ export default function ShiftSignInScreen() {
           onPress={i => navigateGuardBottomTab(navigation, i)}
         />
       </SafeAreaView>
+
+      <ImageViewerModal
+        visible={viewerUri != null}
+        uri={viewerUri}
+        onClose={() => setViewerUri(null)}
+      />
     </View>
   );
 }
@@ -570,16 +603,28 @@ const styles = StyleSheet.create({
   },
 
   camArea: {
-    height: 200,
+    height: 280,
+    width: '100%',
     backgroundColor: Colors.bgAlt,
     borderRadius: Radii.md,
-    alignItems: 'center',
-    justifyContent: 'center',
     overflow: 'hidden',
     borderWidth: 2,
     borderStyle: 'dashed',
     borderColor: Colors.accent,
-    position: 'relative',
+  },
+  camAreaFilled: {
+    padding: 0,
+  },
+  camAreaCentered: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  camAreaLoading: {
+    flex: 1,
+    width: '100%',
+    height: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   selfiePlaceholderLogo: {
     width: 120,
@@ -592,10 +637,11 @@ const styles = StyleSheet.create({
     color: Colors.accent,
     fontWeight: '600',
   },
-  selfiePreview: {
-    width: '100%',
-    height: '100%',
-    resizeMode: 'cover',
+  viewHint: {
+    marginTop: 8,
+    fontSize: FontSizes.xs,
+    color: Colors.textMuted,
+    textAlign: 'center',
   },
   retakeBtn: {
     marginTop: 10,

@@ -201,12 +201,8 @@ export default function GuardDashboard() {
   const handleQuickAction = (key: string) => {
     switch (key) {
       case 'patrol':
-        requireCheckedInShift(session =>
-          navigation.navigate(GUARD_ROUTES.PATROL_TIMELINE, {
-            rosterId: session.rosterId,
-            siteId: session.siteId,
-            site: session.site,
-          }),
+        requireCheckedInShift(() =>
+          navigation.navigate(GUARD_ROUTES.PATROL_TIMELINE),
         );
         break;
       case 'incident':
@@ -221,12 +217,8 @@ export default function GuardDashboard() {
         navigation.navigate(GUARD_ROUTES.SOPS);
         break;
       case 'nfc':
-        requireCheckedInShift(session =>
-          navigation.navigate(GUARD_ROUTES.PATROL_TIMELINE, {
-            rosterId: session.rosterId,
-            siteId: session.siteId,
-            site: session.site,
-          }),
+        requireCheckedInShift(() =>
+          navigation.navigate(GUARD_ROUTES.PATROL_TIMELINE),
         );
         break;
       default:

@@ -1,6 +1,10 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { clearActiveShiftSession } from './activeShiftSession';
 import { sendGuardOtp, verifyGuardOtp } from './guardApi';
+import { loginManager } from './managerApi';
+import { clearSavedLogin } from './savedLogin';
+import store from '../store/store';
+import { clearAuth } from '../store/slices/authSlice';
 
 export { API_BASE_URL, API_URL } from '../config/env';
 
@@ -20,15 +24,17 @@ export async function loginGuardWithOtp(
   return verifyGuardOtp(normalizedPhone, otp.trim());
 }
 
-/** Legacy email/password login (manager or other flows) */
+/** Email/password login for manager accounts */
 export async function login(email: string, password: string) {
-  return loginGuardWithOtp(email, password);
+  return loginManager(email, password);
 }
 
 export async function logout() {
   await AsyncStorage.removeItem('authToken');
   await AsyncStorage.removeItem('guardId');
   await clearActiveShiftSession();
+  await clearSavedLogin();
+  store.dispatch(clearAuth());
 }
 
 export async function getAuthToken() {

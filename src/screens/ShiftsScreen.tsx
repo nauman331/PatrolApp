@@ -64,7 +64,8 @@ const leftBarColor: Record<ShiftStatus, string> = {
   active: Colors.accent,
   done: Colors.success,
   upcoming: Colors.info,
-  timeout: Colors.warning,
+  ready: Colors.warning,
+  missed: Colors.danger,
 };
 
 const badgeConfig: Record<
@@ -74,19 +75,17 @@ const badgeConfig: Record<
   active: { bg: Colors.accentLight, color: Colors.accent, label: '● ACTIVE' },
   done: { bg: Colors.successLight, color: Colors.success, label: '✓ DONE' },
   upcoming: { bg: Colors.infoLight, color: Colors.info, label: 'UPCOMING' },
-  timeout: {
-    bg: Colors.warningLight,
-    color: '#c05621',
-    label: 'TIMED OUT',
-  },
+  ready: { bg: Colors.warningLight, color: '#c05621', label: 'READY' },
+  missed: { bg: Colors.dangerLight, color: Colors.danger, label: 'MISSED' },
 };
 
 const FILTERS: ShiftListFilter[] = [
   'All',
   'Active',
+  'Ready',
   'Upcoming',
   'Completed',
-  'Timed Out',
+  'Missed',
 ];
 
 function truncateSiteName(site: string, maxWords = 6): string {
@@ -143,9 +142,18 @@ export default function ShiftsScreen() {
     [jobsRaw],
   );
 
+  const shiftsWithSession = useMemo(() => {
+    if (!activeSession) return sortedShifts;
+    return sortedShifts.map(shift =>
+      isThisShiftOngoing(shift, activeSession)
+        ? { ...shift, status: 'active' as ShiftStatus }
+        : shift,
+    );
+  }, [sortedShifts, activeSession]);
+
   const filteredShifts = useMemo(
-    () => filterShiftsByStatus(sortedShifts, activeFilter),
-    [sortedShifts, activeFilter],
+    () => filterShiftsByStatus(shiftsWithSession, activeFilter),
+    [shiftsWithSession, activeFilter],
   );
 
   const visibleShifts = useMemo(
@@ -184,20 +192,20 @@ export default function ShiftsScreen() {
     [loadMore],
   );
 
-  const handleShiftAction = async (shift: Shift) => {
+  const handleOngoing = async (shift: Shift) => {
     const session = activeSession ?? (await getActiveShiftSession());
+    navigation.navigate(GUARD_ROUTES.ONGOING_SHIFT, {
+      rosterId: session?.rosterId ?? shift.rosterId,
+      site: session?.site ?? shift.site,
+      zones: session?.zones ?? shift.zones,
+      signInTime: session?.signInTime ?? new Date().toISOString(),
+      shiftId: session?.shiftId ?? shift.id,
+      siteId: session?.siteId ?? shift.siteId,
+    });
+  };
 
-    if (isThisShiftOngoing(shift, session)) {
-      navigation.navigate(GUARD_ROUTES.ONGOING_SHIFT, {
-        rosterId: session?.rosterId ?? shift.rosterId,
-        site: session?.site ?? shift.site,
-        zones: session?.zones ?? shift.zones,
-        signInTime: session?.signInTime ?? new Date().toISOString(),
-        shiftId: session?.shiftId ?? shift.id,
-        siteId: session?.siteId ?? shift.siteId,
-      });
-      return;
-    }
+  const handleSignIn = async (shift: Shift) => {
+    const session = activeSession ?? (await getActiveShiftSession());
 
     const blockingShift = findBlockingActiveShift(jobsRaw, shift, session);
     if (blockingShift) {
@@ -215,7 +223,7 @@ export default function ShiftsScreen() {
       site: shift.site,
       time: shift.time,
       zones: shift.zones,
-      status: shift.status === 'done' ? 'upcoming' : shift.status,
+      status: 'ready',
     });
   };
 
@@ -223,11 +231,8 @@ export default function ShiftsScreen() {
 
   const renderShiftCard = (shift: Shift) => {
     const badge = badgeConfig[shift.status] ?? badgeConfig.upcoming;
-    const ongoing = isThisShiftOngoing(shift, activeSession);
-    const canAction =
-      shift.status !== 'done' &&
-      shift.status !== 'timeout' &&
-      (ongoing || shift.status === 'upcoming' || shift.status === 'active');
+    const showOngoing = shift.status === 'active';
+    const showSignIn = shift.status === 'ready';
 
     return (
       <View
@@ -306,20 +311,26 @@ export default function ShiftsScreen() {
           </View>
         )}
 
-        {canAction && (
+        {showOngoing && (
           <TouchableOpacity
             style={styles.signInBtn}
-            onPress={() => handleShiftAction(shift)}
+            onPress={() => handleOngoing(shift)}
           >
             <View style={styles.signInRow}>
-              {ongoing ? (
-                <CheckCircle size={16} color="#fff" />
-              ) : (
-                <Camera size={16} color="#fff" />
-              )}
-              <Text style={styles.signInText}>
-                {ongoing ? '  Ongoing Shift' : '  Sign In'}
-              </Text>
+              <CheckCircle size={16} color="#fff" />
+              <Text style={styles.signInText}>  Ongoing</Text>
+            </View>
+          </TouchableOpacity>
+        )}
+
+        {showSignIn && (
+          <TouchableOpacity
+            style={styles.signInBtn}
+            onPress={() => handleSignIn(shift)}
+          >
+            <View style={styles.signInRow}>
+              <Camera size={16} color="#fff" />
+              <Text style={styles.signInText}>  Sign In</Text>
             </View>
           </TouchableOpacity>
         )}

@@ -6,6 +6,9 @@ import {
   type ImagePickerResponse,
 } from 'react-native-image-picker';
 import { PermissionsAndroid } from 'react-native';
+import { detectFaceInSelfie } from './detectSelfieFace';
+
+export const SELFIE_FACE_REQUIRED_MESSAGE = 'Please take your face selfie.';
 
 const SELFIE_CAMERA_OPTIONS: CameraOptions = {
   mediaType: 'photo',
@@ -15,11 +18,8 @@ const SELFIE_CAMERA_OPTIONS: CameraOptions = {
   maxWidth: 1280,
   maxHeight: 1280,
   presentationStyle: 'fullScreen',
-  // includeExtra triggers PHPhotoLibrary permission on iOS and can crash without
-  // NSPhotoLibraryUsageDescription — not needed for selfie capture.
-  ...(Platform.OS === 'android'
-    ? { includeBase64: true, includeExtra: true }
-    : {}),
+  includeBase64: true,
+  ...(Platform.OS === 'android' ? { includeExtra: true } : {}),
 };
 
 async function requestAndroidCameraPermission(): Promise<boolean> {
@@ -89,4 +89,19 @@ export async function captureSelfieFromCamera(): Promise<Asset | null> {
     Alert.alert('Camera error', 'Could not open camera. Please try again.');
     return null;
   }
+}
+
+export async function captureFaceSelfieFromCamera(): Promise<Asset | null> {
+  const asset = await captureSelfieFromCamera();
+  if (!asset?.uri?.trim()) {
+    return null;
+  }
+
+  const hasFace = await detectFaceInSelfie(asset);
+  if (!hasFace) {
+    Alert.alert('Invalid Selfie', SELFIE_FACE_REQUIRED_MESSAGE);
+    return null;
+  }
+
+  return asset;
 }

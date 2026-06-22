@@ -7,9 +7,10 @@ import {
     ManagerGuardAttendanceScreen,
     ManagerReportsScreen,
     ManagerShiftReportScreen,
+    ManagerIncidentDetailScreen,
     ManagerRosterScreen,
-    ManagerProfileScreen,
 } from '../screens/manager';
+import ProfileScreen from '../screens/ProfileScreen';
 import PrivacyPolicyScreen from '../screens/PrivacyPolicyScreen';
 import TermsConditionsScreen from '../screens/TermsConditionsScreen';
 import { ManagerStackParamList } from './types';
@@ -60,13 +61,17 @@ export function ManagerNavigator() {
                 component={ManagerShiftReportScreen}
             />
             <Stack.Screen
+                name={MANAGER_ROUTES.INCIDENT_DETAIL}
+                component={ManagerIncidentDetailScreen}
+            />
+            <Stack.Screen
                 name={MANAGER_ROUTES.ROSTER}
                 component={ManagerRosterScreen}
                 options={{ animation: 'none' }}
             />
             <Stack.Screen
                 name={MANAGER_ROUTES.PROFILE}
-                component={ManagerProfileScreen}
+                component={ProfileScreen}
                 options={{ animation: 'none' }}
             />
             <Stack.Screen

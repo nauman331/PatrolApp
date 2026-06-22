@@ -37,6 +37,7 @@ import { usePatrolNfcScan } from '../hooks/usePatrolNfcScan';
 import {
   clearActiveShiftSession,
   getActiveShiftSession,
+  patchActiveShiftSession,
   promptCheckInRequired,
   saveActiveShiftSession,
 } from '../services/activeShiftSession';
@@ -44,11 +45,14 @@ import {
   fetchLocationFix,
   formatCaptureTimestamp,
 } from '../services/locationUtils';
-import { captureSelfieFromCamera } from '../services/captureSelfie';
+import { captureFaceSelfieFromCamera } from '../services/captureSelfie';
+import { normalizeDisplayImageUri } from '../utils/imageUri';
 import {
   SelfieWatermarkProcessor,
   type SelfieWatermarkJob,
 } from '../components/SelfieWatermarkProcessor';
+import ImageViewerModal from '../components/ImageViewerModal';
+import { SelfiePreviewImage } from '../components/SelfiePreviewImage';
 
 const appLogo = require('../../assets/opg-logo.png');
 
@@ -116,6 +120,7 @@ export default function OngoingShiftScreen() {
   const [elapsed, setElapsed] = useState('00:00:00');
   const [signoutNotes, setSignoutNotes] = useState('');
   const [signoutSelfie, setSignoutSelfie] = useState<Asset | null>(null);
+  const [viewerUri, setViewerUri] = useState<string | null>(null);
   const [watermarkJob, setWatermarkJob] = useState<SelfieWatermarkJob | null>(null);
   const [watermarking, setWatermarking] = useState(false);
   const pendingSelfieRef = useRef<Asset | null>(null);
@@ -170,6 +175,18 @@ export default function OngoingShiftScreen() {
         setAddress(session.zones);
         setSignInTime(session.signInTime);
         setSiteId(session.siteId);
+
+        if (
+          (session.siteId == null || String(session.siteId).trim() === '') &&
+          route.params?.siteId != null
+        ) {
+          const patched = await patchActiveShiftSession({
+            siteId: route.params.siteId,
+          });
+          if (patched?.siteId != null) {
+            setSiteId(patched.siteId);
+          }
+        }
       } else if (route.params?.rosterId) {
         await saveActiveShiftSession({
           rosterId: route.params.rosterId,
@@ -235,7 +252,7 @@ export default function OngoingShiftScreen() {
   }, [refreshLocation]);
 
   const handleCaptureSelfie = async () => {
-    const asset = await captureSelfieFromCamera();
+    const asset = await captureFaceSelfieFromCamera();
     const captureUri = asset?.uri ? resolveCaptureUri(asset) : '';
     if (captureUri && asset) {
       pendingSelfieRef.current = asset;
@@ -251,11 +268,7 @@ export default function OngoingShiftScreen() {
   };
 
   const handleStartPatrolling = () => {
-    navigation.navigate(GUARD_ROUTES.PATROL_TIMELINE, {
-      rosterId,
-      siteId,
-      site,
-    });
+    navigation.navigate(GUARD_ROUTES.PATROL_TIMELINE);
   };
 
   const handleEndShift = async () => {
@@ -317,7 +330,7 @@ export default function OngoingShiftScreen() {
   const handleWatermarkComplete = useCallback((uri: string) => {
     const asset = pendingSelfieRef.current;
     if (asset) {
-      setSignoutSelfie({ ...asset, uri });
+      setSignoutSelfie({ ...asset, uri: normalizeDisplayImageUri(uri) });
     }
     pendingSelfieRef.current = null;
     setWatermarkJob(null);
@@ -391,21 +404,30 @@ export default function OngoingShiftScreen() {
 
             <TouchableOpacity
               style={[styles.selfieCard, Shadows.card]}
-              onPress={handleCaptureSelfie}
+              onPress={
+                signoutSelfie?.uri && !watermarking
+                  ? () => setViewerUri(signoutSelfie.uri ?? null)
+                  : handleCaptureSelfie
+              }
               activeOpacity={0.9}
               disabled={watermarking}
             >
-              <View style={styles.selfieInner}>
+              <View
+                style={[
+                  styles.selfieInner,
+                  !signoutSelfie?.uri && !watermarking && styles.selfieInnerEmpty,
+                ]}
+              >
                 {watermarking ? (
-                  <>
+                  <View style={styles.selfieLoading}>
                     <ActivityIndicator size="large" color={Colors.info} />
                     <Text style={styles.selfieHint}>Applying watermark...</Text>
-                  </>
+                  </View>
                 ) : signoutSelfie?.uri ? (
-                  <Image
-                    source={{ uri: signoutSelfie.uri }}
-                    style={styles.selfieImg}
-                    resizeMode="cover"
+                  <SelfiePreviewImage
+                    uri={signoutSelfie.uri}
+                    imageWidth={signoutSelfie.width}
+                    imageHeight={signoutSelfie.height}
                   />
                 ) : (
                   <>
@@ -421,6 +443,15 @@ export default function OngoingShiftScreen() {
               </View>
             </TouchableOpacity>
           </View>
+
+          {signoutSelfie?.uri && !watermarking ? (
+            <>
+              <Text style={styles.viewHint}>Tap image to view full size</Text>
+              <TouchableOpacity style={styles.retakeBtn} onPress={handleCaptureSelfie}>
+                <Text style={styles.retakeBtnText}>Retake selfie</Text>
+              </TouchableOpacity>
+            </>
+          ) : null}
 
           <View style={[styles.card, Shadows.card]}>
             <Text style={styles.locLbl}>Sign-out location</Text>
@@ -490,6 +521,12 @@ export default function OngoingShiftScreen() {
         </ScrollView>
         {scanModal}
       </SafeAreaView>
+
+      <ImageViewerModal
+        visible={viewerUri != null}
+        uri={viewerUri}
+        onClose={() => setViewerUri(null)}
+      />
     </View>
   );
 }
@@ -617,20 +654,41 @@ const styles = StyleSheet.create({
   },
   selfieInner: {
     flex: 1,
+    minHeight: 180,
+    width: '100%',
     borderRadius: Radii.md,
     overflow: 'hidden',
+  },
+  selfieInnerEmpty: {
     alignItems: 'center',
     justifyContent: 'center',
-    position: 'relative',
+  },
+  selfieLoading: {
+    flex: 1,
+    width: '100%',
+    minHeight: 180,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   selfiePlaceholderLogo: {
     width: 72,
     height: 48,
     marginBottom: 8,
   },
-  selfieImg: {
-    ...StyleSheet.absoluteFill,
-    borderRadius: Radii.md,
+  viewHint: {
+    fontSize: FontSizes.xs,
+    color: Colors.textMuted,
+    textAlign: 'center',
+    marginBottom: 4,
+  },
+  retakeBtn: {
+    alignSelf: 'center',
+    marginBottom: 12,
+  },
+  retakeBtnText: {
+    fontSize: FontSizes.sm,
+    color: Colors.accent,
+    fontWeight: '700',
   },
   selfieTitle: {
     fontSize: FontSizes.sm,

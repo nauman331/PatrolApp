@@ -5,16 +5,21 @@ import {
   TouchableOpacity,
   StyleSheet,
   StatusBar,
+  ScrollView,
+  RefreshControl,
   type ViewStyle,
+  type NativeScrollEvent,
+  type NativeSyntheticEvent,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { ArrowLeft, Bell } from 'lucide-react-native';
-import { Colors, FontSizes, Radii, Shadows } from '../../theme';
+import { ArrowLeft } from 'lucide-react-native';
+import { Colors, FontSizes, Radii, Shadows, Spacing } from '../../theme';
 import { NavBar } from '../../components';
 import { useManagerNavigation } from '../../navigation/utils';
 import { navigateManagerBottomTab } from '../../navigation/constants';
+import { formatFullDisplayDate } from '../../services/guardJobsMapper';
 
-export const MANAGER_PAGE_BG = '#f0f4ff';
+export const MANAGER_PAGE_BG = Colors.bgAlt;
 
 export const MANAGER_TAB_INDEX = {
   DASHBOARD: 0,
@@ -61,16 +66,13 @@ export function ManagerNavBar({ activeIndex }: ManagerNavBarProps) {
 interface ManagerTabShellProps {
   activeIndex: number;
   children: React.ReactNode;
-  scroll?: boolean;
 }
 
-export function ManagerTabShell({
-  activeIndex,
-  children,
-}: ManagerTabShellProps) {
+/** Legacy shell — prefer ManagerCompactTabShell for tab screens. */
+export function ManagerTabShell({ activeIndex, children }: ManagerTabShellProps) {
   return (
     <View style={sharedStyles.container}>
-      <StatusBar barStyle="light-content" backgroundColor={Colors.mgrHeaderStart} />
+      <StatusBar barStyle="light-content" backgroundColor={Colors.headerStart} />
       <SafeAreaView style={sharedStyles.safe} edges={['top', 'bottom']}>
         {children}
         <ManagerNavBar activeIndex={activeIndex} />
@@ -79,35 +81,59 @@ export function ManagerTabShell({
   );
 }
 
-interface ManagerHeaderProps {
-  badge?: string;
-  title: React.ReactNode;
+interface ManagerPageHeaderProps {
+  title: string;
   subtitle?: string;
-  showNotif?: boolean;
+  right?: React.ReactNode;
 }
 
-export function ManagerHeader({
-  badge = 'MANAGER',
+export function ManagerPageHeader({
   title,
   subtitle,
-  showNotif = true,
-}: ManagerHeaderProps) {
+  right,
+}: ManagerPageHeaderProps) {
   return (
-    <View style={sharedStyles.header}>
-      <View style={sharedStyles.headerDecor} />
-      <View style={sharedStyles.topRow}>
-        <View style={sharedStyles.mgrBadge}>
-          <Text style={sharedStyles.mgrBadgeText}>{badge}</Text>
-        </View>
-        {showNotif && (
-          <TouchableOpacity style={sharedStyles.notifBtn}>
-            <Bell size={18} color="#fff" />
-            <View style={sharedStyles.notifDot} />
-          </TouchableOpacity>
-        )}
+    <View style={sharedStyles.pageHeader}>
+      <View style={sharedStyles.pageHdrRow}>
+        <Text style={sharedStyles.pageHdrTitle}>{title}</Text>
+        {right ?? <View style={sharedStyles.headerSpacer} />}
       </View>
-      <Text style={sharedStyles.greet}>{title}</Text>
-      {subtitle ? <Text style={sharedStyles.dateLine}>{subtitle}</Text> : null}
+      <Text style={sharedStyles.pageHdrSub}>
+        {subtitle ?? formatFullDisplayDate()}
+      </Text>
+    </View>
+  );
+}
+
+interface ManagerCompactTabShellProps {
+  activeIndex: number;
+  title: string;
+  subtitle?: string;
+  headerRight?: React.ReactNode;
+  children: React.ReactNode;
+}
+
+export function ManagerCompactTabShell({
+  activeIndex,
+  title,
+  subtitle,
+  headerRight,
+  children,
+}: ManagerCompactTabShellProps) {
+  return (
+    <View style={sharedStyles.container}>
+      <StatusBar barStyle="light-content" backgroundColor={Colors.headerStart} />
+      <SafeAreaView style={sharedStyles.safeTop} edges={['top']}>
+        <ManagerPageHeader
+          title={title}
+          subtitle={subtitle}
+          right={headerRight}
+        />
+      </SafeAreaView>
+      <SafeAreaView style={sharedStyles.safeBody} edges={['bottom']}>
+        <View style={sharedStyles.tabBody}>{children}</View>
+        <ManagerNavBar activeIndex={activeIndex} />
+      </SafeAreaView>
     </View>
   );
 }
@@ -127,22 +153,43 @@ export function ManagerStackHeader({
 }: ManagerStackHeaderProps) {
   const navigation = useManagerNavigation();
   return (
-    <View style={sharedStyles.stackHeader}>
-      <View style={sharedStyles.stackLeft}>
-        <TouchableOpacity
-          style={sharedStyles.backBtn}
-          onPress={onBack ?? (() => navigation.goBack())}
-        >
-          <ArrowLeft size={18} color={Colors.textPrimary} />
-        </TouchableOpacity>
-        <View>
-          <Text style={sharedStyles.stackTitle}>{title}</Text>
-          {subtitle ? (
-            <Text style={sharedStyles.stackSub}>{subtitle}</Text>
-          ) : null}
+    <View style={sharedStyles.pageHeader}>
+      <View style={sharedStyles.pageHdrRow}>
+        <View style={sharedStyles.stackLeft}>
+          <TouchableOpacity
+            style={sharedStyles.stackBackBtn}
+            onPress={onBack ?? (() => navigation.goBack())}
+          >
+            <ArrowLeft size={18} color={Colors.white} />
+          </TouchableOpacity>
+          <View style={sharedStyles.stackTitleWrap}>
+            <Text style={sharedStyles.pageHdrTitle}>{title}</Text>
+            {subtitle ? (
+              <Text style={sharedStyles.pageHdrSub}>{subtitle}</Text>
+            ) : null}
+          </View>
         </View>
+        {rightAction}
       </View>
-      {rightAction}
+    </View>
+  );
+}
+
+interface ManagerStackShellProps {
+  header: React.ReactNode;
+  children: React.ReactNode;
+}
+
+export function ManagerStackShell({ header, children }: ManagerStackShellProps) {
+  return (
+    <View style={sharedStyles.stackContainer}>
+      <StatusBar barStyle="light-content" backgroundColor={Colors.headerStart} />
+      <SafeAreaView style={sharedStyles.safeTop} edges={['top']}>
+        {header}
+      </SafeAreaView>
+      <SafeAreaView style={sharedStyles.safeBody} edges={['bottom']}>
+        {children}
+      </SafeAreaView>
     </View>
   );
 }
@@ -159,96 +206,188 @@ export function ManagerCard({
   );
 }
 
+interface ManagerListLayoutProps {
+  toolbar?: React.ReactNode;
+  /** Pinned block above the scroll area (e.g. calendar grid). */
+  fixedContent?: React.ReactNode;
+  /** Pinned section title above the scrollable list rows. */
+  listHeader?: React.ReactNode;
+  refreshing?: boolean;
+  onRefresh?: () => void;
+  onEndReached?: () => void;
+  stickyHeaderIndices?: number[];
+  children: React.ReactNode;
+}
+
+/** Fixed toolbar + optional fixed block + scrollable list body only. */
+export function ManagerListLayout({
+  toolbar,
+  fixedContent,
+  listHeader,
+  refreshing = false,
+  onRefresh,
+  onEndReached,
+  stickyHeaderIndices,
+  children,
+}: ManagerListLayoutProps) {
+  const handleScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+    if (!onEndReached) return;
+    const { layoutMeasurement, contentOffset, contentSize } = event.nativeEvent;
+    if (layoutMeasurement.height + contentOffset.y >= contentSize.height - 80) {
+      onEndReached();
+    }
+  };
+
+  return (
+    <View style={sharedStyles.listScreen}>
+      {toolbar ? (
+        <View style={sharedStyles.listToolbar}>{toolbar}</View>
+      ) : null}
+      {fixedContent ? (
+        <View style={sharedStyles.listFixed}>{fixedContent}</View>
+      ) : null}
+      {listHeader ? (
+        <View style={sharedStyles.listHeader}>{listHeader}</View>
+      ) : null}
+      <ScrollView
+        style={sharedStyles.listScroll}
+        contentContainerStyle={sharedStyles.listScrollContent}
+        showsVerticalScrollIndicator={false}
+        stickyHeaderIndices={stickyHeaderIndices}
+        refreshControl={
+          onRefresh ? (
+            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+          ) : undefined
+        }
+        onScroll={handleScroll}
+        scrollEventThrottle={400}
+      >
+        {children}
+      </ScrollView>
+    </View>
+  );
+}
+
+interface ManagerStackListLayoutProps {
+  fixedContent?: React.ReactNode;
+  listHeader?: React.ReactNode;
+  refreshing?: boolean;
+  onRefresh?: () => void;
+  stickyHeaderIndices?: number[];
+  children: React.ReactNode;
+}
+
+/** Stack screens: optional fixed top section + scrollable remainder. */
+export function ManagerStackListLayout({
+  fixedContent,
+  listHeader,
+  refreshing = false,
+  onRefresh,
+  stickyHeaderIndices,
+  children,
+}: ManagerStackListLayoutProps) {
+  return (
+    <View style={sharedStyles.listScreen}>
+      {fixedContent ? (
+        <View style={sharedStyles.listFixed}>{fixedContent}</View>
+      ) : null}
+      {listHeader ? (
+        <View style={sharedStyles.listHeader}>{listHeader}</View>
+      ) : null}
+      <ScrollView
+        style={sharedStyles.listScroll}
+        contentContainerStyle={sharedStyles.listScrollContent}
+        showsVerticalScrollIndicator={false}
+        stickyHeaderIndices={stickyHeaderIndices}
+        refreshControl={
+          onRefresh ? (
+            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+          ) : undefined
+        }
+      >
+        {children}
+      </ScrollView>
+    </View>
+  );
+}
+
 export const sharedStyles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: MANAGER_PAGE_BG },
-  safe: { flex: 1 },
+  container: { flex: 1, backgroundColor: Colors.headerStart },
+  stackContainer: { flex: 1, backgroundColor: Colors.headerStart },
+  safe: { flex: 1, backgroundColor: MANAGER_PAGE_BG },
+  safeTop: { backgroundColor: Colors.headerStart },
+  safeBody: { flex: 1, backgroundColor: MANAGER_PAGE_BG },
+  /** Use on ScrollView contentContainerStyle — no flex (avoids list stuck at bottom). */
+  scrollContent: { padding: 14, paddingBottom: 16, flexGrow: 0 },
+  /** Use on flex child Views that should fill remaining space. */
   body: { padding: 14, flex: 1 },
 
-  header: {
-    backgroundColor: Colors.mgrHeaderStart,
-    paddingHorizontal: 18,
-    paddingTop: 18,
-    paddingBottom: 52,
-    borderBottomLeftRadius: 26,
-    borderBottomRightRadius: 26,
-    overflow: 'hidden',
+  tabBody: { flex: 1 },
+
+  listScreen: { flex: 1 },
+  listToolbar: {
+    paddingHorizontal: Spacing.lg,
+    paddingTop: Spacing.lg,
+    paddingBottom: Spacing.xs,
+    backgroundColor: MANAGER_PAGE_BG,
   },
-  headerDecor: {
-    position: 'absolute',
-    top: -30,
-    right: -30,
-    width: 140,
-    height: 140,
-    borderRadius: 70,
-    backgroundColor: 'rgba(59,130,246,0.10)',
+  listFixed: {
+    paddingHorizontal: Spacing.lg,
+    paddingBottom: Spacing.sm,
+    backgroundColor: MANAGER_PAGE_BG,
   },
-  topRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 18,
+  listHeader: {
+    paddingHorizontal: Spacing.lg,
+    paddingTop: Spacing.xs,
+    paddingBottom: Spacing.xs,
+    backgroundColor: MANAGER_PAGE_BG,
   },
-  mgrBadge: {
-    backgroundColor: 'rgba(59,130,246,0.2)',
-    borderWidth: 1,
-    borderColor: 'rgba(59,130,246,0.3)',
-    borderRadius: 7,
-    paddingHorizontal: 9,
-    paddingVertical: 3,
+  stickySectionHeader: {
+    backgroundColor: MANAGER_PAGE_BG,
+    paddingTop: Spacing.sm,
+    paddingBottom: Spacing.xs,
   },
-  mgrBadgeText: {
-    fontSize: FontSizes.xs,
-    fontWeight: '700',
-    color: '#60a5fa',
-    letterSpacing: 1,
-  },
-  notifBtn: {
-    width: 34,
-    height: 34,
-    backgroundColor: 'rgba(255,255,255,0.1)',
-    borderRadius: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  notifDot: {
-    width: 8,
-    height: 8,
-    backgroundColor: Colors.accent,
-    borderRadius: 4,
-    position: 'absolute',
-    top: 5,
-    right: 5,
-    borderWidth: 1.5,
-    borderColor: Colors.mgrHeaderStart,
-  },
-  greet: { fontSize: 19, fontWeight: '800', color: Colors.white },
-  dateLine: {
-    fontSize: FontSizes.xs,
-    color: 'rgba(255,255,255,0.35)',
-    marginTop: 3,
+  listScroll: { flex: 1 },
+  listScrollContent: {
+    paddingHorizontal: Spacing.lg,
+    paddingBottom: Spacing.lg,
+    flexGrow: 0,
   },
 
-  stackHeader: {
+  pageHeader: {
+    backgroundColor: Colors.headerStart,
+    paddingHorizontal: 18,
+    paddingTop: Spacing.sm,
+    paddingBottom: Spacing.xl,
+    borderBottomLeftRadius: Radii.xl,
+    borderBottomRightRadius: Radii.xl,
+  },
+  pageHdrRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    padding: 16,
-    paddingBottom: 14,
-    backgroundColor: Colors.bg,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.border,
+    marginBottom: 3,
   },
-  stackLeft: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  backBtn: {
+  pageHdrTitle: { fontSize: 17, fontWeight: '800', color: Colors.white },
+  pageHdrSub: { fontSize: FontSizes.xs, color: 'rgba(255,255,255,0.35)' },
+  headerSpacer: { width: 40 },
+
+  stackLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    flex: 1,
+    minWidth: 0,
+  },
+  stackBackBtn: {
     width: 34,
     height: 34,
-    backgroundColor: Colors.bgAlt,
+    backgroundColor: 'rgba(255,255,255,0.12)',
     borderRadius: 9,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  stackTitle: { fontSize: 15, fontWeight: '800', color: Colors.textPrimary },
-  stackSub: { fontSize: FontSizes.xs, color: Colors.textMuted, marginTop: 1 },
+  stackTitleWrap: { flex: 1, minWidth: 0 },
 
   card: {
     backgroundColor: Colors.bgCard,
@@ -267,9 +406,9 @@ export const sharedStyles = StyleSheet.create({
     borderColor: Colors.border,
   },
   chipActive: {
-    backgroundColor: Colors.infoLight,
-    borderColor: '#93c5fd',
+    backgroundColor: Colors.accentLight,
+    borderColor: Colors.accentAlpha25,
   },
   chipText: { fontSize: FontSizes.xs, fontWeight: '600', color: Colors.textSecondary },
-  chipTextActive: { color: '#1a56db' },
+  chipTextActive: { color: Colors.accent },
 });

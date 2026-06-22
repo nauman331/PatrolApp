@@ -29,11 +29,11 @@ import {
   Trash2,
 } from 'lucide-react-native';
 import { useAppDispatch, useAppSelector } from '../store/hooks';
-import { clearAuth } from '../store/slices/authSlice';
 import { fetchGuardIncidents, selectIncidents } from '../store/slices/incidentsSlice';
 import { logout } from '../services/authApi';
 import { useNavigation } from '@react-navigation/native';
 import { GUARD_ROUTES, MANAGER_ROUTES, navigateGuardBottomTab, navigateManagerBottomTab } from '../navigation/constants';
+import { buildManagerNavItems } from '../screens/manager/managerShared';
 import {
   deleteUserAccount,
   fetchUserProfile,
@@ -260,7 +260,6 @@ export default function ProfileScreen({ onLogout }: Props) {
                 return;
               }
               await logout();
-              dispatch(clearAuth());
             } else {
               Alert.alert('Error', result.message ?? 'Failed to delete account');
             }
@@ -282,7 +281,6 @@ export default function ProfileScreen({ onLogout }: Props) {
             return;
           }
           await logout();
-          dispatch(clearAuth());
         },
       },
     ]);
@@ -444,21 +442,7 @@ export default function ProfileScreen({ onLogout }: Props) {
                   </View>
                 )}
 
-                {/* <View style={styles.card}>
-                  <Text style={styles.sectionTitle}>Performance</Text>
-
-                  <View style={styles.statsRow}>
-                    <View style={styles.statItem}>
-                      <Text style={styles.statNumber}>{incidents.length}</Text>
-                      <Text style={styles.statLabel}>Incidents</Text>
-                    </View>
-
-                    <View style={styles.statItem}>
-                      <Text style={styles.statNumber}>98%</Text>
-                      <Text style={styles.statLabel}>Success Rate</Text>
-                    </View>
-                  </View>
-                </View> */}
+              
 
                 <View style={styles.card}>
                   <Text style={styles.sectionTitle}>Quick Actions</Text>
@@ -530,14 +514,18 @@ export default function ProfileScreen({ onLogout }: Props) {
         </KeyboardAvoidingView>
 
         <NavBar
-          variant="light"
-          items={[
-            { icon: Home, label: 'Home' },
-            { icon: Route, label: 'Patrol' },
-            { icon: AlertTriangle, label: 'Incidents' },
-            { icon: ClipboardList, label: 'Shifts' },
-            { icon: User, label: 'Profile', active: true },
-          ]}
+          variant={userRole === 'manager' ? 'mgr' : 'light'}
+          items={
+            userRole === 'manager'
+              ? buildManagerNavItems(4)
+              : [
+                  { icon: Home, label: 'Home' },
+                  { icon: Route, label: 'Patrol' },
+                  { icon: AlertTriangle, label: 'Incidents' },
+                  { icon: ClipboardList, label: 'Shifts' },
+                  { icon: User, label: 'Profile', active: true },
+                ]
+          }
           onPress={i => {
             if (userRole === 'manager') {
               navigateManagerBottomTab(navigation, i);

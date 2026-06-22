@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -14,18 +14,22 @@ import AppLogo from '../components/AppLogo';
 import AuthKeyboardScroll, {
   AuthKeyboardScrollHandle,
 } from '../components/AuthKeyboardScroll';
+import AuthErrorBanner from '../components/AuthErrorBanner';
 import { Mail, Shield, User, KeyRound, Eye, EyeOff, Lock } from 'lucide-react-native';
 import { sendGuardOtp, verifyGuardOtp } from '../services/guardApi';
-import { useAuthNavigation } from '../navigation/utils';
-import { AUTH_ROUTES } from '../navigation/constants';
+import { loginManager } from '../services/managerApi';
 import type { AuthStackScreenProps } from '../navigation/types';
 import { useDispatch } from 'react-redux';
 import { setAuth } from '../store/slices/authSlice';
+import {
+  getSavedLogin,
+  saveSavedLogin,
+  syncAuthTokensToStorage,
+} from '../services/savedLogin';
 
 type LoginScreenProps = AuthStackScreenProps<'Login'>;
 
 export default function LoginScreen({ }: LoginScreenProps) {
-  const navigation = useAuthNavigation();
   const dispatch = useDispatch();
   const [role, setRole] = useState<'guard' | 'manager'>('guard');
   const [phone, setPhone] = useState('');
@@ -37,6 +41,8 @@ export default function LoginScreen({ }: LoginScreenProps) {
   const [managerPassword, setManagerPassword] = useState('');
   const [showManagerPass, setShowManagerPass] = useState(false);
   const [rememberManager, setRememberManager] = useState(false);
+  const [managerError, setManagerError] = useState<string | null>(null);
+  const [guardError, setGuardError] = useState<string | null>(null);
   const keyboardScrollRef = useRef<AuthKeyboardScrollHandle>(null);
   const phoneFieldRef = useRef<View>(null);
   const otpFieldRef = useRef<View>(null);
@@ -47,19 +53,35 @@ export default function LoginScreen({ }: LoginScreenProps) {
     keyboardScrollRef.current?.scrollToField(fieldRef);
   };
 
+  useEffect(() => {
+    (async () => {
+      const saved = await getSavedLogin();
+      if (!saved?.remember || saved.role !== 'manager') return;
+
+      setRememberManager(true);
+      setRole('manager');
+      if (saved.email) setManagerEmail(saved.email);
+      if (saved.password) setManagerPassword(saved.password);
+    })();
+  }, []);
+
   const resetManagerForm = () => {
     setManagerEmail('');
     setManagerPassword('');
     setShowManagerPass(false);
+    setManagerError(null);
   };
 
   const resetOtpFlow = () => {
     setOtpSent(false);
     setOtp('');
     setDevOtp(null);
+    setGuardError(null);
   };
 
   const resetFormsForRole = (nextRole: 'guard' | 'manager') => {
+    setManagerError(null);
+    setGuardError(null);
     if (nextRole === 'guard') {
       resetManagerForm();
     } else {
@@ -71,13 +93,14 @@ export default function LoginScreen({ }: LoginScreenProps) {
   const handleGuardSubmit = async () => {
     const normalizedPhone = phone.trim();
     if (!normalizedPhone) {
-      Alert.alert('Error', 'Please enter your phone number');
+      setGuardError('Please enter your phone number to continue.');
       return;
     }
 
     if (!otpSent) {
       try {
         setLoading(true);
+        setGuardError(null);
         const res = await sendGuardOtp(normalizedPhone);
         if (res.success) {
           setOtpSent(true);
@@ -86,10 +109,12 @@ export default function LoginScreen({ }: LoginScreenProps) {
           }
           Alert.alert('OTP Sent', res.message || 'Enter the OTP sent to your phone.');
         } else {
-          Alert.alert('Error', res.message || 'Failed to send OTP');
+          setGuardError(
+            res.message || 'We could not send the OTP. Please try again.',
+          );
         }
       } catch {
-        Alert.alert('Error', 'Something went wrong');
+        setGuardError('Something went wrong while sending the OTP. Please try again.');
       } finally {
         setLoading(false);
       }
@@ -97,26 +122,32 @@ export default function LoginScreen({ }: LoginScreenProps) {
     }
 
     if (!otp.trim()) {
-      Alert.alert('Error', 'Please enter the OTP');
+      setGuardError('Please enter the verification code sent to your phone.');
       return;
     }
 
     try {
       setLoading(true);
+      setGuardError(null);
       const res = await verifyGuardOtp(normalizedPhone, otp.trim());
       if (res.success) {
+        const token = res.token ?? null;
+        const guardId = res.guardId ?? null;
         dispatch(
           setAuth({
             role: 'guard',
-            token: res.token ?? null,
-            guardId: res.guardId ?? null,
+            token,
+            guardId,
           }),
         );
+        await syncAuthTokensToStorage(token, guardId);
       } else {
-        Alert.alert('Error', res.message || 'Invalid OTP');
+        setGuardError(
+          res.message || 'The verification code is invalid. Please try again.',
+        );
       }
     } catch {
-      Alert.alert('Error', 'Something went wrong');
+      setGuardError('Unable to verify your code right now. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -127,27 +158,44 @@ export default function LoginScreen({ }: LoginScreenProps) {
     const password = managerPassword.trim();
 
     if (!email) {
-      Alert.alert('Error', 'Please enter your email address');
+      setManagerError('Please enter your email address to continue.');
       return;
     }
 
     if (!password) {
-      Alert.alert('Error', 'Please enter your password');
+      setManagerError('Please enter your password to continue.');
       return;
     }
 
     try {
       setLoading(true);
-      // TODO: replace with manager login API when available
-      dispatch(
-        setAuth({
+      setManagerError(null);
+      const res = await loginManager(email, password);
+      if (res.success) {
+        const token = res.token ?? null;
+        const managerId = res.managerId ?? null;
+        dispatch(
+          setAuth({
+            role: 'manager',
+            token,
+            guardId: managerId,
+          }),
+        );
+        await syncAuthTokensToStorage(token, managerId);
+        await saveSavedLogin({
           role: 'manager',
-          token: null,
-          guardId: null,
-        }),
-      );
+          remember: rememberManager,
+          email: rememberManager ? email : undefined,
+          password: rememberManager ? password : undefined,
+        });
+      } else {
+        setManagerError(
+          res.message ||
+            'Invalid email or password. Please check your credentials and try again.',
+        );
+      }
     } catch {
-      Alert.alert('Error', 'Something went wrong');
+      setManagerError('Unable to sign in right now. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -232,18 +280,24 @@ export default function LoginScreen({ }: LoginScreenProps) {
             {/* Only Guard uses OTP login */}
             {role === 'guard' && (
               <>
+                {guardError ? <AuthErrorBanner message={guardError} /> : null}
+
                 <Text style={styles.label}>PHONE NUMBER</Text>
 
                 <View
                   ref={phoneFieldRef}
                   collapsable={false}
-                  style={styles.inputWrap}
+                  style={[
+                    styles.inputWrap,
+                    guardError ? styles.inputWrapError : null,
+                  ]}
                 >
                   <TextInput
                     style={styles.input}
                     value={phone}
                     onChangeText={value => {
                       setPhone(value);
+                      if (guardError) setGuardError(null);
                       if (otpSent) resetOtpFlow();
                     }}
                     onFocus={() => scrollToField(phoneFieldRef)}
@@ -267,12 +321,18 @@ export default function LoginScreen({ }: LoginScreenProps) {
                     <View
                       ref={otpFieldRef}
                       collapsable={false}
-                      style={styles.inputWrap}
+                      style={[
+                        styles.inputWrap,
+                        guardError ? styles.inputWrapError : null,
+                      ]}
                     >
                       <TextInput
                         style={styles.input}
                         value={otp}
-                        onChangeText={setOtp}
+                        onChangeText={value => {
+                          setOtp(value);
+                          if (guardError) setGuardError(null);
+                        }}
                         onFocus={() => scrollToField(otpFieldRef)}
                         placeholder="123456"
                         placeholderTextColor="#888"
@@ -317,16 +377,24 @@ export default function LoginScreen({ }: LoginScreenProps) {
 
             {role === 'manager' && (
               <>
+                {managerError ? <AuthErrorBanner message={managerError} /> : null}
+
                 <Text style={styles.label}>EMAIL ADDRESS</Text>
                 <View
                   ref={managerEmailFieldRef}
                   collapsable={false}
-                  style={styles.inputWrap}
+                  style={[
+                    styles.inputWrap,
+                    managerError ? styles.inputWrapError : null,
+                  ]}
                 >
                   <TextInput
                     style={styles.input}
                     value={managerEmail}
-                    onChangeText={setManagerEmail}
+                    onChangeText={value => {
+                      setManagerEmail(value);
+                      if (managerError) setManagerError(null);
+                    }}
                     onFocus={() => scrollToField(managerEmailFieldRef)}
                     placeholder="manager@company.com"
                     placeholderTextColor="#888"
@@ -343,12 +411,18 @@ export default function LoginScreen({ }: LoginScreenProps) {
                 <View
                   ref={managerPasswordFieldRef}
                   collapsable={false}
-                  style={styles.inputWrap}
+                  style={[
+                    styles.inputWrap,
+                    managerError ? styles.inputWrapError : null,
+                  ]}
                 >
                   <TextInput
                     style={styles.input}
                     value={managerPassword}
-                    onChangeText={setManagerPassword}
+                    onChangeText={value => {
+                      setManagerPassword(value);
+                      if (managerError) setManagerError(null);
+                    }}
                     onFocus={() => scrollToField(managerPasswordFieldRef)}
                     placeholder="••••••••"
                     placeholderTextColor="#888"
@@ -368,30 +442,24 @@ export default function LoginScreen({ }: LoginScreenProps) {
                   </TouchableOpacity>
                 </View>
 
-                <View style={styles.managerRow}>
-                  <TouchableOpacity
-                    style={styles.rememberRow}
-                    onPress={() => setRememberManager(!rememberManager)}
-                    disabled={loading}
-                    activeOpacity={0.8}
+                <TouchableOpacity
+                  style={styles.rememberRow}
+                  onPress={() => setRememberManager(!rememberManager)}
+                  disabled={loading}
+                  activeOpacity={0.8}
+                >
+                  <View
+                    style={[
+                      styles.checkbox,
+                      rememberManager && styles.checkboxActive,
+                    ]}
                   >
-                    <View
-                      style={[
-                        styles.checkbox,
-                        rememberManager && styles.checkboxActive,
-                      ]}
-                    >
-                      {rememberManager ? (
-                        <Text style={styles.checkmark}>✓</Text>
-                      ) : null}
-                    </View>
-                    <Text style={styles.rememberText}>Remember me</Text>
-                  </TouchableOpacity>
-
-                  <TouchableOpacity disabled={loading} activeOpacity={0.8}>
-                    <Text style={styles.forgot}>Forgot password?</Text>
-                  </TouchableOpacity>
-                </View>
+                    {rememberManager ? (
+                      <Text style={styles.checkmark}>✓</Text>
+                    ) : null}
+                  </View>
+                  <Text style={styles.rememberText}>Remember me</Text>
+                </TouchableOpacity>
 
                 <TouchableOpacity
                   style={styles.loginBtn}
@@ -409,18 +477,6 @@ export default function LoginScreen({ }: LoginScreenProps) {
               </>
             )}
 
-            {role === 'guard' && (
-              <TouchableOpacity
-                style={styles.signupWrap}
-                onPress={() => navigation.navigate(AUTH_ROUTES.SIGNUP)}
-                disabled={loading}
-              >
-                <Text style={styles.signupText}>
-                  Don’t have an account?{' '}
-                  <Text style={{ color: Colors.accent }}>Sign Up</Text>
-                </Text>
-              </TouchableOpacity>
-            )}
           </View>
         </AuthKeyboardScroll>
       </SafeAreaView>
@@ -491,6 +547,10 @@ const styles = StyleSheet.create({
     marginBottom: 20,
     overflow: 'hidden',
   },
+  inputWrapError: {
+    borderColor: Colors.danger,
+    backgroundColor: '#fffafa',
+  },
   input: {
     flex: 1,
     fontSize: 12,
@@ -499,9 +559,6 @@ const styles = StyleSheet.create({
     padding: 0,
   },
   inputIcon: { fontSize: 13, color: '#888' },
-
-  forgotWrap: { alignItems: 'flex-end', marginBottom: 4 },
-  forgot: { fontSize: 11, color: Colors.accent, fontWeight: '600' },
 
   loginBtn: {
     backgroundColor: Colors.accent,
@@ -543,12 +600,6 @@ const styles = StyleSheet.create({
   rememberRow: {
     flexDirection: 'row',
     alignItems: 'center',
-  },
-
-  managerRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
     marginBottom: 16,
   },
 
@@ -582,16 +633,6 @@ const styles = StyleSheet.create({
 
   rememberText: {
     fontSize: 12,
-    color: Colors.textSecondary,
-  },
-
-  signupWrap: {
-    alignItems: 'center',
-    marginTop: 24,
-  },
-
-  signupText: {
-    fontSize: 11,
     color: Colors.textSecondary,
   },
 

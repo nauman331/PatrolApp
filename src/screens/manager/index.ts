@@ -4,5 +4,5 @@ export { default as ManagerGuardDetailsScreen } from './ManagerGuardDetailsScree
 export { default as ManagerGuardAttendanceScreen } from './ManagerGuardAttendanceScreen';
 export { default as ManagerReportsScreen } from './ManagerReportsScreen';
 export { default as ManagerShiftReportScreen } from './ManagerShiftReportScreen';
+export { default as ManagerIncidentDetailScreen } from './ManagerIncidentDetailScreen';
 export { default as ManagerRosterScreen } from './ManagerRosterScreen';
-export { default as ManagerProfileScreen } from './ManagerProfileScreen';

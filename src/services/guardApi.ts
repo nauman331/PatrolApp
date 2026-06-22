@@ -842,7 +842,8 @@ export async function guardTodayPatrolling(
     const status = error?.response?.status;
     if (status === 404) {
       return {
-        success: true,
+        success: false,
+        message: 'Patrol not found.',
         data: { reports: [] },
       };
     }

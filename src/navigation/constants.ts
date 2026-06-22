@@ -6,7 +6,6 @@ export const AUTH_ROUTES = {
     SPLASH: 'Splash',
     ONBOARDING: 'Onboarding',
     LOGIN: 'Login',
-    SIGNUP: 'Signup',
 } as const;
 
 /**
@@ -62,11 +61,7 @@ export function navigateGuardBottomTab(
                     );
                     return;
                 }
-                navigation.navigate(GUARD_ROUTES.PATROL_TIMELINE, {
-                    rosterId: session.rosterId,
-                    siteId: session.siteId,
-                    site: session.site,
-                });
+                navigation.navigate(GUARD_ROUTES.PATROL_TIMELINE);
             })();
             break;
         case GUARD_ROUTES.INCIDENTS:
@@ -91,6 +86,7 @@ export const MANAGER_ROUTES = {
     GUARD_ATTENDANCE: 'ManagerGuardAttendance',
     REPORTS: 'ManagerReports',
     SHIFT_REPORT: 'ManagerShiftReport',
+    INCIDENT_DETAIL: 'ManagerIncidentDetail',
     ROSTER: 'ManagerRoster',
     PROFILE: 'ManagerProfile',
     PRIVACY_POLICY: 'PrivacyPolicy',

@@ -25,8 +25,8 @@ export const Colors = {
   // ── Header gradients ─────────────────────────────────────
   headerStart: '#1a1a2e',
   headerEnd: '#0f3460',
-  mgrHeaderStart: '#0f3460',
-  mgrHeaderEnd: '#1a1a2e',
+  mgrHeaderStart: '#1a1a2e',
+  mgrHeaderEnd: '#0f3460',
 
   // ── Text ─────────────────────────────────────────────────
   textPrimary: '#1a1a2e',
@@ -52,7 +52,7 @@ export const Colors = {
   // ── Navigation ───────────────────────────────────────────
   navBg: '#FFFFFF',
   navBgDark: '#FFFFFF',
-  navBgMgr: '#F0F4FF',
+  navBgMgr: '#FFFFFF',
   navActive: '#791f3d',
   navInactive: '#BBBBBB',
 

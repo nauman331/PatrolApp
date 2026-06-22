@@ -1,63 +1,83 @@
-import React from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import {
   View,
   Text,
   TouchableOpacity,
   StyleSheet,
   ScrollView,
+  RefreshControl,
+  StatusBar,
 } from 'react-native';
-import { Colors, FontSizes, Radii, Shadows } from '../../theme';
-import { SectionHeader } from '../../components';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { useFocusEffect } from '@react-navigation/native';
+import { Colors, FontSizes, Radii, Shadows, Spacing } from '../../theme';
+import { SectionHeader, StatCard } from '../../components';
+import AuthErrorBanner from '../../components/AuthErrorBanner';
+import { ManagerDashboardShimmer, ShimmerBox } from '../../components/Shimmer';
 import {
+  Bell,
   Users,
   Footprints,
   AlertTriangle,
   MapPin,
   Clock,
   ChevronRight,
+  User,
+  type LucideIcon,
 } from 'lucide-react-native';
 import { useManagerNavigation } from '../../navigation/utils';
 import { MANAGER_ROUTES } from '../../navigation/constants';
+import { ManagerNavBar, MANAGER_TAB_INDEX, sharedStyles } from './managerShared';
+import { useAppDispatch, useAppSelector } from '../../store/hooks';
 import {
-  ManagerTabShell,
-  ManagerHeader,
-  MANAGER_TAB_INDEX,
-  sharedStyles,
-} from './managerShared';
+  fetchManagerDashboard,
+  selectManagerDashboard,
+  selectManagerDashboardError,
+  selectManagerDashboardLoading,
+} from '../../store/slices/managerDashboardSlice';
+import type {
+  ManagerActiveGuard,
+  ManagerMissedPatrolAlert,
+} from '../../services/managerApi';
 
-const OVERVIEW = [
-  { icon: Users, value: '12', label: 'Guards On Duty', trend: '↑ 2 vs yesterday', trendUp: true, bg: '#eff6ff' },
-  { icon: Footprints, value: '48', label: 'Patrols Today', trend: '↑ 87% compliance', trendUp: true, bg: '#fff7ed' },
-  { icon: AlertTriangle, value: '3', label: 'Open Incidents', trend: '↑ 1 new today', trendUp: false, bg: '#fef2f2' },
-  { icon: MapPin, value: '3', label: 'Active Sites', trend: 'All operational', trendUp: true, bg: '#f0fdf4' },
-];
-
-const ACTIVE_GUARDS = [
-  { id: '1', initials: 'AK', name: 'Ahmed Khan', site: 'Mall of Lahore', status: 'on' as const, patrols: '6 patrols', avatarBg: '#fff3ed', avatarColor: '#d45a1a' },
-  { id: '2', initials: 'MR', name: 'Muhammad Raza', site: 'DHA Clinic Block', status: 'on' as const, patrols: '4 patrols', avatarBg: '#e8f0fe', avatarColor: '#1a56db' },
-  { id: '3', initials: 'ZA', name: 'Zara Ali', site: 'Packages Mall', status: 'idle' as const, patrols: 'Break', avatarBg: '#fde8e8', avatarColor: '#c53030' },
-];
-
-const RECENT_INCIDENTS = [
-  { id: 1, title: 'Food Court Disturbance', site: 'Mall of Lahore', severity: 'HIGH', time: '08:47 AM' },
-  { id: 2, title: 'Parking Gate Malfunction', site: 'Packages Mall', severity: 'MEDIUM', time: '07:15 AM' },
-  { id: 3, title: 'Suspicious Activity', site: 'DHA Clinic', severity: 'LOW', time: '06:30 AM' },
-];
-
-const MISSED_ALERTS = [
-  { id: 1, guard: 'Hassan Baig', site: 'Packages Mall', slot: '09:00 AM', zone: 'Zone B' },
-  { id: 2, guard: 'Ali Raza', site: 'Mall of Lahore', slot: '08:30 AM', zone: 'Roof Access' },
-];
-
-const statusDotColor = { on: Colors.success, idle: Colors.warning, off: Colors.danger };
-
-const sevColor: Record<string, string> = {
-  HIGH: Colors.danger,
-  MEDIUM: Colors.warning,
-  LOW: Colors.success,
+type OverviewCard = {
+  icon: LucideIcon;
+  value: string;
+  label: string;
+  bgColor: string;
 };
 
-function formatToday(): string {
+const statusDotColor: Record<string, string> = {
+  on_duty: Colors.success,
+  on: Colors.success,
+  idle: Colors.warning,
+  break: Colors.warning,
+  off_duty: Colors.danger,
+  off: Colors.danger,
+};
+
+const sevColor: Record<string, string> = {
+  high: Colors.danger,
+  medium: Colors.warning,
+  low: Colors.success,
+};
+
+const guardAvatarPalette = [
+  { bg: Colors.warningLight, color: Colors.warning },
+  { bg: Colors.accentLight, color: Colors.accent },
+  { bg: Colors.dangerLight, color: Colors.danger },
+  { bg: Colors.successLight, color: Colors.success },
+  { bg: Colors.infoLight, color: Colors.info },
+];
+
+function getTimeGreeting(): string {
+  const hour = new Date().getHours();
+  if (hour < 12) return 'Good Morning';
+  if (hour < 17) return 'Good Afternoon';
+  return 'Good Evening';
+}
+
+function formatTodayLabel(): string {
   return new Date().toLocaleDateString(undefined, {
     weekday: 'long',
     day: 'numeric',
@@ -66,151 +86,420 @@ function formatToday(): string {
   });
 }
 
+function firstName(fullName: string): string {
+  const part = fullName.trim().split(/\s+/)[0];
+  return part || 'Manager';
+}
+
+function mapGuardStatusDot(guard: ManagerActiveGuard): string {
+  if (guard.status_color === 'green') return Colors.success;
+  if (guard.status_color === 'yellow' || guard.status_color === 'orange') {
+    return Colors.warning;
+  }
+  if (guard.status_color === 'red') return Colors.danger;
+  return statusDotColor[guard.status] ?? Colors.textMuted;
+}
+
+function mapSeverityColor(severity: string): string {
+  return sevColor[severity.toLowerCase()] ?? Colors.textMuted;
+}
+
+function getMissedAlertSubtitle(alert: ManagerMissedPatrolAlert): string {
+  return `${alert.location} · ${alert.time}`;
+}
+
 export default function ManagerDashboard() {
   const navigation = useManagerNavigation();
+  const dispatch = useAppDispatch();
+  const dashboard = useAppSelector(selectManagerDashboard);
+  const loading = useAppSelector(selectManagerDashboardLoading);
+  const error = useAppSelector(selectManagerDashboardError);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const refreshDashboard = useCallback(() => {
+    dispatch(fetchManagerDashboard());
+  }, [dispatch]);
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await dispatch(fetchManagerDashboard());
+    setRefreshing(false);
+  }, [dispatch]);
+
+  useFocusEffect(
+    useCallback(() => {
+      refreshDashboard();
+    }, [refreshDashboard]),
+  );
+
+  const managerInfo = dashboard?.manager_info;
+  const statistics = dashboard?.statistics;
+  const managerName = managerInfo?.name ?? 'Operations Manager';
+  const greetingName = firstName(managerName);
+
+  const overviewCards = useMemo<OverviewCard[]>(() => {
+    if (!statistics) return [];
+
+    return [
+      {
+        icon: Users,
+        value: String(statistics.guards_on_duty.count),
+        label: 'Guards On Duty',
+        bgColor: Colors.accentLight,
+      },
+      {
+        icon: Footprints,
+        value: String(statistics.patrols_today.count),
+        label: 'Patrols Today',
+        bgColor: Colors.warningLight,
+      },
+      {
+        icon: AlertTriangle,
+        value: String(statistics.open_incidents.count),
+        label: 'Open Incidents',
+        bgColor: Colors.dangerLight,
+      },
+      {
+        icon: MapPin,
+        value: String(statistics.active_sites.count),
+        label: 'Active Sites',
+        bgColor: Colors.successLight,
+      },
+    ];
+  }, [statistics]);
+
+  const missedAlerts = dashboard?.missed_patrol_alerts ?? [];
+  const recentIncidents = dashboard?.recent_incidents ?? [];
+  const activeGuards = dashboard?.active_guards ?? [];
+  const showContentShimmer = loading && !dashboard;
+
+  const listStickyHeaderIndices = useMemo(() => {
+    const alertsCount = missedAlerts.length === 0 ? 1 : missedAlerts.length;
+    const incidentsCount =
+      recentIncidents.length === 0 ? 1 : recentIncidents.length;
+    const incidentsHeaderIndex = 1 + alertsCount;
+    const guardsHeaderIndex = incidentsHeaderIndex + 1 + incidentsCount;
+    return [0, incidentsHeaderIndex, guardsHeaderIndex];
+  }, [missedAlerts.length, recentIncidents.length]);
 
   return (
-    <ManagerTabShell activeIndex={MANAGER_TAB_INDEX.DASHBOARD}>
-      <ScrollView showsVerticalScrollIndicator={false} style={{ flex: 1 }}>
-        <ManagerHeader
-          title={
-            <>
-              Operations View,{'\n'}
-              <Text style={styles.greetAccent}>Sara Ahmed</Text>
-            </>
-          }
-          subtitle={`${formatToday()} · 3 Sites Active`}
-        />
-
-        <View style={[sharedStyles.body, { marginTop: -10 }]}>
-          <View style={styles.ovGrid}>
-            {OVERVIEW.map((item, i) => {
-              const Icon = item.icon;
-              return (
-                <View key={i} style={[styles.ovCard, Shadows.card]}>
-                  <View style={[styles.ovIcon, { backgroundColor: item.bg }]}>
-                    <Icon size={18} color="#334155" />
-                  </View>
-                  <Text style={styles.ovNum}>{item.value}</Text>
-                  <Text style={styles.ovLabel}>{item.label}</Text>
-                  <Text
-                    style={[
-                      styles.ovTrend,
-                      { color: item.trendUp ? Colors.success : Colors.danger },
-                    ]}
-                  >
-                    {item.trend}
-                  </Text>
+    <View style={styles.container}>
+      <StatusBar barStyle="light-content" backgroundColor={Colors.headerStart} />
+      <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
+        <View style={styles.header}>
+          <View style={styles.headerDecor} />
+          <View style={styles.topRow}>
+            <View style={styles.managerInfo}>
+              <TouchableOpacity
+                onPress={() => navigation.navigate(MANAGER_ROUTES.PROFILE)}
+              >
+                <View style={styles.avatar}>
+                  <User size={18} color="white" />
                 </View>
-              );
-            })}
-          </View>
-
-          <SectionHeader
-            title="Missed Patrol Alerts"
-            action="View All →"
-            dark={false}
-          />
-          {MISSED_ALERTS.map(alert => (
-            <View key={alert.id} style={[styles.alertRow, Shadows.card]}>
-              <View style={styles.alertIcon}>
-                <Clock size={16} color={Colors.danger} />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.alertTitle}>{alert.guard}</Text>
-                <Text style={styles.alertSub}>
-                  {alert.site} · {alert.zone} · {alert.slot}
+              </TouchableOpacity>
+              <View style={styles.managerTextWrap}>
+                {loading && !dashboard ? (
+                  <ShimmerBox width={120} height={13} tone="dark" borderRadius={6} />
+                ) : (
+                  <Text style={styles.managerName} numberOfLines={1}>
+                    {managerName}
+                  </Text>
+                )}
+                <Text style={styles.managerRole}>
+                  {managerInfo?.role ?? 'Operations Manager'}
                 </Text>
               </View>
-              <Text style={styles.alertBadge}>MISSED</Text>
             </View>
-          ))}
+            <View style={styles.notifBtn}>
+              <Bell size={20} color="white" />
+              <View style={styles.notifDot} />
+            </View>
+          </View>
+          <Text style={styles.greet}>{getTimeGreeting()},</Text>
+          {loading && !dashboard ? (
+            <ShimmerBox
+              width={110}
+              height={24}
+              tone="dark"
+              borderRadius={8}
+              style={styles.greetShimmer}
+            />
+          ) : (
+            <Text style={styles.greetAccent}>{greetingName}!</Text>
+          )}
+          <Text style={styles.greetSub}>
+            {managerInfo?.date_label ?? formatTodayLabel()}
+          </Text>
+        </View>
 
-          <SectionHeader title="Recent Incidents" action="Reports →" />
-          {RECENT_INCIDENTS.map(inc => (
-            <TouchableOpacity
-              key={inc.id}
-              style={[styles.incRow, Shadows.card]}
-              onPress={() => navigation.navigate(MANAGER_ROUTES.REPORTS)}
-            >
-              <View
-                style={[
-                  styles.sevDot,
-                  { backgroundColor: sevColor[inc.severity] },
-                ]}
-              />
-              <View style={{ flex: 1 }}>
-                <Text style={styles.incTitle}>{inc.title}</Text>
-                <Text style={styles.incSub}>
-                  {inc.site} · {inc.time}
-                </Text>
-              </View>
-              <ChevronRight size={16} color={Colors.textMuted} />
-            </TouchableOpacity>
-          ))}
+        <View style={styles.body}>
+          {error ? (
+            <View style={styles.errorWrap}>
+              <AuthErrorBanner message={error} />
+            </View>
+          ) : null}
 
-          <SectionHeader
-            title="Active Guards"
-            action="Guards →"
-          />
-          {ACTIVE_GUARDS.map(g => (
-            <TouchableOpacity
-              key={g.id}
-              style={[styles.guardRow, Shadows.card]}
-              onPress={() =>
-                navigation.navigate(MANAGER_ROUTES.GUARD_DETAILS, {
-                  guardId: g.id,
-                  name: g.name,
-                })
+          {showContentShimmer ? (
+            <ScrollView
+              style={styles.scroll}
+              contentContainerStyle={styles.scrollContent}
+              showsVerticalScrollIndicator={false}
+              refreshControl={
+                <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
               }
             >
-              <View style={[styles.guardAv, { backgroundColor: g.avatarBg }]}>
-                <Text style={[styles.guardAvText, { color: g.avatarColor }]}>
-                  {g.initials}
-                </Text>
+              <ManagerDashboardShimmer includeHeader={false} />
+            </ScrollView>
+          ) : (
+            <>
+              <View style={styles.statsGrid}>
+                {overviewCards.map((item, i) => (
+                  <StatCard
+                    key={i}
+                    icon={item.icon}
+                    value={item.value}
+                    label={item.label}
+                    bgColor={item.bgColor}
+                  />
+                ))}
               </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.guardName}>{g.name}</Text>
-                <Text style={styles.guardSite}>{g.site}</Text>
-              </View>
-              <View style={styles.guardStatus}>
-                <View
-                  style={[
-                    styles.statusDot,
-                    { backgroundColor: statusDotColor[g.status] },
-                  ]}
-                />
-                <Text style={styles.guardPatrols}>{g.patrols}</Text>
-              </View>
-            </TouchableOpacity>
-          ))}
+              <ScrollView
+                style={styles.scroll}
+                contentContainerStyle={styles.scrollContent}
+                showsVerticalScrollIndicator={false}
+                stickyHeaderIndices={listStickyHeaderIndices}
+                refreshControl={
+                  <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+                }
+              >
+                <View style={sharedStyles.stickySectionHeader}>
+                  <SectionHeader
+                    title="Missed Patrol Alerts"
+                    action="View All →"
+                    dark={false}
+                  />
+                </View>
+                {missedAlerts.length === 0 ? (
+                  <Text style={styles.emptyText}>No missed patrol alerts.</Text>
+                ) : (
+                  missedAlerts.map((alert, index) => (
+                    <View
+                      key={`alert-${alert.guard_name}-${alert.time}-${index}`}
+                      style={[styles.alertRow, Shadows.card]}
+                    >
+                      <View style={styles.alertIcon}>
+                        <Clock size={16} color={Colors.danger} />
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.alertTitle}>{alert.guard_name}</Text>
+                        <Text style={styles.alertSub}>
+                          {getMissedAlertSubtitle(alert)}
+                        </Text>
+                      </View>
+                      <Text style={styles.alertBadge}>{alert.status}</Text>
+                    </View>
+                  ))
+                )}
+
+                <View style={sharedStyles.stickySectionHeader}>
+                  <SectionHeader title="Recent Incidents" action="Reports →" />
+                </View>
+                {recentIncidents.length === 0 ? (
+                  <Text style={styles.emptyText}>No recent incidents.</Text>
+                ) : (
+                  recentIncidents.map(inc => (
+                    <TouchableOpacity
+                      key={inc.id}
+                      style={[styles.incRow, Shadows.card]}
+                      onPress={() =>
+                        navigation.navigate(MANAGER_ROUTES.INCIDENT_DETAIL, {
+                          incidentId: inc.id,
+                        })
+                      }
+                    >
+                      <View
+                        style={[
+                          styles.sevDot,
+                          { backgroundColor: mapSeverityColor(inc.severity) },
+                        ]}
+                      />
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.incTitle}>{inc.title}</Text>
+                        <Text style={styles.incSub}>
+                          {inc.location} · {inc.time}
+                        </Text>
+                      </View>
+                      <ChevronRight size={16} color={Colors.textMuted} />
+                    </TouchableOpacity>
+                  ))
+                )}
+
+                <View style={sharedStyles.stickySectionHeader}>
+                  <SectionHeader title="Active Guards" action="Guards →" />
+                </View>
+                {activeGuards.length === 0 ? (
+                  <Text style={styles.emptyText}>No active guards right now.</Text>
+                ) : (
+                  activeGuards.map((guard, index) => {
+                    const palette =
+                      guardAvatarPalette[index % guardAvatarPalette.length];
+                    return (
+                      <TouchableOpacity
+                        key={guard.id}
+                        style={[styles.guardRow, Shadows.card]}
+                        onPress={() =>
+                          navigation.navigate(MANAGER_ROUTES.GUARD_DETAILS, {
+                            guardId: String(guard.id),
+                            name: guard.name,
+                          })
+                        }
+                      >
+                        <View
+                          style={[
+                            styles.guardAv,
+                            { backgroundColor: palette.bg },
+                          ]}
+                        >
+                          <Text
+                            style={[styles.guardAvText, { color: palette.color }]}
+                          >
+                            {guard.initials}
+                          </Text>
+                        </View>
+                        <View style={{ flex: 1 }}>
+                          <Text style={styles.guardName}>{guard.name}</Text>
+                          <Text style={styles.guardSite}>{guard.site_name}</Text>
+                        </View>
+                        <View style={styles.guardStatus}>
+                          <View
+                            style={[
+                              styles.statusDot,
+                              { backgroundColor: mapGuardStatusDot(guard) },
+                            ]}
+                          />
+                          <Text style={styles.guardPatrols}>
+                            {guard.status_text}
+                          </Text>
+                        </View>
+                      </TouchableOpacity>
+                    );
+                  })
+                )}
+              </ScrollView>
+            </>
+          )}
         </View>
-      </ScrollView>
-    </ManagerTabShell>
+
+        <ManagerNavBar activeIndex={MANAGER_TAB_INDEX.DASHBOARD} />
+      </SafeAreaView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  greetAccent: { color: '#60a5fa' },
-  ovGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 9, marginBottom: 14 },
-  ovCard: {
-    backgroundColor: Colors.bgCard,
-    borderRadius: Radii.lg,
-    padding: 12,
-    width: '47%',
+  container: { flex: 1, backgroundColor: Colors.bgAlt },
+  safe: { flex: 1 },
+  header: {
+    backgroundColor: Colors.headerStart,
+    paddingHorizontal: 20,
+    paddingTop: 20,
+    paddingBottom: 32,
+    borderBottomLeftRadius: 28,
+    borderBottomRightRadius: 28,
+    overflow: 'hidden',
   },
-  ovIcon: {
-    width: 32,
-    height: 32,
-    borderRadius: 9,
+  headerDecor: {
+    position: 'absolute',
+    top: -20,
+    right: -20,
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    backgroundColor: 'rgba(121,31,61,0.10)',
+  },
+  topRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 18,
+  },
+  managerInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    flex: 1,
+    minWidth: 0,
+    paddingRight: 8,
+  },
+  managerTextWrap: { flex: 1, minWidth: 0 },
+  avatar: {
+    width: 40,
+    height: 40,
+    backgroundColor: Colors.accent,
+    borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 7,
   },
-  ovNum: { fontSize: 24, fontWeight: '800', color: Colors.textPrimary },
-  ovLabel: { fontSize: FontSizes.xs, color: Colors.textMuted },
-  ovTrend: { fontSize: FontSizes.xs, fontWeight: '700', marginTop: 3 },
-
+  managerName: { fontSize: 13, fontWeight: '700', color: Colors.white },
+  managerRole: { fontSize: 10, color: Colors.textOnDarkMuted },
+  notifBtn: {
+    width: 34,
+    height: 34,
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  notifDot: {
+    width: 8,
+    height: 8,
+    backgroundColor: Colors.accent,
+    borderRadius: 4,
+    position: 'absolute',
+    top: 5,
+    right: 5,
+    borderWidth: 1.5,
+    borderColor: Colors.headerStart,
+  },
+  greet: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: Colors.white,
+    lineHeight: 28,
+  },
+  greetAccent: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: Colors.accent,
+    lineHeight: 28,
+    marginTop: 2,
+  },
+  greetShimmer: {
+    marginTop: 4,
+    marginBottom: 2,
+  },
+  greetSub: { fontSize: 11, color: 'rgba(255,255,255,0.4)', marginTop: 4 },
+  body: {
+    flex: 1,
+    paddingTop: Spacing.sm,
+    marginTop: 0,
+  },
+  scroll: { flex: 1 },
+  scrollContent: { paddingBottom: 16, flexGrow: 0, paddingHorizontal: Spacing.md },
+  errorWrap: { paddingHorizontal: Spacing.md, paddingTop: Spacing.sm },
+  statsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: Spacing.xs,
+    marginBottom: 8,
+    paddingHorizontal: Spacing.md,
+  },
+  emptyText: {
+    fontSize: FontSizes.sm,
+    color: Colors.textMuted,
+    marginBottom: 12,
+  },
   alertRow: {
     backgroundColor: Colors.bgCard,
     borderRadius: Radii.md,
@@ -238,7 +527,6 @@ const styles = StyleSheet.create({
     color: Colors.danger,
     letterSpacing: 0.5,
   },
-
   incRow: {
     backgroundColor: Colors.bgCard,
     borderRadius: Radii.md,
@@ -251,7 +539,6 @@ const styles = StyleSheet.create({
   sevDot: { width: 8, height: 8, borderRadius: 4 },
   incTitle: { fontSize: 12, fontWeight: '700', color: Colors.textPrimary },
   incSub: { fontSize: FontSizes.xs, color: Colors.textMuted, marginTop: 1 },
-
   guardRow: {
     backgroundColor: Colors.bgCard,
     borderRadius: Radii.md,

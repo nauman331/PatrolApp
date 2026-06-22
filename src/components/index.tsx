@@ -42,11 +42,9 @@ export const NavBar: React.FC<NavBarProps> = ({
   const inactive =
     variant === 'dark'
       ? '#AAAAAA'
-      : variant === 'mgr'
-      ? '#aab4d4'
       : Colors.navInactive;
 
-  const active = variant === 'mgr' ? '#1a56db' : Colors.navActive;
+  const active = Colors.navActive;
 
   return (
     <View
@@ -126,6 +124,8 @@ interface StatCardProps {
   value: string;
   label: string;
   bgColor: string;
+  trend?: string;
+  trendUp?: boolean;
 }
 
 export const StatCard: React.FC<StatCardProps> = ({
@@ -133,6 +133,8 @@ export const StatCard: React.FC<StatCardProps> = ({
   value,
   label,
   bgColor,
+  trend,
+  trendUp = true,
 }) => {
   const Icon = icon as any;
 
@@ -147,6 +149,17 @@ export const StatCard: React.FC<StatCardProps> = ({
       </View>
       <Text style={styles.statNum}>{value}</Text>
       <Text style={styles.statLbl}>{label}</Text>
+      {trend ? (
+        <Text
+          style={[
+            styles.statTrend,
+            { color: trendUp ? Colors.success : Colors.danger },
+          ]}
+          numberOfLines={2}
+        >
+          {trend}
+        </Text>
+      ) : null}
     </View>
   );
 };
@@ -360,6 +373,12 @@ const styles = StyleSheet.create({
   statLbl: {
     fontSize: FontSizes.xs,
     color: Colors.textMuted,
+  },
+  statTrend: {
+    fontSize: FontSizes.xs,
+    fontWeight: '700',
+    marginTop: 3,
+    lineHeight: 13,
   },
 
   primaryBtn: {

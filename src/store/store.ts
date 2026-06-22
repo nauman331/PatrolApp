@@ -9,6 +9,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import authReducer from './slices/authSlice';
 import jobsReducer from './slices/jobsSlice';
 import incidentsReducer from './slices/incidentsSlice';
+import managerDashboardReducer from './slices/managerDashboardSlice';
 
 // Persist configuration
 const persistConfig = {
@@ -29,6 +30,7 @@ export const store = configureStore({
         auth: persistedAuthReducer,
         jobs: jobsReducer,
         incidents: incidentsReducer,
+        managerDashboard: managerDashboardReducer,
     },
     middleware: (getDefaultMiddleware: any) =>
         getDefaultMiddleware({

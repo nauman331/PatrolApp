@@ -1,4 +1,9 @@
-export type ShiftStatus = 'active' | 'upcoming' | 'done' | 'timeout';
+export type ShiftStatus =
+  | 'active'
+  | 'upcoming'
+  | 'ready'
+  | 'done'
+  | 'missed';
 
 export interface MappedShift {
   site: string;
@@ -55,8 +60,9 @@ function normalizeStatusValue(raw: unknown): string {
       0: 'upcoming',
       1: 'active',
       2: 'done',
-      3: 'timeout',
-      4: 'timeout',
+      3: 'missed',
+      4: 'missed',
+      5: 'ready',
     };
     return statusByCode[raw] ?? String(raw);
   }
@@ -99,7 +105,12 @@ function mapStatus(raw: unknown): ShiftStatus {
       'absent',
     ].includes(s)
   ) {
-    return 'timeout';
+    return 'missed';
+  }
+  if (
+    ['ready', 'check_in_open', 'can_check_in', 'check-in-open'].includes(s)
+  ) {
+    return 'ready';
   }
   if (
     ['done', 'completed', 'finished', 'closed', 'complete', 'ended'].includes(s)
@@ -171,6 +182,31 @@ function getShiftDateRaw(row: Record<string, unknown>): string {
     row.scheduled_date,
     row.start_date,
   );
+}
+
+function getShiftStartTimestamp(row: Record<string, unknown>): number | null {
+  const startDatetime = parseFlexibleDate(
+    row.start_datetime ?? row.start_at ?? row.shift_start_datetime,
+  );
+  if (startDatetime != null) return startDatetime;
+
+  const shiftDate = getShiftDateRaw(row);
+  const startTime = pickString(
+    row.start_time,
+    row.shift_start,
+    row.from_time,
+    row.startTime,
+  );
+
+  if (shiftDate && startTime) {
+    return combineDateAndTime(shiftDate, startTime);
+  }
+
+  if (shiftDate) {
+    return parseFlexibleDate(`${shiftDate}T00:00:00`);
+  }
+
+  return null;
 }
 
 function getShiftEndTimestamp(row: Record<string, unknown>): number | null {
@@ -247,22 +283,24 @@ function resolveShiftStatus(
     return 'done';
   }
 
-  if (apiStatus === 'done' || apiStatus === 'timeout') {
-    return apiStatus;
+  if (apiStatus === 'done') {
+    return 'done';
   }
 
   const now = Date.now();
+  const startTs = getShiftStartTimestamp(row);
   const endTs = getShiftEndTimestamp(row);
 
+  if (apiStatus === 'missed') {
+    return 'missed';
+  }
+
   if (apiStatus === 'active') {
-    if (endTs != null && endTs < now) {
-      return 'timeout';
-    }
     return 'active';
   }
 
   if (endTs != null && endTs < now) {
-    return 'timeout';
+    return 'missed';
   }
 
   const shiftDate = getShiftDateRaw(row);
@@ -275,8 +313,16 @@ function resolveShiftStatus(
       !Number.isNaN(shiftDayStart.getTime()) &&
       shiftDayStart.getTime() < todayStart.getTime()
     ) {
-      return 'timeout';
+      return 'missed';
     }
+  }
+
+  if (startTs != null && startTs <= now && (endTs == null || endTs >= now)) {
+    return 'ready';
+  }
+
+  if (startTs != null && startTs > now) {
+    return 'upcoming';
   }
 
   return apiStatus;
@@ -425,9 +471,10 @@ export function mapAndSortShifts(jobs: unknown[]): MappedShift[] {
 export type ShiftListFilter =
   | 'All'
   | 'Active'
+  | 'Ready'
   | 'Upcoming'
   | 'Completed'
-  | 'Timed Out';
+  | 'Missed';
 
 export function filterShiftsByStatus(
   shifts: MappedShift[],
@@ -435,9 +482,10 @@ export function filterShiftsByStatus(
 ): MappedShift[] {
   if (filter === 'All') return shifts;
   if (filter === 'Active') return shifts.filter(s => s.status === 'active');
+  if (filter === 'Ready') return shifts.filter(s => s.status === 'ready');
   if (filter === 'Upcoming') return shifts.filter(s => s.status === 'upcoming');
   if (filter === 'Completed') return shifts.filter(s => s.status === 'done');
-  if (filter === 'Timed Out') return shifts.filter(s => s.status === 'timeout');
+  if (filter === 'Missed') return shifts.filter(s => s.status === 'missed');
   return shifts;
 }
 
