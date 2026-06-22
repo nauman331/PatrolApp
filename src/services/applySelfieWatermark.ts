@@ -1,4 +1,4 @@
-import { Image, Platform } from 'react-native';
+import { Platform } from 'react-native';
 import ReactNativeBlobUtil from 'react-native-blob-util';
 import Marker, {
   ImageFormat,
@@ -19,8 +19,8 @@ export type SelfieWatermarkJob = {
 const MARKER_QUALITY = 92;
 const ANDROID_MARKER_OPTS =
   Platform.OS === 'android' ? { maxSize: 2048 as const } : {};
-
-let cachedLogoUri: string | null = null;
+const IOS_MARKER_OPTS =
+  Platform.OS === 'ios' ? { maxSize: 2048 as const } : {};
 
 function normalizeFileUri(uri: string): string {
   if (!uri) return uri;
@@ -124,104 +124,41 @@ async function copyUriToCache(uri: string, base64?: string): Promise<string> {
   throw new Error('Could not read selfie image');
 }
 
-async function ensureLogoCacheFile(): Promise<string | null> {
-  if (cachedLogoUri && (await fileExists(cachedLogoUri))) {
-    return cachedLogoUri;
-  }
-
-  const dest = `${ReactNativeBlobUtil.fs.dirs.CacheDir}/opg_logo_watermark.png`;
-  const resolved = Image.resolveAssetSource(appLogo);
-  if (!resolved?.uri) {
-    return null;
-  }
-
-  try {
-    const { uri } = resolved;
-
-    if (uri.startsWith('http://') || uri.startsWith('https://')) {
-      await ReactNativeBlobUtil.config({ path: dest, fileCache: true }).fetch(
-        'GET',
-        uri,
-      );
-    } else if (uri.startsWith('file://')) {
-      const sourcePath = stripFilePrefix(uri);
-      if (await ReactNativeBlobUtil.fs.exists(sourcePath)) {
-        await ReactNativeBlobUtil.fs.cp(sourcePath, dest);
-      } else {
-        await ReactNativeBlobUtil.config({ path: dest, fileCache: true }).fetch(
-          'GET',
-          uri,
-        );
-      }
-    } else {
-      await ReactNativeBlobUtil.config({ path: dest, fileCache: true }).fetch(
-        'GET',
-        uri,
-      );
-    }
-
-    if (!(await ReactNativeBlobUtil.fs.exists(dest)) && Platform.OS === 'android') {
-      const assetPath = ReactNativeBlobUtil.fs.asset('opg-logo.png');
-      const base64 = await ReactNativeBlobUtil.fs.readFile(assetPath, 'base64');
-      await ReactNativeBlobUtil.fs.writeFile(dest, base64, 'base64');
-    }
-
-    if (!(await ReactNativeBlobUtil.fs.exists(dest)) && Platform.OS === 'ios') {
-      const assetUri = Image.resolveAssetSource(appLogo)?.uri;
-      if (assetUri) {
-        await ReactNativeBlobUtil.config({ path: dest, fileCache: true }).fetch(
-          'GET',
-          assetUri,
-        );
-      }
-    }
-
-    if (!(await ReactNativeBlobUtil.fs.exists(dest))) {
-      return null;
-    }
-
-    cachedLogoUri = normalizeFileUri(dest);
-    return cachedLogoUri;
-  } catch {
-    return null;
-  }
-}
-
 async function applyLogoWatermark(
   sourceUri: string,
   stamp: number,
 ): Promise<string | null> {
-  const logoUri = await ensureLogoCacheFile();
-  if (!logoUri) {
-    return null;
-  }
-
-  const markedLogo = await Marker.markImage({
-    backgroundImage: {
-      src: markerImageSrc(sourceUri),
-      scale: 1,
-    },
-    watermarkImages: [
-      {
-        src: markerImageSrc(logoUri),
-        scale: Platform.OS === 'android' ? 0.15 : 0.2,
-        alpha: 0.85,
-        position: {
-          position: Position.bottomRight,
-        },
+  try {
+    const markedLogo = await Marker.markImage({
+      backgroundImage: {
+        src: markerImageSrc(sourceUri),
+        scale: 1,
       },
-    ],
-    quality: MARKER_QUALITY,
-    filename: `patrol_logo_${stamp}`,
-    saveFormat: ImageFormat.jpg,
-    ...ANDROID_MARKER_OPTS,
-  });
+      watermarkImages: [
+        {
+          src: appLogo,
+          scale: Platform.OS === 'android' ? 0.15 : 0.2,
+          alpha: 0.85,
+          position: {
+            position: Position.bottomRight,
+          },
+        },
+      ],
+      quality: MARKER_QUALITY,
+      filename: `patrol_logo_${stamp}`,
+      saveFormat: ImageFormat.jpg,
+      ...ANDROID_MARKER_OPTS,
+      ...IOS_MARKER_OPTS,
+    });
 
-  const normalized = normalizeFileUri(markedLogo);
-  if (!(await fileExists(normalized))) {
+    const normalized = normalizeFileUri(markedLogo);
+    if (!(await fileExists(normalized))) {
+      return null;
+    }
+    return normalized;
+  } catch {
     return null;
   }
-  return normalized;
 }
 
 async function applyTimestampWatermark(
@@ -258,6 +195,7 @@ async function applyTimestampWatermark(
     filename: `patrol_wm_${stamp}`,
     saveFormat: ImageFormat.jpg,
     ...ANDROID_MARKER_OPTS,
+    ...IOS_MARKER_OPTS,
   });
 
   const normalized = normalizeFileUri(output);
@@ -270,28 +208,7 @@ async function applyTimestampWatermark(
 export async function resolveWatermarkSourceUri(
   job: SelfieWatermarkJob,
 ): Promise<string> {
-  if (job.base64?.trim()) {
-    const cleaned = job.base64.replace(/^data:image\/\w+;base64,/, '').trim();
-    if (cleaned) {
-      return `data:image/jpeg;base64,${cleaned}`;
-    }
-  }
-
-  const normalized = normalizeFileUri(job.sourceUri.trim());
-  if (!normalized) {
-    throw new Error('Could not read selfie image');
-  }
-
-  if (
-    Platform.OS === 'ios' &&
-    (normalized.startsWith('file://') || normalized.startsWith('data:'))
-  ) {
-    if (await fileExists(normalized)) {
-      return normalized;
-    }
-  }
-
-  return copyUriToCache(normalized, job.base64);
+  return copyUriToCache(job.sourceUri, job.base64);
 }
 
 export async function applySelfieWatermark(

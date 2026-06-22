@@ -416,6 +416,7 @@ export default function AddIncidentScreen() {
             maxWidth: 1280,
             maxHeight: 1280,
             saveToPhotos: false,
+            ...(Platform.OS === 'ios' ? { includeBase64: true } : {}),
           });
           appendPhotoResult(result);
         },
@@ -429,6 +430,7 @@ export default function AddIncidentScreen() {
             maxWidth: 1280,
             maxHeight: 1280,
             selectionLimit: 1,
+            ...(Platform.OS === 'ios' ? { includeBase64: true } : {}),
           });
           appendPhotoResult(result);
         },
@@ -438,7 +440,7 @@ export default function AddIncidentScreen() {
   };
 
   const startPhotoWatermark = useCallback(
-    (asset: { uri?: string; width?: number; height?: number }) => {
+    (asset: { uri?: string; width?: number; height?: number; base64?: string }) => {
       if (!asset.uri) {
         Alert.alert('Error', 'Could not read photo data.');
         return;
@@ -452,6 +454,7 @@ export default function AddIncidentScreen() {
         timestamp: formatCaptureTimestamp(now),
         width: asset.width,
         height: asset.height,
+        base64: asset.base64,
       });
     },
     [],

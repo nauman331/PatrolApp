@@ -2,8 +2,7 @@ module.exports = {
   dependencies: {
     'react-native-image-marker': {
       platforms: {
-        // Watermarks use react-native-view-shot on iOS and Android.
-        ios: null,
+        // Android uses react-native-view-shot; marker stays as JS fallback only.
         android: null,
       },
     },

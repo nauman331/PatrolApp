@@ -43,7 +43,51 @@ function waitForNextFrame(): Promise<void> {
   });
 }
 
-function WatermarkCanvas({
+function IOSNativeWatermark({
+  job,
+  onComplete,
+  onError,
+}: {
+  job: SelfieWatermarkJob;
+  onComplete: (uri: string) => void;
+  onError: (error: Error) => void;
+}) {
+  const onCompleteRef = useRef(onComplete);
+  const onErrorRef = useRef(onError);
+
+  onCompleteRef.current = onComplete;
+  onErrorRef.current = onError;
+
+  useEffect(() => {
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const uri = await applySelfieWatermark(job);
+        if (cancelled) {
+          return;
+        }
+        onCompleteRef.current(normalizeCaptureUri(uri));
+      } catch (error) {
+        if (!cancelled) {
+          onErrorRef.current(
+            error instanceof Error
+              ? error
+              : new Error('Could not apply watermark to selfie'),
+          );
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [job]);
+
+  return null;
+}
+
+function AndroidWatermarkCanvas({
   job,
   onComplete,
   onError,
@@ -118,7 +162,7 @@ function WatermarkCanvas({
     (async () => {
       await waitForNextFrame();
       await new Promise<void>(resolve => {
-        setTimeout(resolve, Platform.OS === 'android' ? 450 : 250);
+        setTimeout(resolve, 450);
       });
 
       if (cancelled || capturedRef.current) {
@@ -207,8 +251,18 @@ export function SelfieWatermarkProcessor({ job, onComplete, onError }: Props) {
     return null;
   }
 
+  if (Platform.OS === 'ios') {
+    return (
+      <IOSNativeWatermark
+        job={job}
+        onComplete={uri => onCompleteRef.current(uri)}
+        onError={error => onErrorRef.current(error)}
+      />
+    );
+  }
+
   return (
-    <WatermarkCanvas
+    <AndroidWatermarkCanvas
       job={job}
       onComplete={uri => onCompleteRef.current(uri)}
       onError={error => onErrorRef.current(error)}
