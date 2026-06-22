@@ -14,7 +14,7 @@ const SELFIE_CAMERA_OPTIONS: CameraOptions = {
   mediaType: 'photo',
   cameraType: 'front',
   saveToPhotos: false,
-  quality: 0.85,
+  quality: 0.8,
   maxWidth: 1280,
   maxHeight: 1280,
   presentationStyle: 'fullScreen',
