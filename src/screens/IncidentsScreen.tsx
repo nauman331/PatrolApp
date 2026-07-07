@@ -133,7 +133,11 @@ export default function IncidentsScreen() {
       </SafeAreaView>
 
       <SafeAreaView style={styles.safeBody} edges={['bottom']}>
-        <ScrollView style={styles.body} showsVerticalScrollIndicator={false}>
+        <ScrollView
+          style={styles.body}
+          contentContainerStyle={styles.bodyContent}
+          showsVerticalScrollIndicator={false}
+        >
           {loading ? (
             <IncidentListShimmer count={3} />
           ) : error ? (
@@ -179,64 +183,64 @@ export default function IncidentsScreen() {
                     onPress={() => openReport(inc)}
                     activeOpacity={0.88}
                   >
-                  <View style={styles.cardHeader}>
-                    <View style={styles.siteIconWrap}>
-                      <MapPin size={16} color={Colors.accent} />
+                    <View style={styles.cardHeader}>
+                      <View style={styles.siteIconWrap}>
+                        <MapPin size={16} color={Colors.accent} />
+                      </View>
+                      <View style={styles.cardHeaderMain}>
+                        <Text style={styles.siteName} numberOfLines={2}>
+                          {inc.siteName || 'Unknown site'}
+                        </Text>
+                        <Text style={styles.reportId}>Report #{inc.id}</Text>
+                      </View>
+                      <View
+                        style={[styles.sevBadge, { backgroundColor: sev.bg }]}
+                      >
+                        <Text style={[styles.sevText, { color: sev.color }]}>
+                          {inc.severity}
+                        </Text>
+                      </View>
                     </View>
-                    <View style={styles.cardHeaderMain}>
-                      <Text style={styles.siteName} numberOfLines={2}>
-                        {inc.siteName || 'Unknown site'}
-                      </Text>
-                      <Text style={styles.reportId}>Report #{inc.id}</Text>
-                    </View>
-                    <View
-                      style={[styles.sevBadge, { backgroundColor: sev.bg }]}
-                    >
-                      <Text style={[styles.sevText, { color: sev.color }]}>
-                        {inc.severity}
-                      </Text>
-                    </View>
-                  </View>
 
-                  <View style={styles.typeChip}>
-                    <AlertTriangle size={12} color={sev.color} />
-                    <Text style={styles.typeChipText} numberOfLines={1}>
-                      {inc.injuryType || 'Incident'}
+                    <View style={styles.typeChip}>
+                      <AlertTriangle size={12} color={sev.color} />
+                      <Text style={styles.typeChipText} numberOfLines={1}>
+                        {inc.injuryType || 'Incident'}
+                      </Text>
+                    </View>
+
+                    <Text style={styles.description} numberOfLines={2}>
+                      {inc.injuryDetail || 'No additional details provided.'}
                     </Text>
-                  </View>
 
-                  <Text style={styles.description} numberOfLines={2}>
-                    {inc.injuryDetail || 'No additional details provided.'}
-                  </Text>
-
-                  <View style={styles.metaRow}>
-                    <MetaChip
-                      icon={Users}
-                      label={`${peopleCount} ${peopleCount === 1 ? 'person' : 'people'}`}
-                    />
-                    <MetaChip
-                      icon={Car}
-                      label={`${vehiclesCount} ${vehiclesCount === 1 ? 'vehicle' : 'vehicles'}`}
-                    />
-                    <MetaChip
-                      icon={Eye}
-                      label={`${witnessesCount} ${witnessesCount === 1 ? 'witness' : 'witnesses'}`}
-                    />
-                    <MetaChip
-                      icon={Clock}
-                      label={inc.displayDateTime || '—'}
-                    />
-                    <MetaChip
-                      icon={ClipboardList}
-                      label={`Roster ${inc.rosterId ?? '—'}`}
-                    />
-                    {photoCount > 0 ? (
+                    <View style={styles.metaRow}>
                       <MetaChip
-                        icon={Camera}
-                        label={`${photoCount} photo${photoCount === 1 ? '' : 's'}`}
+                        icon={Users}
+                        label={`${peopleCount} ${peopleCount === 1 ? 'person' : 'people'}`}
                       />
-                    ) : null}
-                  </View>
+                      <MetaChip
+                        icon={Car}
+                        label={`${vehiclesCount} ${vehiclesCount === 1 ? 'vehicle' : 'vehicles'}`}
+                      />
+                      <MetaChip
+                        icon={Eye}
+                        label={`${witnessesCount} ${witnessesCount === 1 ? 'witness' : 'witnesses'}`}
+                      />
+                      <MetaChip
+                        icon={Clock}
+                        label={inc.displayDateTime || '—'}
+                      />
+                      <MetaChip
+                        icon={ClipboardList}
+                        label={`Roster ${inc.rosterId ?? '—'}`}
+                      />
+                      {photoCount > 0 ? (
+                        <MetaChip
+                          icon={Camera}
+                          label={`${photoCount} photo${photoCount === 1 ? '' : 's'}`}
+                        />
+                      ) : null}
+                    </View>
 
                   </TouchableOpacity>
 
@@ -339,6 +343,7 @@ const styles = StyleSheet.create({
   },
   hdrSub: { fontSize: FontSizes.xs, color: 'rgba(255,255,255,0.35)' },
   body: { flex: 1, padding: 14 },
+  bodyContent: { paddingBottom: 10 },
   emptyBox: {
     alignItems: 'center',
     paddingVertical: 48,

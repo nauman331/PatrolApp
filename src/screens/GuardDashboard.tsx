@@ -264,45 +264,45 @@ export default function GuardDashboard() {
       />
       <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
         <View style={styles.header}>
-            <View style={styles.headerDecor} />
-            <View style={styles.topRow}>
-              <View style={styles.guardInfo}>
-                <TouchableOpacity
-                  onPress={() => navigation.navigate(GUARD_ROUTES.PROFILE)}
-                >
-                  <View style={styles.avatar}>
-                    <User size={18} color="white" />
-                  </View>
-                </TouchableOpacity>
-                <View style={styles.guardTextWrap}>
-                  {dashboardLoading ? (
-                    <ShimmerBox width={120} height={13} tone="dark" borderRadius={6} />
-                  ) : (
-                    <Text style={styles.guardName} numberOfLines={1}>
-                      {guardName}
-                    </Text>
-                  )}
-                  <Text style={styles.guardRole}>Security Guard</Text>
+          <View style={styles.headerDecor} />
+          <View style={styles.topRow}>
+            <View style={styles.guardInfo}>
+              <TouchableOpacity
+                onPress={() => navigation.navigate(GUARD_ROUTES.PROFILE)}
+              >
+                <View style={styles.avatar}>
+                  <User size={18} color="white" />
                 </View>
-              </View>
-              <View style={styles.notifBtn}>
-                <Bell size={20} color="white" />
-                <View style={styles.notifDot} />
+              </TouchableOpacity>
+              <View style={styles.guardTextWrap}>
+                {dashboardLoading ? (
+                  <ShimmerBox width={120} height={13} tone="dark" borderRadius={6} />
+                ) : (
+                  <Text style={styles.guardName} numberOfLines={1}>
+                    {guardName}
+                  </Text>
+                )}
+                <Text style={styles.guardRole}>Security Guard</Text>
               </View>
             </View>
-            <Text style={styles.greet}>{getTimeGreeting()},</Text>
-            {dashboardLoading ? (
-              <ShimmerBox
-                width={110}
-                height={24}
-                tone="dark"
-                borderRadius={8}
-                style={styles.greetShimmer}
-              />
-            ) : (
-              <Text style={styles.greetAccent}>{greetingName}!</Text>
-            )}
-            <Text style={styles.greetSub}>{formatTodayLabel()}</Text>
+            {/* <View style={styles.notifBtn}>
+                <Bell size={20} color="white" />
+                <View style={styles.notifDot} />
+              </View> */}
+          </View>
+          <Text style={styles.greet}>{getTimeGreeting()},</Text>
+          {dashboardLoading ? (
+            <ShimmerBox
+              width={110}
+              height={24}
+              tone="dark"
+              borderRadius={8}
+              style={styles.greetShimmer}
+            />
+          ) : (
+            <Text style={styles.greetAccent}>{greetingName}!</Text>
+          )}
+          <Text style={styles.greetSub}>{formatTodayLabel()}</Text>
         </View>
 
         <View style={styles.body}>

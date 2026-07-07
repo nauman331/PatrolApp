@@ -104,6 +104,21 @@ function mapSeverityColor(severity: string): string {
   return sevColor[severity.toLowerCase()] ?? Colors.textMuted;
 }
 
+/**
+ * Safely read a dashboard stat value. The API may return it as a nested
+ * object (`{ count: 5 }`), a bare number (`5`), or omit it entirely, so we
+ * guard against all three to avoid "Cannot read property 'count' of undefined".
+ */
+function statCount(stat: unknown): number {
+  if (stat == null) return 0;
+  if (typeof stat === 'number') return stat;
+  if (typeof stat === 'object') {
+    const value = (stat as { count?: unknown }).count;
+    if (value != null && !Number.isNaN(Number(value))) return Number(value);
+  }
+  return 0;
+}
+
 function getMissedAlertSubtitle(alert: ManagerMissedPatrolAlert): string {
   return `${alert.location} · ${alert.time}`;
 }
@@ -143,25 +158,25 @@ export default function ManagerDashboard() {
     return [
       {
         icon: Users,
-        value: String(statistics.guards_on_duty.count),
+        value: String(statCount(statistics.guards_on_duty)),
         label: 'Guards On Duty',
         bgColor: Colors.accentLight,
       },
       {
         icon: Footprints,
-        value: String(statistics.patrols_today.count),
+        value: String(statCount(statistics.patrols_today)),
         label: 'Patrols Today',
         bgColor: Colors.warningLight,
       },
       {
         icon: AlertTriangle,
-        value: String(statistics.open_incidents.count),
+        value: String(statCount(statistics.open_incidents)),
         label: 'Open Incidents',
         bgColor: Colors.dangerLight,
       },
       {
         icon: MapPin,
-        value: String(statistics.active_sites.count),
+        value: String(statCount(statistics.active_sites)),
         label: 'Active Sites',
         bgColor: Colors.successLight,
       },
