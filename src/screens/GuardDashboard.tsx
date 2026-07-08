@@ -245,12 +245,12 @@ export default function GuardDashboard() {
       label: 'View SOP',
       bg: Colors.infoLight,
     },
-    {
-      key: 'nfc',
-      icon: Radio,
-      label: 'NFC Scan',
-      bg: Colors.successLight,
-    },
+    // {
+    //   key: 'nfc',
+    //   icon: Radio,
+    //   label: 'NFC Scan',
+    //   bg: Colors.successLight,
+    // },
   ];
 
   const showShiftShimmer = dashboardLoading;

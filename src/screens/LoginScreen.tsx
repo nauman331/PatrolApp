@@ -15,7 +15,7 @@ import AuthKeyboardScroll, {
   AuthKeyboardScrollHandle,
 } from '../components/AuthKeyboardScroll';
 import AuthErrorBanner from '../components/AuthErrorBanner';
-import { Mail, Shield, User, KeyRound, Eye, EyeOff, Lock } from 'lucide-react-native';
+import { Mail, Shield, User, KeyRound, Eye, EyeOff, Lock, Phone } from 'lucide-react-native';
 import { sendGuardOtp, verifyGuardOtp } from '../services/guardApi';
 import { loginManager } from '../services/managerApi';
 import type { AuthStackScreenProps } from '../navigation/types';
@@ -191,7 +191,7 @@ export default function LoginScreen({ }: LoginScreenProps) {
       } else {
         setManagerError(
           res.message ||
-            'Invalid email or password. Please check your credentials and try again.',
+          'Invalid email or password. Please check your credentials and try again.',
         );
       }
     } catch {
@@ -307,7 +307,7 @@ export default function LoginScreen({ }: LoginScreenProps) {
                     editable={!loading}
                     underlineColorAndroid="transparent"
                   />
-                  <Mail size={18} color={Colors.textSecondary} />
+                  <Phone size={18} color={Colors.textSecondary} />
                 </View>
 
                 {otpSent && (
