@@ -4,6 +4,7 @@ import {
   Text,
   TouchableOpacity,
   StyleSheet,
+  ScrollView,
 } from 'react-native';
 import { Colors, FontSizes, Radii, Shadows } from '../../theme';
 import { CheckCircle, XCircle, Clock } from 'lucide-react-native';
@@ -19,6 +20,7 @@ import {
   mapManagerStatusColor,
   type ManagerAttendanceData,
 } from '../../services/managerApi';
+import { formatFullDisplayDate } from '../../services/guardJobsMapper';
 
 type Props = ManagerStackScreenProps<'ManagerGuardAttendance'>;
 
@@ -89,15 +91,20 @@ export default function ManagerGuardAttendanceScreen({ route }: Props) {
 
   return (
     <ManagerStackShell
-      header={<ManagerStackHeader title="Attendance" subtitle={name} />}
+      header={<ManagerStackHeader title="Activity" subtitle={name} />}
     >
       <ManagerStackListLayout
         refreshing={refreshing}
         onRefresh={onRefresh}
         fixedContent={
-          <>
+          <View style={{ marginTop: 10 }}>
             {error ? <AuthErrorBanner message={error} /> : null}
-            <View style={sharedStyles.chipRow}>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              style={{ marginBottom: 12 }}
+              contentContainerStyle={[sharedStyles.chipRow, { flexWrap: 'nowrap', marginBottom: 0 }]}
+            >
               {monthOptions.map(opt => {
                 const active = opt.month === month && opt.year === year;
                 return (
@@ -124,7 +131,7 @@ export default function ManagerGuardAttendanceScreen({ route }: Props) {
                   </TouchableOpacity>
                 );
               })}
-            </View>
+            </ScrollView>
             {showShimmer ? (
               <ManagerAttendanceSummaryShimmer />
             ) : (
@@ -149,7 +156,7 @@ export default function ManagerGuardAttendanceScreen({ route }: Props) {
                 </View>
               </View>
             )}
-          </>
+          </View>
         }
       >
         {showShimmer ? (
@@ -168,7 +175,7 @@ export default function ManagerGuardAttendanceScreen({ route }: Props) {
                 style={[styles.row, Shadows.card]}
               >
                 <View style={styles.rowLeft}>
-                  <Text style={styles.date}>{row.date_label}</Text>
+                  <Text style={styles.date}>{formatFullDisplayDate(row.date)}</Text>
                   <Text style={styles.site}>{row.site_name}</Text>
                   <Text style={styles.shift}>{row.shift_time}</Text>
                   <Text style={styles.times}>

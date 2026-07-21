@@ -3,7 +3,7 @@ import autoTable from 'jspdf-autotable';
 import { Platform } from 'react-native';
 import ReactNativeBlobUtil from 'react-native-blob-util';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import type { MappedIncident } from './incidentsMapper';
+import { type MappedIncident, formatAppDateTime } from './incidentsMapper';
 
 const MARGIN = 48;
 const BOTTOM = 36;
@@ -120,7 +120,7 @@ function drawBanner(l: L, incident: MappedIncident) {
   l.doc.setFontSize(9);
   l.doc.text('Patrol App', l.pw - MARGIN, 28, { align: 'right' });
   l.doc.text(
-    new Date().toLocaleDateString(),
+    formatAppDateTime(new Date().toISOString()),
     l.pw - MARGIN,
     42,
     { align: 'right' },
@@ -299,29 +299,27 @@ function drawParagraph(l: L, text: string) {
 
 async function drawPhotos(l: L, incident: MappedIncident) {
   const photos = incident.photos.filter(p => p.uri || p.imgPath);
-  if (!photos.length) return;
+  const n = photos.length;
+  if (!n) return;
 
-  section(l, 7, `Photos (${photos.length})`);
+  section(l, 7, `Photos (${n})`);
 
-  const PHOTO_SIZE = 96;
-  const PHOTO_GAP = 10;
-  const COLS = 3;
+  const PHOTO_GAP = 8;
   const LABEL_H = 10;
+  // Calculate size to fit all photos in a single row
+  const PHOTO_SIZE = Math.min(110, (l.cw - PHOTO_GAP * (n - 1)) / n);
   const rowHeight = LABEL_H + PHOTO_SIZE + PHOTO_GAP;
-  const rows = Math.ceil(photos.length / COLS);
 
-  space(l, rows * rowHeight + 16);
+  space(l, rowHeight + 16);
   const startY = l.y;
 
-  for (let i = 0; i < photos.length; i++) {
+  for (let i = 0; i < n; i++) {
     const photo = photos[i];
     const source = photo.uri || photo.imgPath;
     if (!source) continue;
 
-    const col = i % COLS;
-    const row = Math.floor(i / COLS);
-    const x = MARGIN + col * (PHOTO_SIZE + PHOTO_GAP);
-    const y = startY + row * rowHeight;
+    const x = MARGIN + i * (PHOTO_SIZE + PHOTO_GAP);
+    const y = startY;
 
     l.doc.setFont('helvetica', 'bold');
     l.doc.setFontSize(8);
@@ -348,17 +346,17 @@ async function drawPhotos(l: L, incident: MappedIncident) {
         l.doc.setFont('helvetica', 'normal');
         l.doc.setFontSize(8);
         l.doc.setTextColor(...C.label);
-        l.doc.text('Unavailable', x + 18, imageY + PHOTO_SIZE / 2);
+        l.doc.text('Unavailable', x + PHOTO_SIZE / 2, imageY + PHOTO_SIZE / 2, { align: 'center' });
       }
     } else {
       l.doc.setFont('helvetica', 'normal');
       l.doc.setFontSize(8);
       l.doc.setTextColor(...C.label);
-      l.doc.text('Unavailable', x + 18, imageY + PHOTO_SIZE / 2);
+      l.doc.text('Unavailable', x + PHOTO_SIZE / 2, imageY + PHOTO_SIZE / 2, { align: 'center' });
     }
   }
 
-  l.y = startY + rows * rowHeight + 8;
+  l.y = startY + rowHeight + 8;
 }
 
 async function drawSignature(l: L, incident: MappedIncident) {
@@ -397,7 +395,7 @@ async function drawSignature(l: L, incident: MappedIncident) {
 
 function footers(l: L, reportId: number) {
   const total = l.doc.getNumberOfPages();
-  const stamp = new Date().toLocaleString();
+  const stamp = formatAppDateTime(new Date().toISOString());
   for (let p = 1; p <= total; p++) {
     l.doc.setPage(p);
     l.doc.setDrawColor(...C.line);
@@ -435,8 +433,7 @@ export async function buildIncidentReportPdf(
     ['Site', txt(incident.siteName)],
     ['Injury type', txt(incident.injuryType)],
     ['Severity', incident.severity],
-    ['Date', txt(incident.incidentDate)],
-    ['Time', txt(incident.incidentTime)],
+    ['Incident Date', formatAppDateTime(incident.incidentDate, incident.incidentTime)],
     ['Roster', String(incident.rosterId ?? '—')],
     ['People', String(peopleN)],
     ['Vehicles', String(vehiclesN)],
@@ -445,7 +442,7 @@ export async function buildIncidentReportPdf(
       ? [['Guard ID', String(incident.guardId)] as [string, string]]
       : []),
     ...(incident.createdAt
-      ? [['Recorded', txt(incident.createdAt)] as [string, string]]
+      ? [['Recorded', formatAppDateTime(incident.createdAt)] as [string, string]]
       : []),
   ]);
 

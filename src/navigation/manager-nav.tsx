@@ -9,6 +9,8 @@ import {
     ManagerShiftReportScreen,
     ManagerIncidentDetailScreen,
     ManagerRosterScreen,
+    ManagerRosterDetailScreen,
+    ManagerSiteDetailScreen,
 } from '../screens/manager';
 import ProfileScreen from '../screens/ProfileScreen';
 import PrivacyPolicyScreen from '../screens/PrivacyPolicyScreen';
@@ -68,6 +70,14 @@ export function ManagerNavigator() {
                 name={MANAGER_ROUTES.ROSTER}
                 component={ManagerRosterScreen}
                 options={{ animation: 'none' }}
+            />
+            <Stack.Screen
+                name={MANAGER_ROUTES.ROSTER_DETAIL}
+                component={ManagerRosterDetailScreen}
+            />
+            <Stack.Screen
+                name={MANAGER_ROUTES.SITE_DETAIL}
+                component={ManagerSiteDetailScreen}
             />
             <Stack.Screen
                 name={MANAGER_ROUTES.PROFILE}

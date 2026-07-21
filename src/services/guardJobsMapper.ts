@@ -15,9 +15,18 @@ export interface MappedShift {
   date?: string;
   zones: string;
   status: ShiftStatus;
+  signInTime?: string;
   sortTimestamp: number;
   progress?: number;
   progressLabel?: string;
+  // SOP / Docs
+  emergency_procedures?: string;
+  patrol_checkpoints?: string;
+  incident_reporting_guide?: string;
+  nfc_scan_protocol?: string;
+  site_map?: string;
+  work_instruction?: string;
+  health_safety_policy?: string;
 }
 
 export interface IncidentJobContext {
@@ -372,26 +381,75 @@ function formatGroupLabel(dateValue: unknown): string {
 }
 
 export function formatFullDisplayDate(dateValue?: unknown): string {
+  let parsed: Date | null = null;
+  let prefix = '';
+
   if (dateValue != null && String(dateValue).trim()) {
-    const normalized = String(dateValue).trim().replace(' ', 'T');
-    const parsed = new Date(normalized);
-    if (!Number.isNaN(parsed.getTime())) {
-      return parsed.toLocaleDateString(undefined, {
-        weekday: 'long',
-        month: 'long',
-        day: 'numeric',
-        year: 'numeric',
-      });
+    let str = String(dateValue).trim();
+
+    // Handle strings like "Site Name - Jul 9, 2026"
+    if (str.includes(' - ')) {
+      const lastIndex = str.lastIndexOf(' - ');
+      const possiblePrefix = str.substring(0, lastIndex);
+      const possibleDate = str.substring(lastIndex + 3).trim();
+
+      if (possibleDate.match(/[a-zA-Z]{3}/) || possibleDate.match(/\d/)) {
+        prefix = possiblePrefix + ' - ';
+        str = possibleDate;
+      }
     }
-    return String(dateValue);
+
+    // Try standard constructor
+    let d = new Date(str);
+    if (!isNaN(d.getTime())) {
+      parsed = d;
+    } else {
+      // Try replacing space with T for ISO-ish strings (only if it looks like YYYY-MM-DD HH:mm)
+      if (str.includes(' ') && str.includes('-')) {
+        d = new Date(str.replace(' ', 'T'));
+        if (!isNaN(d.getTime())) parsed = d;
+      }
+
+      // Try DMY match
+      if (!parsed) {
+        const dmyMatch = str.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})/);
+        if (dmyMatch) {
+          const day = parseInt(dmyMatch[1], 10);
+          const month = parseInt(dmyMatch[2], 10) - 1;
+          const year = parseInt(dmyMatch[3], 10);
+          parsed = new Date(year, month, day);
+        }
+      }
+
+      // Try MMM D, YYYY match
+      if (!parsed) {
+        const mdyMatch = str.match(/^([a-zA-Z]{3})[ ,]+(\d{1,2})[ ,]+(\d{4})/);
+        if (mdyMatch) {
+          const monthStr = mdyMatch[1].toLowerCase();
+          const day = parseInt(mdyMatch[2], 10);
+          const year = parseInt(mdyMatch[3], 10);
+          const months: Record<string, number> = {
+            jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5,
+            jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11
+          };
+          if (months[monthStr] !== undefined) {
+            parsed = new Date(year, months[monthStr], day);
+          }
+        }
+      }
+    }
+
+    if (!parsed || Number.isNaN(parsed.getTime())) {
+      return String(dateValue);
+    }
+  } else {
+    parsed = new Date();
   }
 
-  return new Date().toLocaleDateString(undefined, {
-    weekday: 'long',
-    month: 'long',
-    day: 'numeric',
-    year: 'numeric',
-  });
+  const dd = String(parsed.getDate()).padStart(2, '0');
+  const mm = String(parsed.getMonth() + 1).padStart(2, '0');
+  const yyyy = parsed.getFullYear();
+  return `${prefix}${dd}/${mm}/${yyyy}`;
 }
 
 export function mapApiJobToShift(job: unknown): MappedShift | null {
@@ -429,6 +487,14 @@ export function mapApiJobToShift(job: unknown): MappedShift | null {
     row.start_date,
   );
   const siteId = pickId(row.site_id ?? row.siteId);
+  const signInTime = pickString(
+    row.checked_in_at,
+    row.checkin_time,
+    row.check_in_time,
+    row.sign_in_time,
+    row.signin_time,
+    row.clock_in_time,
+  );
   const progress =
     typeof row.progress === 'number'
       ? row.progress
@@ -446,6 +512,7 @@ export function mapApiJobToShift(job: unknown): MappedShift | null {
     date: shiftDateRaw ? formatGroupLabel(shiftDateRaw) : undefined,
     zones: zones || 'All Zones',
     status,
+    signInTime: signInTime || undefined,
     sortTimestamp: parseSortTimestamp(row),
     progress,
     progressLabel:
@@ -454,6 +521,13 @@ export function mapApiJobToShift(job: unknown): MappedShift | null {
         : progress !== undefined
           ? `${progress}%`
           : undefined,
+    emergency_procedures: pickString(row.emergency_procedures),
+    patrol_checkpoints: pickString(row.patrol_checkpoints),
+    incident_reporting_guide: pickString(row.incident_reporting_guide),
+    nfc_scan_protocol: pickString(row.nfc_scan_protocol),
+    site_map: pickString(row.site_map),
+    work_instruction: pickString(row.work_instruction),
+    health_safety_policy: pickString(row.health_safety_policy),
   };
 }
 

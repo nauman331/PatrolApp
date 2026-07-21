@@ -1,4 +1,4 @@
-import React, { type ComponentType, type ReactNode } from 'react';
+import React, { type ComponentType, type ReactNode, useState } from 'react';
 
 import {
 
@@ -17,6 +17,8 @@ import {
   Image,
 
   Linking,
+
+  ActivityIndicator,
 
 } from 'react-native';
 
@@ -60,28 +62,26 @@ import { useAppSelector } from '../store/hooks';
 
 import { selectIncidentById } from '../store/slices/incidentsSlice';
 
-import type { MappedIncident } from '../services/incidentsMapper';
+import {
+  getIncidentListMeta,
+  formatAppDateTime,
+  type MappedIncident,
+} from '../services/incidentsMapper';
 
 import { downloadIncidentPdf } from '../services/incidentPdfDownload';
 
-
+import ImageViewerModal from '../components/ImageViewerModal';
 
 type ViewIncidentRoute = GuardStackScreenProps<'ViewIncidentReport'>['route'];
 
 
 
 function formatFieldLabel(key: string): string {
-
   return key
-
     .replace(/_/g, ' ')
-
     .replace(/([a-z])([A-Z])/g, '$1 $2')
-
     .trim()
-
     .replace(/\b\w/g, c => c.toUpperCase());
-
 }
 
 
@@ -260,7 +260,19 @@ export default function ViewIncidentReportScreen() {
 
   const incident = useAppSelector(selectIncidentById(route.params.incidentId));
 
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [viewerVisible, setViewerVisible] = useState(false);
+  const [selectedImage, setSelectedImage] = useState<string | null>(null);
 
+  const handleDownloadPdf = async () => {
+    if (!incident || isGenerating) return;
+    setIsGenerating(true);
+    try {
+      await downloadIncidentPdf(incident);
+    } finally {
+      setIsGenerating(false);
+    }
+  };
 
   if (!incident) {
 
@@ -335,7 +347,7 @@ export default function ViewIncidentReportScreen() {
     { label: 'Witnesses', value: String(witnessesCount) },
     { label: 'Injury type', value: incident.injuryType },
     { label: 'Details', value: incident.injuryDetail },
-    { label: 'Created', value: incident.createdAt ?? '' },
+    { label: 'Created', value: formatAppDateTime(incident.createdAt) },
   ].filter(
     e =>
       e.label === 'People involved' ||
@@ -430,11 +442,9 @@ export default function ViewIncidentReportScreen() {
               </View>
               <View style={styles.metaChip}>
                 <CalendarDays size={11} color={Colors.accent} />
-                <Text style={styles.metaChipText}>{incident.incidentDate}</Text>
-              </View>
-              <View style={styles.metaChip}>
-                <Clock size={11} color={Colors.accent} />
-                <Text style={styles.metaChipText}>{incident.incidentTime}</Text>
+                <Text style={styles.metaChipText}>
+                  {formatAppDateTime(incident.incidentDate, incident.incidentTime)}
+                </Text>
               </View>
               <View style={styles.metaChip}>
                 <MapPin size={11} color={Colors.accent} />
@@ -488,7 +498,6 @@ export default function ViewIncidentReportScreen() {
 
 
           {incident.witnesses.length > 0 ? (
-
             <SectionCard title={`Witnesses (${witnessesCount})`} icon={Eye}>
 
               <RecordList records={incident.witnesses} />
@@ -529,7 +538,10 @@ export default function ViewIncidentReportScreen() {
 
                       onPress={() => {
 
-                        if (photo.uri) Linking.openURL(photo.uri);
+                        if (photo.uri) {
+                          setSelectedImage(photo.uri);
+                          setViewerVisible(true);
+                        }
 
                       }}
 
@@ -609,27 +621,43 @@ export default function ViewIncidentReportScreen() {
 
           ) : null}
 
-
+{/*
 
           {incident.id ? (
 
             <TouchableOpacity
 
-              style={styles.pdfBtn}
+              style={[styles.pdfBtn, isGenerating && styles.pdfBtnDisabled]}
 
-              onPress={() => downloadIncidentPdf(incident)}
+              onPress={handleDownloadPdf}
+
+              disabled={isGenerating}
 
             >
 
-              <Text style={styles.pdfBtnText}>Download PDF</Text>
+              {isGenerating ? (
+                <View style={styles.loaderWrap}>
+                  <ActivityIndicator size="small" color={Colors.white} />
+                  <Text style={styles.pdfBtnText}>PDF Generating...</Text>
+                </View>
+              ) : (
+                <Text style={styles.pdfBtnText}>Download PDF</Text>
+              )}
 
             </TouchableOpacity>
 
           ) : null}
+       */}
 
         </ScrollView>
 
       </SafeAreaView>
+
+      <ImageViewerModal
+        visible={viewerVisible}
+        uri={selectedImage}
+        onClose={() => setViewerVisible(false)}
+      />
 
     </View>
 
@@ -893,19 +921,15 @@ const styles = StyleSheet.create({
 
     flexDirection: 'row',
 
-    flexWrap: 'wrap',
-
     marginHorizontal: -4,
 
   },
 
   photoCell: {
 
-    width: '33.33%',
+    flex: 1,
 
     paddingHorizontal: 4,
-
-    paddingBottom: 8,
 
   },
 
@@ -973,6 +997,16 @@ const styles = StyleSheet.create({
 
     marginTop: 2,
 
+  },
+
+  pdfBtnDisabled: {
+    opacity: 0.7,
+  },
+
+  loaderWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
   },
 
   pdfBtnText: {

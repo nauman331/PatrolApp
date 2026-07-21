@@ -27,6 +27,7 @@ import {
   Footprints,
   ScanLine,
   Route,
+  ClipboardList,
 } from 'lucide-react-native';
 import { useGuardNavigation } from '../navigation/utils';
 import { GUARD_ROUTES } from '../navigation/constants';
@@ -62,8 +63,20 @@ function pad(n: number) {
   return String(n).padStart(2, '0');
 }
 
+function normalizeDate(iso?: string) {
+  if (!iso) return new Date();
+  const normalized = iso.includes('T') ? iso : iso.replace(' ', 'T');
+  const d = new Date(normalized);
+  if (Number.isNaN(d.getTime())) {
+    // Fallback for formats that might still fail
+    const fallback = new Date(iso.replace(/-/g, '/'));
+    return Number.isNaN(fallback.getTime()) ? new Date() : fallback;
+  }
+  return d;
+}
+
 function formatElapsed(ms: number) {
-  const totalSec = Math.floor(ms / 1000);
+  const totalSec = Math.floor(Math.max(0, ms) / 1000);
   const h = Math.floor(totalSec / 3600);
   const m = Math.floor((totalSec % 3600) / 60);
   const s = totalSec % 60;
@@ -72,8 +85,7 @@ function formatElapsed(ms: number) {
 
 function formatSignInLabel(iso?: string) {
   if (!iso) return '—';
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return iso;
+  const d = normalizeDate(iso);
   const dd = pad(d.getDate());
   const mm = pad(d.getMonth() + 1);
   const yyyy = d.getFullYear();
@@ -124,6 +136,7 @@ export default function OngoingShiftScreen() {
   const [watermarkJob, setWatermarkJob] = useState<SelfieWatermarkJob | null>(null);
   const [watermarking, setWatermarking] = useState(false);
   const pendingSelfieRef = useRef<Asset | null>(null);
+  const isFetchingLocation = useRef(false);
   const [locationCoords, setLocationCoords] = useState('');
   const [locationLabel, setLocationLabel] = useState('');
   const [locationFetched, setLocationFetched] = useState(false);
@@ -169,78 +182,98 @@ export default function OngoingShiftScreen() {
   useEffect(() => {
     (async () => {
       const session = await getActiveShiftSession();
+      const p = route.params;
+
       if (session) {
         setRosterId(session.rosterId);
         setSite(session.site);
         setAddress(session.zones);
-        setSignInTime(session.signInTime);
         setSiteId(session.siteId);
+
+        // Sync sign-in time from params (API) if it's provided
+        if (p?.signInTime) {
+          setSignInTime(p.signInTime);
+          if (p.signInTime !== session.signInTime) {
+            await patchActiveShiftSession({ signInTime: p.signInTime });
+          }
+        } else {
+          setSignInTime(session.signInTime);
+        }
 
         if (
           (session.siteId == null || String(session.siteId).trim() === '') &&
-          route.params?.siteId != null
+          p?.siteId != null
         ) {
           const patched = await patchActiveShiftSession({
-            siteId: route.params.siteId,
+            siteId: p.siteId,
           });
           if (patched?.siteId != null) {
             setSiteId(patched.siteId);
           }
         }
-      } else if (route.params?.rosterId) {
+      } else if (p?.rosterId) {
+        const st = p.signInTime ?? new Date().toISOString();
         await saveActiveShiftSession({
-          rosterId: route.params.rosterId,
-          site: route.params.site ?? 'Site',
-          zones: route.params.zones ?? 'All Zones',
-          signInTime: route.params.signInTime ?? new Date().toISOString(),
-          shiftId: route.params.shiftId,
-          siteId: route.params.siteId,
+          rosterId: p.rosterId,
+          site: p.site ?? 'Site',
+          zones: p.zones ?? 'All Zones',
+          signInTime: st,
+          shiftId: p.shiftId,
+          siteId: p.siteId,
         });
-        setSiteId(route.params.siteId);
+        setSignInTime(st);
+        setSiteId(p.siteId);
       }
     })();
   }, [route.params]);
 
   useEffect(() => {
-    const start = new Date(signInTime).getTime();
+    const start = normalizeDate(signInTime).getTime();
     const tick = () => {
       const diff = Date.now() - start;
-      setElapsed(formatElapsed(Math.max(0, diff)));
+      setElapsed(formatElapsed(diff));
     };
     tick();
     const id = setInterval(tick, 1000);
     return () => clearInterval(id);
   }, [signInTime]);
 
-  const refreshLocation = useCallback(async () => {
-    if (locationFetched) {
-      return;
-    }
-
-    setLocationLoading(true);
-    try {
-      const allowed = await requestLocationPermission();
-      if (!allowed) {
-        Alert.alert('Permission required', 'Location permission is needed.');
+  const refreshLocation = useCallback(
+    async (showPermissionAlert = false) => {
+      if (locationFetched || isFetchingLocation.current) {
         return;
       }
 
-      let fix;
+      isFetchingLocation.current = true;
+      setLocationLoading(true);
       try {
-        fix = await fetchLocationFix(true, locationFallback);
-      } catch {
-        fix = await fetchLocationFix(false, locationFallback);
-      }
+        const allowed = await requestLocationPermission();
+        if (!allowed) {
+          if (showPermissionAlert) {
+            Alert.alert('Permission required', 'Location permission is needed.');
+          }
+          return;
+        }
 
-      setLocationCoords(fix.coordinates);
-      setLocationLabel(fix.displayName);
-      setLocationFetched(true);
-    } catch {
-      Alert.alert('Location unavailable', 'Could not get GPS coordinates.');
-    } finally {
-      setLocationLoading(false);
-    }
-  }, [locationFetched, locationFallback]);
+        let fix;
+        try {
+          fix = await fetchLocationFix(true, locationFallback);
+        } catch {
+          fix = await fetchLocationFix(false, locationFallback);
+        }
+
+        setLocationCoords(fix.coordinates);
+        setLocationLabel(fix.displayName);
+        setLocationFetched(true);
+      } catch {
+        // Fail silently, retry logic in useEffect will handle auto-fetches
+      } finally {
+        setLocationLoading(false);
+        isFetchingLocation.current = false;
+      }
+    },
+    [locationFetched, locationFallback],
+  );
 
   useEffect(() => {
     Geolocation.setRNConfiguration({
@@ -248,8 +281,17 @@ export default function OngoingShiftScreen() {
       authorizationLevel: 'whenInUse',
       locationProvider: 'auto',
     });
-    refreshLocation();
+    refreshLocation(false);
   }, [refreshLocation]);
+
+  useEffect(() => {
+    if (!locationFetched && !locationLoading) {
+      const timer = setTimeout(() => {
+        refreshLocation(false);
+      }, 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [locationFetched, locationLoading, refreshLocation]);
 
   const handleCaptureSelfie = async () => {
     const asset = await captureFaceSelfieFromCamera();
@@ -277,11 +319,8 @@ export default function OngoingShiftScreen() {
       return;
     }
     if (!locationCoords.trim()) {
-      Alert.alert('Error', 'Sign-out location is required.');
-      return;
-    }
-    if (!signoutNotes.trim()) {
-      Alert.alert('Error', 'Please add sign-out notes.');
+      Alert.alert('Error', 'Location required');
+      refreshLocation(true);
       return;
     }
     if (!signoutSelfie?.uri) {
@@ -453,26 +492,16 @@ export default function OngoingShiftScreen() {
             </>
           ) : null}
 
-          <View style={[styles.card, Shadows.card]}>
-            <Text style={styles.locLbl}>Sign-out location</Text>
-            <Text style={styles.locValue} numberOfLines={2}>
-              {locationLoading
-                ? 'Fetching location...'
-                : locationLabel || 'Location not available'}
-            </Text>
-            <TouchableOpacity
-              style={[
-                styles.refreshLocBtn,
-                (locationLoading || locationFetched) && styles.refreshLocBtnDisabled,
-              ]}
-              onPress={refreshLocation}
-              disabled={locationLoading || locationFetched}
-            >
-              <Text style={styles.refreshLocText}>
-                {locationFetched ? 'Location captured' : 'Refresh location'}
-              </Text>
-            </TouchableOpacity>
-          </View>
+{/*
+<View style={[styles.card, Shadows.card]}>
+  <Text style={styles.locLbl}>Sign-out location</Text>
+  <Text style={styles.locValue} numberOfLines={2}>
+    {locationLoading
+      ? 'Fetching location...'
+      : locationLabel || 'Location not available'}
+  </Text>
+</View>
+*/}
 
 
 
@@ -501,6 +530,17 @@ export default function OngoingShiftScreen() {
               <Route size={20} color={Colors.accent} />
             </View>
             <Text style={styles.actionTitle}>Patrolling</Text>
+            <Text style={styles.plusBtn}>+</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.actionRow, Shadows.card]}
+            onPress={() => navigation.navigate(GUARD_ROUTES.SOPS)}
+          >
+            <View style={[styles.actionIcon, { backgroundColor: Colors.successLight }]}>
+              <ClipboardList size={20} color={Colors.success} />
+            </View>
+            <Text style={styles.actionTitle}>SOP Documents</Text>
             <Text style={styles.plusBtn}>+</Text>
           </TouchableOpacity>
 

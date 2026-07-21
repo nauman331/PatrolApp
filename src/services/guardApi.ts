@@ -24,7 +24,13 @@ function extractToken(payload: Record<string, unknown>): string | undefined {
 
 function extractMessage(payload: unknown, fallback: string): string {
   if (!payload) return fallback;
-  if (typeof payload === 'string' && payload.trim()) return payload.trim();
+  if (typeof payload === 'string' && payload.trim()) {
+    const trimmed = payload.trim();
+    if (trimmed.startsWith('<!DOCTYPE') || trimmed.startsWith('<html')) {
+      return fallback;
+    }
+    return trimmed;
+  }
   if (typeof payload !== 'object') return fallback;
   const obj = payload as Record<string, unknown>;
   if (typeof obj.msg === 'string' && obj.msg.trim()) return obj.msg.trim();
@@ -289,11 +295,20 @@ export type GuardDashboardTodayJob = {
   site_address: string;
   site_id: number;
   state: string | null;
+  signin_time: string | null;
+  signout_time: string | null;
   start_datetime: string;
   end_datetime: string;
   shift_date: string;
   day_of_week: string;
   status: string;
+  emergency_procedures?: string | null;
+  patrol_checkpoints?: string | null;
+  incident_reporting_guide?: string | null;
+  nfc_scan_protocol?: string | null;
+  site_map?: string | null;
+  work_instruction?: string | null;
+  health_safety_policy?: string | null;
 };
 
 export type GuardDashboardData = {
@@ -320,6 +335,8 @@ function extractTodayJobs(raw: Record<string, unknown>): GuardDashboardTodayJob[
       site_address: typeof job.site_address === 'string' ? job.site_address : '',
       site_id: Number(job.site_id) || 0,
       state: typeof job.state === 'string' ? job.state : null,
+      signin_time: typeof job.signin_time === 'string' ? job.signin_time : null,
+      signout_time: typeof job.signout_time === 'string' ? job.signout_time : null,
       start_datetime:
         typeof job.start_datetime === 'string' ? job.start_datetime : '',
       end_datetime:
@@ -327,6 +344,13 @@ function extractTodayJobs(raw: Record<string, unknown>): GuardDashboardTodayJob[
       shift_date: typeof job.shift_date === 'string' ? job.shift_date : '',
       day_of_week: typeof job.day_of_week === 'string' ? job.day_of_week : '',
       status: typeof job.status === 'string' ? job.status : '',
+      emergency_procedures: typeof job.emergency_procedures === 'string' ? job.emergency_procedures : null,
+      patrol_checkpoints: typeof job.patrol_checkpoints === 'string' ? job.patrol_checkpoints : null,
+      incident_reporting_guide: typeof job.incident_reporting_guide === 'string' ? job.incident_reporting_guide : null,
+      nfc_scan_protocol: typeof job.nfc_scan_protocol === 'string' ? job.nfc_scan_protocol : null,
+      site_map: typeof job.site_map === 'string' ? job.site_map : null,
+      work_instruction: typeof job.work_instruction === 'string' ? job.work_instruction : null,
+      health_safety_policy: typeof job.health_safety_policy === 'string' ? job.health_safety_policy : null,
     }))
     .filter(job => job.roster_id > 0);
 }
@@ -592,9 +616,9 @@ export interface IncidentWitness {
   witness_more_info?: string;
 }
 
-export interface IncidentPhotoPayload {
-  imgPath: string;
-  timestamp: string;
+export interface IncidentPhotoPath {
+  path: string;
+  url: string;
 }
 
 export interface ReportIncidentPayload {
@@ -609,8 +633,8 @@ export interface ReportIncidentPayload {
   vehicle: IncidentVehicle[];
   emergency_services: IncidentEmergencyServices;
   wittness: IncidentWitness[];
-  photo: IncidentPhotoPayload[];
-  signature?: string;
+  photo: IncidentPhotoPath[];
+  signature?: IncidentPhotoPath;
 }
 
 export interface PatrolScanner {
@@ -891,11 +915,8 @@ export async function guardReportIncident(
       },
       wittness: payload.wittness ?? [],
       photo: payload.photo ?? [],
+      signature: payload.signature,
     };
-
-    if (payload.signature) {
-      body.signature = payload.signature;
-    }
 
     const response = await apiClient.post(
       `/guard/report-incident/${siteId}`,
@@ -916,6 +937,84 @@ export async function guardReportIncident(
       message: extractMessage(
         error?.response?.data,
         error?.message || 'Failed to submit incident report',
+      ),
+    };
+  }
+}
+
+export async function uploadIncidentImage(
+  uri: string,
+): Promise<GuardApiResult<IncidentPhotoPath>> {
+  try {
+    const formData = new FormData();
+    formData.append('file', {
+      uri,
+      name: 'incident_photo.jpg',
+      type: 'image/jpeg',
+    } as any);
+
+    const response = await apiClient.post(
+      '/guard/report-incident/upload-image',
+      formData,
+      { headers: { 'Content-Type': 'multipart/form-data' } },
+    );
+
+    const body = response.data;
+    if (body?.success && body.path && body.url) {
+      return {
+        success: true,
+        data: { path: body.path, url: body.url },
+      };
+    }
+    return {
+      success: false,
+      message: body?.message || 'Failed to upload image',
+    };
+  } catch (error: any) {
+    return {
+      success: false,
+      message: extractMessage(
+        error?.response?.data,
+        error?.message || 'Image upload failed',
+      ),
+    };
+  }
+}
+
+export async function uploadIncidentSignature(
+  uri: string,
+): Promise<GuardApiResult<IncidentPhotoPath>> {
+  try {
+    const formData = new FormData();
+    formData.append('file', {
+      uri,
+      name: 'signature.png',
+      type: 'image/png',
+    } as any);
+
+    const response = await apiClient.post(
+      '/guard/report-incident/upload-signature',
+      formData,
+      { headers: { 'Content-Type': 'multipart/form-data' } },
+    );
+
+    const body = response.data;
+    if (body?.success && body.path && body.url) {
+      return {
+        success: true,
+        data: { path: body.path, url: body.url },
+      };
+    }
+    return {
+      success: false,
+      message: body?.message || 'Failed to upload signature',
+    };
+  } catch (error: any) {
+    return {
+      success: false,
+      message: extractMessage(
+        error?.response?.data,
+        error?.message || 'Signature upload failed',
       ),
     };
   }

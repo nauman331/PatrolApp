@@ -43,6 +43,9 @@ export const INCIDENT_ASSETS_BASE_URL =
       `${normalizeBaseUrl(ENV_API_BASE_URL)}/incident`,
   ) || `${API_BASE_URL}/incident`;
 
+/** Storage base URL for documents */
+export const STORAGE_BASE_URL = `${API_BASE_URL}/storage`;
+
 /** Prefix for Laravel `/api/...` routes — override with `API_URL` in `.env` if needed */
 export const API_URL =
   resolveDevHost(normalizeBaseUrl(ENV_API_URL) || '') ||

@@ -6,6 +6,7 @@ import {
   StyleSheet,
   StatusBar,
   ActivityIndicator,
+  Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { WebView } from 'react-native-webview';
@@ -22,12 +23,22 @@ export default function PdfViewerScreen() {
   const route = useRoute<PdfViewerRoute>();
   const { uri, title } = route.params;
 
+  // Android WebView doesn't support PDF viewing natively.
+  // Using Google Docs Viewer as a workaround.
+  const finalUri =
+    Platform.OS === 'android'
+      ? `https://docs.google.com/gview?embedded=true&url=${encodeURIComponent(uri)}`
+      : uri;
+
   return (
     <View style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor={Colors.headerStart} />
       <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
         <View style={styles.header}>
-          <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
+          <TouchableOpacity
+            style={styles.backBtn}
+            onPress={() => navigation.goBack()}
+          >
             <ArrowLeft size={20} color={Colors.white} />
           </TouchableOpacity>
           <Text style={styles.headerTitle} numberOfLines={1}>
@@ -36,16 +47,24 @@ export default function PdfViewerScreen() {
           <View style={styles.headerSpacer} />
         </View>
 
-        <WebView
-          source={{ uri }}
-          style={styles.webview}
-          startInLoadingState
-          renderLoading={() => (
-            <View style={styles.loading}>
-              <ActivityIndicator size="large" color={Colors.accent} />
-            </View>
-          )}
-        />
+        <View style={styles.webviewContainer}>
+          <WebView
+            key={finalUri}
+            source={{ uri: finalUri }}
+            style={styles.webview}
+            startInLoadingState
+            originWhitelist={['*']}
+            scalesPageToFit
+            javaScriptEnabled
+            domStorageEnabled
+            allowFileAccess
+            renderLoading={() => (
+              <View style={styles.loading}>
+                <ActivityIndicator size="large" color={Colors.accent} />
+              </View>
+            )}
+          />
+        </View>
       </SafeAreaView>
     </View>
   );
@@ -53,7 +72,7 @@ export default function PdfViewerScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.headerStart },
-  safe: { flex: 1, backgroundColor: Colors.bgAlt },
+  safe: { flex: 1, backgroundColor: Colors.white },
   header: {
     backgroundColor: Colors.headerStart,
     flexDirection: 'row',
@@ -76,7 +95,11 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   headerSpacer: { width: 36 },
-  webview: { flex: 1 },
+  webviewContainer: {
+    flex: 1,
+    backgroundColor: Colors.white,
+  },
+  webview: { flex: 1, backgroundColor: Colors.white },
   loading: {
     position: 'absolute',
     top: 0,
@@ -85,6 +108,6 @@ const styles = StyleSheet.create({
     bottom: 0,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: Colors.bgAlt,
+    backgroundColor: Colors.white,
   },
 });

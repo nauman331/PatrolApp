@@ -6,6 +6,8 @@ import { AuthNavigator } from './auth-nav';
 import { GuardNavigator } from './unauth-nav';
 import { ManagerNavigator } from './manager-nav';
 
+import SplashScreen from '../screens/Splashscreen';
+
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
 interface RootNavigatorProps {
@@ -17,6 +19,10 @@ interface RootNavigatorProps {
      * Whether authentication state is still being determined (loading)
      */
     isLoading?: boolean;
+    /**
+     * Callback when splash screen animation completes
+     */
+    onSplashFinish?: () => void;
 }
 
 /**
@@ -29,7 +35,11 @@ interface RootNavigatorProps {
  * This component bridges the gap between the app's authentication state
  * and the navigation hierarchy.
  */
-export function RootNavigator({ userRole, isLoading = false }: RootNavigatorProps) {
+export function RootNavigator({
+    userRole,
+    isLoading = false,
+    onSplashFinish,
+}: RootNavigatorProps) {
     return (
         <Stack.Navigator
             screenOptions={{
@@ -37,17 +47,12 @@ export function RootNavigator({ userRole, isLoading = false }: RootNavigatorProp
             }}
         >
             {isLoading ? (
-                /**
-                 * Loading state
-                 * Show splash or loading screen while determining auth state
-                 * This prevents showing wrong stack briefly
-                 */
                 <Stack.Group screenOptions={{ animation: 'none' }}>
-                    <Stack.Screen
-                        name={ROOT_ROUTES.LOADING}
-                        component={LoadingScreen}
-                        options={{ animation: 'none' }}
-                    />
+                    <Stack.Screen name={ROOT_ROUTES.LOADING}>
+                        {(props) => (
+                            <SplashScreen {...(props as any)} onFinish={onSplashFinish} />
+                        )}
+                    </Stack.Screen>
                 </Stack.Group>
             ) : userRole === null ? (
                 /**
@@ -88,14 +93,6 @@ export function RootNavigator({ userRole, isLoading = false }: RootNavigatorProp
             )}
         </Stack.Navigator>
     );
-}
-
-/**
- * Loading Screen Component
- * Placeholder while auth state is being determined
- */
-function LoadingScreen() {
-    return null; // Can be replaced with a proper loading screen
 }
 
 export default RootNavigator;

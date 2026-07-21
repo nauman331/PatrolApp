@@ -150,6 +150,27 @@ export function formatDateTime(date: Date | string): string {
 }
 
 /**
+ * Format datetime to DD/MM/YYYY HH:MM AM/PM
+ */
+export function formatDateTimeFull(date: Date | string): string {
+    const d = typeof date === 'string' ? new Date(date) : date;
+    if (isNaN(d.getTime())) return String(date);
+
+    const day = String(d.getDate()).padStart(2, '0');
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const year = d.getFullYear();
+
+    let hours = d.getHours();
+    const minutes = String(d.getMinutes()).padStart(2, '0');
+    const ampm = hours >= 12 ? 'PM' : 'AM';
+    hours = hours % 12;
+    hours = hours ? hours : 12; // the hour '0' should be '12'
+    const strHours = String(hours).padStart(2, '0');
+
+    return `${day}/${month}/${year} ${strHours}:${minutes} ${ampm}`;
+}
+
+/**
  * Debounce function
  */
 export function debounce<T extends (...args: any[]) => any>(

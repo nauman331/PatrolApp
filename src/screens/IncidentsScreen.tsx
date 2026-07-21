@@ -142,22 +142,23 @@ export default function IncidentsScreen() {
             <IncidentListShimmer count={3} />
           ) : error ? (
             <View style={styles.emptyBox}>
-              <Text style={styles.emptyTitle}>Could not load incidents</Text>
-              <Text style={styles.emptySub}>{error}</Text>
+              <ShieldAlert size={44} color={Colors.danger} />
+              <Text style={styles.emptyTitle}>Oops! Something went wrong</Text>
+              <Text style={styles.emptySub}>
+                {error.length > 120 ? 'We encountered a server error while fetching incidents. Please try again later.' : error}
+              </Text>
               <TouchableOpacity
                 style={styles.retryBtn}
                 onPress={() => dispatch(fetchGuardIncidents())}
               >
-                <Text style={styles.retryText}>Retry</Text>
+                <Text style={styles.retryText}>Try Again</Text>
               </TouchableOpacity>
             </View>
           ) : incidents.length === 0 ? (
             <View style={styles.emptyBox}>
               <ShieldAlert size={40} color={Colors.textMuted} />
               <Text style={styles.emptyTitle}>No incidents yet</Text>
-              <Text style={styles.emptySub}>
-                Tap + to report your first incident.
-              </Text>
+//
             </View>
           ) : (
             incidents.map((inc: MappedIncident) => {
@@ -254,6 +255,7 @@ export default function IncidentsScreen() {
                       <ChevronRight size={16} color={Colors.accent} />
                     </TouchableOpacity>
 
+{/*
                     <TouchableOpacity
                       style={styles.actionPdf}
                       onPress={() => handleDownloadPdf(inc)}
@@ -269,6 +271,7 @@ export default function IncidentsScreen() {
                         {isDownloading ? 'Creating PDF…' : 'Download PDF'}
                       </Text>
                     </TouchableOpacity>
+                     */}
                   </View>
                 </View>
               );

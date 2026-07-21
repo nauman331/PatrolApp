@@ -1,5 +1,6 @@
 import { Alert, Platform } from 'react-native';
 import ReactNativeBlobUtil from 'react-native-blob-util';
+import Share from 'react-native-share';
 import { type ManagerIncidentDetailData, type ManagerPatrolReportDetailData } from './managerApi';
 import { buildIncidentReportPdf } from './incidentPdfGenerator';
 import { buildPatrolReportPdf } from './patrolPdfGenerator';
@@ -34,15 +35,25 @@ export async function shareReport(type: 'patrol' | 'incident', data: any, action
   try {
     let filePath: string;
     let fileName: string;
+    let title: string;
+    let messageBody = '';
 
     if (type === 'incident') {
       const mapped = mapManagerIncidentToMapped(data as ManagerIncidentDetailData);
       filePath = await buildIncidentReportPdf(mapped);
-      fileName = `incident-report-${data.id}.pdf`;
+      fileName = `Incident_Report_${data.id}.pdf`;
+      title = `Incident Report #${data.id} - ${data.site_name}`;
+      messageBody = `Please find attached the Incident Report.\n\nIncident: ${data.title}\nSite: ${data.site_name}\nGuard: ${data.guard_name}\nSeverity: ${data.severity}\nDate: ${data.location_date}`;
     } else {
       filePath = await buildPatrolReportPdf(data as ManagerPatrolReportDetailData);
-      fileName = `patrol-report-${data.guard.id}-${data.date}.pdf`;
+      fileName = `Patrol_Report_${data.guard.id}_${data.date}.pdf`;
+      title = `Patrol Report: ${data.site.name} - ${data.guard.name}`;
+      messageBody = `Please find attached the Patrol Report.\n\nGuard: ${data.guard.name}\nSite: ${data.site.name}\nDate: ${data.date_label}\nCompliance: ${data.summary.compliance_percentage}%`;
     }
+
+    const fileUri = (Platform.OS === 'android' && !filePath.startsWith('content://'))
+        ? `file://${filePath}`
+        : filePath;
 
     if (action === 'download') {
       if (Platform.OS === 'android') {
@@ -53,19 +64,44 @@ export async function shareReport(type: 'patrol' | 'incident', data: any, action
       return;
     }
 
-    // For share and email, we use the same open/preview mechanism since we don't have react-native-share
-    // On iOS openDocument provides share options.
-    // On Android we can use actionViewIntent which opens the PDF, then user can share from there.
+    const shareOptions: any = {
+      title: title,
+      subject: title,
+      message: messageBody,
+      url: fileUri,
+      type: 'application/pdf',
+      failOnCancel: false,
+    };
 
-    if (Platform.OS === 'ios') {
-      await ReactNativeBlobUtil.ios.openDocument(filePath);
-    } else {
-      const openTarget = filePath.startsWith('content://') ? filePath : `file://${filePath}`;
-      await ReactNativeBlobUtil.android.actionViewIntent(openTarget, 'application/pdf');
+    if (action === 'email') {
+        // This targets ONLY email applications (Gmail, Outlook, Mail, etc.)
+        try {
+            await Share.shareSingle({
+                ...shareOptions,
+                social: Share.Social.EMAIL,
+            });
+            return;
+        } catch (err) {
+            console.log('Direct email failed, falling back to general share chooser');
+            // If direct email fails (no default app), we allow it to fall through to Share.open
+        }
+    }
+
+    // Opens the Share Modal for WhatsApp and other apps
+    try {
+        await Share.open(shareOptions);
+    } catch (err: any) {
+        if (err?.message?.includes('User did not share') || err?.message?.includes('User cancelled')) {
+            return;
+        }
+        throw err;
     }
 
   } catch (err) {
+    if (err instanceof Error && (err.message.includes('User did not share') || err.message.includes('User cancelled'))) {
+        return;
+    }
     console.error('Report action failed', err);
-    Alert.alert('Error', 'Failed to process report action');
+    Alert.alert('Error', 'Could not complete the action. Please ensure you have the required apps installed.');
   }
 }

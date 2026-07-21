@@ -1,5 +1,5 @@
-import React, { useEffect } from 'react';
-import { StatusBar, StyleSheet, View, ActivityIndicator } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { StatusBar, StyleSheet, View } from 'react-native';
 import { initNfc } from './src/services/nfcReader';
 import { NavigationContainer } from '@react-navigation/native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -10,6 +10,7 @@ import store, { persistor } from './src/store/store';
 import type { RootState } from './src/store/store';
 import { Colors } from './src/theme';
 import { syncAuthTokensToStorage } from './src/services/savedLogin';
+import SplashScreen from './src/screens/Splashscreen';
 
 function AuthRehydrationSync() {
   useEffect(() => {
@@ -39,12 +40,19 @@ function AuthRehydrationSync() {
  * Wraps the RootNavigator with React Navigation setup
  */
 function AppNavigator() {
-  const userRole = useSelector((state: RootState) => state?.auth?.userRole ?? null);
+  const [isBooting, setIsBooting] = useState(true);
+  const userRole = useSelector(
+    (state: RootState) => state?.auth?.userRole ?? null,
+  );
 
   return (
     <NavigationContainer>
       <AuthRehydrationSync />
-      <RootNavigator userRole={userRole} isLoading={false} />
+      <RootNavigator
+        userRole={userRole}
+        isLoading={isBooting}
+        onSplashFinish={() => setIsBooting(false)}
+      />
     </NavigationContainer>
   );
 }
@@ -66,11 +74,7 @@ export default function App() {
     <SafeAreaProvider>
       <Provider store={store}>
         <PersistGate
-          loading={
-            <View style={styles.boot}>
-              <ActivityIndicator size="large" color={Colors.accent} />
-            </View>
-          }
+          loading={null}
           persistor={persistor}
         >
           <View style={styles.root}>

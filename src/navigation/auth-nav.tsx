@@ -23,14 +23,8 @@ export function AuthNavigator() {
                     backgroundColor: Colors.bg,
                 },
             }}
+            initialRouteName={AUTH_ROUTES.ONBOARDING}
         >
-            <Stack.Screen
-                name={AUTH_ROUTES.SPLASH}
-                component={SplashScreen}
-                options={{
-                    animation: 'none',
-                }}
-            />
             <Stack.Screen
                 name={AUTH_ROUTES.ONBOARDING}
                 component={OnboardingScreen}
@@ -38,8 +32,6 @@ export function AuthNavigator() {
             <Stack.Screen
                 name={AUTH_ROUTES.LOGIN}
                 component={LoginScreen}
-                options={{
-                }}
             />
         </Stack.Navigator>
     );

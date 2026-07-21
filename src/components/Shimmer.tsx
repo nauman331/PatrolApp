@@ -234,7 +234,7 @@ export function IncidentCardShimmer() {
       </View>
       <View style={styles.incidentFooterShimmer}>
         <ShimmerBox height={34} borderRadius={Radii.sm} style={{ flex: 1 }} />
-        <ShimmerBox height={34} borderRadius={Radii.sm} style={{ flex: 1 }} />
+       {/* <ShimmerBox height={34} borderRadius={Radii.sm} style={{ flex: 1 }} /> */}
       </View>
     </View>
   );
@@ -299,7 +299,7 @@ export function ManagerReportRowShimmer({
 }
 
 export function ManagerReportsShimmer({
-  count = 5,
+  count = 7,
   variant = 'patrol',
 }: {
   count?: number;
@@ -369,7 +369,7 @@ export function ManagerRosterCalendarFixedShimmer() {
 
 export function ManagerRosterListShimmer({
   variant = 'shifts',
-  count = 4,
+  count = 7,
 }: {
   variant?: 'shifts' | 'sites' | 'calendar';
   count?: number;
@@ -541,11 +541,11 @@ export function ManagerAttendanceShimmer() {
 export function ManagerShiftReportFixedShimmer() {
   return (
     <>
-      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 8 }}>
+      <View style={{ flexDirection: 'row', gap: 6, marginBottom: 10, marginTop: 16 }}>
         {Array.from({ length: 4 }).map((_, i) => (
-          <View key={i} style={[styles.sumCardShimmer, styles.cardShadow, { minWidth: 90 }]}>
-            <ShimmerBox width={36} height={20} />
-            <ShimmerBox width={52} height={10} style={{ marginTop: 4 }} />
+          <View key={i} style={[styles.sumCardShimmer, styles.cardShadow]}>
+            <ShimmerBox width={28} height={18} />
+            <ShimmerBox width={36} height={8} style={{ marginTop: 6 }} />
           </View>
         ))}
       </View>
@@ -595,6 +595,41 @@ export function ManagerShiftReportShimmer() {
   );
 }
 
+export function ManagerSiteDetailShimmer() {
+  return (
+    <View style={{ marginTop: 10 }}>
+      <View style={styles.sectionHdrShimmer}>
+        <ShimmerBox width={100} height={12} />
+      </View>
+      <View style={[styles.profileCard, styles.cardShadow, { padding: 16 }]}>
+        {Array.from({ length: 5 }).map((_, i) => (
+          <View key={i} style={{ marginBottom: 16, flexDirection: 'row', gap: 12 }}>
+            <ShimmerBox width={16} height={16} borderRadius={4} />
+            <View style={{ flex: 1, gap: 6 }}>
+              <ShimmerBox width={80} height={10} />
+              <ShimmerBox width="90%" height={14} />
+            </View>
+          </View>
+        ))}
+      </View>
+      <View style={styles.sectionHdrShimmer}>
+        <ShimmerBox width={120} height={12} />
+      </View>
+      <View style={[styles.profileCard, styles.cardShadow, { padding: 16 }]}>
+        {Array.from({ length: 3 }).map((_, i) => (
+          <View key={i} style={{ marginBottom: 14, flexDirection: 'row', gap: 12, alignItems: 'center' }}>
+            <ShimmerBox width={32} height={32} borderRadius={8} />
+            <View style={{ flex: 1, gap: 6 }}>
+              <ShimmerBox width={140} height={12} />
+              <ShimmerBox width={80} height={10} />
+            </View>
+          </View>
+        ))}
+      </View>
+    </View>
+  );
+}
+
 export function ManagerIncidentDetailHeaderShimmer() {
   return (
     <View style={[styles.incidentCard, styles.cardShadow]}>
@@ -635,6 +670,125 @@ export function ManagerIncidentDetailShimmer() {
   );
 }
 
+export function ManagerRosterDetailHeaderShimmer() {
+  return (
+    <View style={[styles.cardShadow, { padding: 14 }]}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+        <ShimmerBox width={36} height={36} borderRadius={10} />
+        <View style={{ flex: 1, gap: 6 }}>
+          <ShimmerBox width="60%" height={14} />
+          <ShimmerBox width="80%" height={10} />
+        </View>
+        <ShimmerBox width={65} height={22} borderRadius={Radii.sm} />
+      </View>
+    </View>
+  );
+}
+
+export function ManagerRosterDetailBodyShimmer() {
+  return (
+    <>
+      <View style={[styles.cardShadow, { padding: 14 }]}>
+        <ShimmerBox width={100} height={12} style={{ marginBottom: 14 }} />
+        <View style={{ gap: 10 }}>
+          <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
+            <ShimmerBox width={14} height={14} borderRadius={4} />
+            <ShimmerBox width="60%" height={12} />
+          </View>
+          <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
+            <ShimmerBox width={14} height={14} borderRadius={4} />
+            <ShimmerBox width="50%" height={12} />
+          </View>
+          <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
+            <ShimmerBox width={14} height={14} borderRadius={4} />
+            <ShimmerBox width="70%" height={12} />
+          </View>
+        </View>
+      </View>
+
+      <View style={[styles.cardShadow, { padding: 14 }]}>
+        <ShimmerBox width={115} height={12} style={{ marginBottom: 14 }} />
+        <View style={{ flexDirection: 'row' }}>
+          <View style={{ flex: 1 }}>
+            <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center', marginBottom: 8 }}>
+              <ShimmerBox width={14} height={14} borderRadius={4} />
+              <ShimmerBox width="50%" height={12} />
+            </View>
+            <ShimmerBox width="70%" height={10} style={{ marginLeft: 22, marginBottom: 8 }} />
+            <ShimmerBox width={80} height={80} borderRadius={8} style={{ marginLeft: 22 }} />
+          </View>
+          <View style={{ width: 1, backgroundColor: Colors.border, marginHorizontal: 12 }} />
+          <View style={{ flex: 1 }}>
+            <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center', marginBottom: 8 }}>
+              <ShimmerBox width={14} height={14} borderRadius={4} />
+              <ShimmerBox width="50%" height={12} />
+            </View>
+            <ShimmerBox width="70%" height={10} style={{ marginLeft: 22, marginBottom: 8 }} />
+            <ShimmerBox width={80} height={80} borderRadius={8} style={{ marginLeft: 22 }} />
+          </View>
+        </View>
+      </View>
+
+      <View style={{ marginBottom: 16 }}>
+        <ShimmerBox width={100} height={12} style={{ marginBottom: 10, marginTop: 4 }} />
+        {Array.from({ length: 2 }).map((_, i) => (
+          <View
+            key={i}
+            style={[
+              styles.cardShadow,
+              {
+                padding: 12,
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: 12,
+                borderLeftWidth: 3,
+                borderLeftColor: Colors.border,
+                borderRadius: Radii.md,
+                marginBottom: 8,
+              },
+            ]}
+          >
+            <ShimmerBox width={32} height={32} borderRadius={8} />
+            <View style={{ flex: 1, gap: 6 }}>
+              <ShimmerBox width="45%" height={12} />
+              <ShimmerBox width="65%" height={10} />
+            </View>
+            <ShimmerBox width={18} height={18} borderRadius={4} />
+          </View>
+        ))}
+      </View>
+
+      <View style={{ marginBottom: 16 }}>
+        <ShimmerBox width={120} height={12} style={{ marginBottom: 10, marginTop: 4 }} />
+        {Array.from({ length: 2 }).map((_, i) => (
+          <View
+            key={i}
+            style={[
+              styles.cardShadow,
+              {
+                padding: 12,
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: 12,
+                borderLeftWidth: 3,
+                borderLeftColor: Colors.border,
+                borderRadius: Radii.md,
+                marginBottom: 8,
+              },
+            ]}
+          >
+            <ShimmerBox width={32} height={32} borderRadius={8} />
+            <View style={{ flex: 1, gap: 6 }}>
+              <ShimmerBox width="60%" height={12} />
+              <ShimmerBox width="40%" height={10} />
+            </View>
+          </View>
+        ))}
+      </View>
+    </>
+  );
+}
+
 export function ProfileShimmer() {
   return (
     <>
@@ -664,6 +818,24 @@ export function ProfileShimmer() {
       </View>
       <ShimmerBox height={52} borderRadius={Radii.md} />
     </>
+  );
+}
+
+export function SopListShimmer({ count = 4 }: { count?: number }) {
+  return (
+    <View style={{ gap: 12 }}>
+      <ShimmerBox width="80%" height={14} style={{ marginBottom: 16 }} />
+      {Array.from({ length: count }).map((_, i) => (
+        <View key={i} style={styles.sopCardShimmer}>
+          <ShimmerBox width={40} height={40} borderRadius={12} />
+          <View style={{ flex: 1, gap: 6 }}>
+            <ShimmerBox width="60%" height={14} />
+            <ShimmerBox width="30%" height={10} />
+          </View>
+          <ShimmerBox width={20} height={20} borderRadius={4} />
+        </View>
+      ))}
+    </View>
   );
 }
 
@@ -894,6 +1066,7 @@ const styles = StyleSheet.create({
     padding: 20,
     alignItems: 'center',
     marginBottom: 12,
+    marginTop: 16,
   },
   infoGridShimmer: {
     backgroundColor: Colors.bgCard,
@@ -922,5 +1095,14 @@ const styles = StyleSheet.create({
     borderRadius: Radii.lg,
     padding: 12,
     marginBottom: 14,
+  },
+  sopCardShimmer: {
+    backgroundColor: Colors.bgCard,
+    borderRadius: Radii.lg,
+    padding: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    ...Shadows.card,
   },
 });

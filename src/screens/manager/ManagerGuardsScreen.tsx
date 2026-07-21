@@ -151,6 +151,8 @@ export default function ManagerGuardsScreen() {
                     guardId: String(g.id),
                     name: g.name,
                     rosterId: g.roster_id,
+                    siteName: g.site_name,
+                    statusText: g.status_label,
                   })
                 }
               >

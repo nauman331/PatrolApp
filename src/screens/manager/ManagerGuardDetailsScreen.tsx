@@ -39,7 +39,13 @@ type Props = ManagerStackScreenProps<'ManagerGuardDetails'>;
 
 export default function ManagerGuardDetailsScreen({ route }: Props) {
   const navigation = useManagerNavigation();
-  const { guardId, name: routeName, rosterId } = route.params ?? {};
+  const {
+    guardId,
+    name: routeName,
+    rosterId,
+    siteName: routeSiteName,
+    statusText: routeStatusText,
+  } = route.params ?? {};
   const [data, setData] = useState<ManagerGuardDetailData | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -83,19 +89,26 @@ export default function ManagerGuardDetailsScreen({ route }: Props) {
   const shift = data?.today_shift;
   const attendance = data?.attendance;
   const stats = data?.stats;
-  const statusColor = shift
+
+  const isOnDuty = !!attendance?.signin_time && !attendance?.signout_time;
+  const statusLabel = isOnDuty
+    ? routeStatusText || 'On Duty'
+    : shift?.status_label ?? 'Off Duty';
+  const statusColor = isOnDuty
+    ? Colors.success
+    : shift
     ? mapManagerStatusColor(shift.status_color)
     : Colors.textMuted;
+
   const showShimmer = loading && !data;
 
-  const subtitle = shift
-    ? `Guard Details · ${shift.status_label}`
-    : 'Guard Details';
+  const subtitle = `Guard Details · ${statusLabel}`;
 
   const patrols = data?.patrols ?? [];
   const incidents = data?.incidents ?? [];
   const patrolRowCount = patrols.length === 0 ? 1 : patrols.length;
-  const incidentsStickyIndex = patrolRowCount;
+  // 0: Fixed section (Profile, stats, etc.), 1: Patrols header, 2..N: Patrols, N+1: Incidents header
+  const stickyIndices = showShimmer ? undefined : [1, 2 + patrolRowCount];
 
   return (
     <ManagerStackShell
@@ -104,149 +117,152 @@ export default function ManagerGuardDetailsScreen({ route }: Props) {
       <ManagerStackListLayout
         refreshing={refreshing}
         onRefresh={onRefresh}
-        fixedContent={
-          <>
-            {error ? <AuthErrorBanner message={error} /> : null}
-            {showShimmer ? (
-              <ManagerGuardDetailFixedShimmer />
-            ) : (
-              <>
-                <View style={[styles.profileCard, Shadows.card]}>
-                  <View style={styles.avatar}>
-                    <Text style={styles.avatarText}>
-                      {guard?.initials ??
-                        name
-                          .split(' ')
-                          .map(p => p[0])
-                          .join('')
-                          .slice(0, 2)
-                          .toUpperCase()}
-                    </Text>
-                  </View>
-                  <Text style={styles.profileName}>{name}</Text>
-                  <Text style={styles.profileRole}>
-                    Security Guard · ID #{guard?.id ?? guardId ?? '—'}
-                  </Text>
-                  {shift ? (
-                    <View
-                      style={[
-                        styles.statusPill,
-                        { backgroundColor: `${statusColor}18` },
-                      ]}
-                    >
-                      <View
-                        style={[styles.statusDot, { backgroundColor: statusColor }]}
-                      />
-                      <Text style={[styles.statusText, { color: statusColor }]}>
-                        {shift.status_label}
-                      </Text>
-                    </View>
-                  ) : null}
-                </View>
-
-                <View style={[styles.infoGrid, Shadows.card]}>
-                  <View style={styles.infoItem}>
-                    <MapPin size={16} color={Colors.accent} />
-                    <Text style={styles.infoLabel}>Site</Text>
-                    <Text style={styles.infoValue}>
-                      {shift?.site_name ?? 'No shift today'}
-                    </Text>
-                  </View>
-                  <View style={styles.infoItem}>
-                    <Clock size={16} color={Colors.accent} />
-                    <Text style={styles.infoLabel}>Shift</Text>
-                    <Text style={styles.infoValue}>
-                      {shift?.shift_time ?? '—'}
-                    </Text>
-                  </View>
-                  <View style={styles.infoItem}>
-                    <Footprints size={16} color={Colors.accent} />
-                    <Text style={styles.infoLabel}>Patrols</Text>
-                    <Text style={styles.infoValue}>
-                      {stats
-                        ? `${stats.patrols_completed}/${stats.patrols_total} completed`
-                        : '—'}
-                    </Text>
-                  </View>
-                  <View style={styles.infoItem}>
-                    <Shield size={16} color={Colors.accent} />
-                    <Text style={styles.infoLabel}>License</Text>
-                    <Text style={styles.infoValue}>
-                      {guard?.security_license_no ?? '—'}
-                    </Text>
-                  </View>
-                </View>
-
-                {stats ? (
-                  <View style={[styles.statsRow, Shadows.card]}>
-                    <View style={styles.statItem}>
-                      <Text style={styles.statNum}>{stats.nfc_scans_completed}</Text>
-                      <Text style={styles.statLabel}>NFC Scans</Text>
-                    </View>
-                    <View style={styles.statItem}>
-                      <Text style={styles.statNum}>{stats.incidents_today}</Text>
-                      <Text style={styles.statLabel}>Incidents</Text>
-                    </View>
-                    <View style={styles.statItem}>
-                      <Text style={styles.statNum}>
-                        {stats.nfc_scans_total > 0
-                          ? `${Math.round((stats.nfc_scans_completed / stats.nfc_scans_total) * 100)}%`
-                          : '—'}
-                      </Text>
-                      <Text style={styles.statLabel}>NFC Rate</Text>
-                    </View>
-                  </View>
-                ) : null}
-
-                <SectionHeader title="Contact" />
-                <View style={[styles.contactRow, Shadows.card]}>
-                  <Phone size={16} color={Colors.textSecondary} />
-                  <Text style={styles.contactText}>{guard?.phone ?? '—'}</Text>
-                </View>
-                <View style={[styles.contactRow, Shadows.card]}>
-                  <Mail size={16} color={Colors.textSecondary} />
-                  <Text style={styles.contactText}>{guard?.email ?? '—'}</Text>
-                </View>
-
-                {attendance ? (
-                  <>
-                    <SectionHeader title="Today's Attendance" />
-                    <View style={[styles.attendanceCard, Shadows.card]}>
-                      <Text style={styles.attendanceLine}>
-                        Sign In: {attendance.signin_time ?? '—'}
-                      </Text>
-                      <Text style={styles.attendanceLine}>
-                        Sign Out: {attendance.signout_time ?? '—'}
-                      </Text>
-                      {attendance.last_location ? (
-                        <Text style={styles.attendanceSub}>
-                          Last location: {attendance.last_location}
-                          {attendance.last_location_time
-                            ? ` · ${attendance.last_location_time}`
-                            : ''}
-                        </Text>
-                      ) : null}
-                      {attendance.signin_selfie ? (
-                        <Image
-                          source={{ uri: attendance.signin_selfie }}
-                          style={styles.selfie}
-                          resizeMode="cover"
-                        />
-                      ) : null}
-                    </View>
-                  </>
-                ) : null}
-              </>
-            )}
-          </>
-        }
-        listHeader={<SectionHeader title="Patrols Today" />}
-        stickyHeaderIndices={showShimmer ? undefined : [incidentsStickyIndex]}
+        stickyHeaderIndices={stickyIndices}
       >
         {showShimmer ? (
-          <ManagerGuardDetailListShimmer />
+          <>
+            <ManagerGuardDetailFixedShimmer />
+            <ManagerGuardDetailListShimmer />
+          </>
         ) : (
           <>
+            <View style={{ paddingBottom: 8 }}>
+              {error ? <AuthErrorBanner message={error} /> : null}
+              <View style={[styles.profileCard, Shadows.card]}>
+                <View style={styles.avatar}>
+                  <Text style={styles.avatarText}>
+                    {guard?.initials ??
+                      name
+                        .split(' ')
+                        .map(p => p[0])
+                        .join('')
+                        .slice(0, 2)
+                        .toUpperCase()}
+                  </Text>
+                </View>
+                <Text style={styles.profileName}>{name}</Text>
+                <Text style={styles.profileRole}>
+                  Security Guard · ID #{guard?.id ?? guardId ?? '—'}
+                </Text>
+                {shift || isOnDuty ? (
+                  <View
+                    style={[
+                      styles.statusPill,
+                      { backgroundColor: `${statusColor}18` },
+                    ]}
+                  >
+                    <View
+                      style={[styles.statusDot, { backgroundColor: statusColor }]}
+                    />
+                    <Text style={[styles.statusText, { color: statusColor }]}>
+                      {statusLabel}
+                    </Text>
+                  </View>
+                ) : null}
+              </View>
+
+              <View style={[styles.infoGrid, Shadows.card]}>
+                <View style={styles.infoItem}>
+                  <MapPin size={16} color={Colors.accent} />
+                  <Text style={styles.infoLabel}>Site</Text>
+                  <Text style={styles.infoValue}>
+                    {shift?.site_name ?? routeSiteName ?? 'No shift today'}
+                  </Text>
+                </View>
+                <View style={styles.infoItem}>
+                  <Clock size={16} color={Colors.accent} />
+                  <Text style={styles.infoLabel}>Shift</Text>
+                  <Text style={styles.infoValue}>
+                    {shift?.shift_time && shift.shift_time !== 'Off Duty'
+                      ? shift.shift_time
+                      : isOnDuty
+                      ? statusLabel
+                      : '—'}
+                  </Text>
+                </View>
+                <View style={styles.infoItem}>
+                  <Footprints size={16} color={Colors.accent} />
+                  <Text style={styles.infoLabel}>Patrols</Text>
+                  <Text style={styles.infoValue}>
+                    {stats
+                      ? `${stats.patrols_completed}/${stats.patrols_total} completed`
+                      : '—'}
+                  </Text>
+                </View>
+                <View style={styles.infoItem}>
+                  <Shield size={16} color={Colors.accent} />
+                  <Text style={styles.infoLabel}>License</Text>
+                  <Text style={styles.infoValue}>
+                    {guard?.security_license_no ?? '—'}
+                  </Text>
+                </View>
+              </View>
+
+              {stats ? (
+                <View style={[styles.statsRow, Shadows.card]}>
+                  <View style={styles.statItem}>
+                    <Text style={styles.statNum}>{stats.nfc_scans_completed}</Text>
+                    <Text style={styles.statLabel}>NFC Scans</Text>
+                  </View>
+                  <View style={styles.statItem}>
+                    <Text style={styles.statNum}>{stats.incidents_today}</Text>
+                    <Text style={styles.statLabel}>Incidents</Text>
+                  </View>
+                  <View style={styles.statItem}>
+                    <Text style={styles.statNum}>
+                      {stats.nfc_scans_total > 0
+                        ? `${Math.round((stats.nfc_scans_completed / stats.nfc_scans_total) * 100)}%`
+                        : '—'}
+                    </Text>
+                    <Text style={styles.statLabel}>NFC Rate</Text>
+                  </View>
+                </View>
+              ) : null}
+
+              <SectionHeader title="Contact" />
+              <View style={[styles.contactRow, Shadows.card]}>
+                <Phone size={16} color={Colors.textSecondary} />
+                <Text style={styles.contactText}>{guard?.phone ?? '—'}</Text>
+              </View>
+              <View style={[styles.contactRow, Shadows.card]}>
+                <Mail size={16} color={Colors.textSecondary} />
+                <Text style={styles.contactText}>{guard?.email ?? '—'}</Text>
+              </View>
+
+              {attendance ? (
+                <>
+                  <SectionHeader title="Today's Attendance" />
+                  <View style={[styles.attendanceCard, Shadows.card]}>
+                    <Text style={styles.attendanceLine}>
+                      Sign In: {attendance.signin_time ?? '—'}
+                    </Text>
+                    <Text style={styles.attendanceLine}>
+                      Sign Out: {attendance.signout_time ?? '—'}
+                    </Text>
+                    {attendance.last_location ? (
+                      <Text style={styles.attendanceSub}>
+                        Last location: {attendance.last_location}
+                        {attendance.last_location_time
+                          ? ` · ${attendance.last_location_time}`
+                          : ''}
+                      </Text>
+                    ) : null}
+                    {attendance.signin_selfie ? (
+                      <Image
+                        source={{ uri: attendance.signin_selfie }}
+                        style={styles.selfie}
+                        resizeMode="cover"
+                      />
+                    ) : null}
+                  </View>
+                </>
+              ) : null}
+            </View>
+
+            <View style={sharedStyles.stickySectionHeader}>
+              <SectionHeader title="Patrols Today" />
+            </View>
+
             {patrols.length === 0 ? (
               <Text style={styles.emptyText}>No patrols today.</Text>
             ) : (
@@ -317,7 +333,7 @@ export default function ManagerGuardDetailsScreen({ route }: Props) {
                 })
               }
             >
-              <Text style={styles.actionText}>View Attendance History</Text>
+              <Text style={styles.actionText}>View Activity History</Text>
               <ChevronRight size={18} color={Colors.accent} />
             </TouchableOpacity>
           </>
@@ -339,7 +355,7 @@ const styles = StyleSheet.create({
     padding: 20,
     alignItems: 'center',
     marginBottom: 12,
-    marginTop: 6,
+    marginTop: 16,
   },
   avatar: {
     width: 64,

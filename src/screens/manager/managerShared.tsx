@@ -95,12 +95,14 @@ export function ManagerPageHeader({
   return (
     <View style={sharedStyles.pageHeader}>
       <View style={sharedStyles.pageHdrRow}>
-        <Text style={sharedStyles.pageHdrTitle}>{title}</Text>
-        {right ?? <View style={sharedStyles.headerSpacer} />}
+        <View style={{ flex: 1 }}>
+          <Text style={sharedStyles.pageHdrTitle}>{title}</Text>
+          <Text style={sharedStyles.pageHdrSub}>
+            {subtitle ?? formatFullDisplayDate()}
+          </Text>
+        </View>
+        {right}
       </View>
-      <Text style={sharedStyles.pageHdrSub}>
-        {subtitle ?? formatFullDisplayDate()}
-      </Text>
     </View>
   );
 }

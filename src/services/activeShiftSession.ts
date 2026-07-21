@@ -3,6 +3,17 @@ import { Alert } from 'react-native';
 
 const ACTIVE_SHIFT_KEY = 'activeShiftSession';
 
+export interface SiteInfo {
+  site_id: number;
+  emergency_procedures?: string;
+  patrol_checkpoints?: string;
+  incident_reporting_guide?: string;
+  nfc_scan_protocol?: string;
+  site_map?: string;
+  work_instruction?: string;
+  health_safety_policy?: string;
+}
+
 export interface ActiveShiftSession {
   rosterId: string | number;
   site: string;
@@ -10,6 +21,7 @@ export interface ActiveShiftSession {
   signInTime: string;
   shiftId?: string;
   siteId?: string | number;
+  siteInfo?: SiteInfo;
 }
 
 export async function saveActiveShiftSession(

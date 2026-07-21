@@ -10,6 +10,7 @@ import IncidentsScreen from '../screens/IncidentsScreen';
 import AddIncidentScreen from '../screens/AddIncidentScreen';
 import ViewIncidentReportScreen from '../screens/ViewIncidentReportScreen';
 import GuardSopsScreen from '../screens/GuardSopsScreen';
+import PdfViewerScreen from '../screens/PdfViewerScreen';
 import ProfileScreen from '../screens/ProfileScreen';
 import PrivacyPolicyScreen from '../screens/PrivacyPolicyScreen';
 import TermsConditionsScreen from '../screens/TermsConditionsScreen';
@@ -92,6 +93,10 @@ export function GuardNavigator() {
             <Stack.Screen
                 name={GUARD_ROUTES.SOPS}
                 component={GuardSopsScreen}
+            />
+            <Stack.Screen
+                name={GUARD_ROUTES.PDF_VIEWER}
+                component={PdfViewerScreen}
             />
             <Stack.Screen
                 name={GUARD_ROUTES.PROFILE}

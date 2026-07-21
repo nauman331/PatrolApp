@@ -41,7 +41,10 @@ import {
   getGuardMyJobs,
   type PatrollingReport,
 } from '../services/guardApi';
-import { findIncidentContextByRoster } from '../services/guardJobsMapper';
+import {
+  findIncidentContextByRoster,
+  mapApiJobToShift,
+} from '../services/guardJobsMapper';
 import {
   findActiveReportForRoster,
   findRunningReportsForRoster,
@@ -56,6 +59,7 @@ import { stopNfc } from '../services/nfcReader';
 import {
   getActiveShiftSession,
   patchActiveShiftSession,
+  saveActiveShiftSession,
   type ActiveShiftSession,
   promptCheckInRequired,
 } from '../services/activeShiftSession';
@@ -152,7 +156,33 @@ export default function PatrolTimeline() {
         setLoadError(null);
       }
       try {
-        const session = await getActiveShiftSession();
+        let session = await getActiveShiftSession();
+
+        // Auto-discover active shift if session is missing but guard is checked in on server
+        if (!session && guardId) {
+          const jobsResult = await getGuardMyJobs(guardId);
+          if (jobsResult.success && Array.isArray(jobsResult.data)) {
+            const apiActiveShift = jobsResult.data
+              .map(mapApiJobToShift)
+              .find(s => s?.status === 'active');
+
+            if (apiActiveShift) {
+              session = {
+                rosterId: apiActiveShift.rosterId,
+                site: apiActiveShift.site,
+                zones: apiActiveShift.zones,
+                signInTime:
+                  apiActiveShift.signInTime ?? new Date().toISOString(),
+                shiftId: String(apiActiveShift.id).startsWith('#')
+                  ? undefined
+                  : String(apiActiveShift.id),
+                siteId: apiActiveShift.siteId,
+              };
+              await saveActiveShiftSession(session);
+            }
+          }
+        }
+
         if (isMountedRef.current) {
           setActiveSession(session);
         }
@@ -485,6 +515,8 @@ export default function PatrolTimeline() {
         <View style={styles.header}>
           <View style={styles.hdrRow}>
             <View style={styles.hdrTitleWrap}>
+
+             {/*
               {navigation.canGoBack() ? (
                 <TouchableOpacity
                   style={styles.backBtn}
@@ -493,6 +525,7 @@ export default function PatrolTimeline() {
                   <ArrowLeft size={18} color={Colors.white} />
                 </TouchableOpacity>
               ) : null}
+           */}
               <Text style={styles.hdrTitle}>{screenTitle}</Text>
             </View>
 
@@ -505,6 +538,7 @@ export default function PatrolTimeline() {
                 </Text>
               </View>
 
+{/*
               {canStartPatrol ? (
                 <TouchableOpacity
                   style={[styles.addBtn, (starting || loading) && styles.addBtnDisabled]}
@@ -518,6 +552,7 @@ export default function PatrolTimeline() {
                   )}
                 </TouchableOpacity>
               ) : null}
+           */}
             </View>
           </View>
           <Text style={styles.hdrSub}>{patrolHeaderSub}</Text>
@@ -541,21 +576,7 @@ export default function PatrolTimeline() {
               />
             }
           >
-            {loadError ? (
-              <View style={[styles.errorCard, Shadows.card]}>
-                <AlertTriangle size={28} color={Colors.danger} />
-                <Text style={styles.errorTitle}>{loadError}</Text>
-                <Text style={styles.errorSub}>
-                  Pull down to refresh or tap retry to load patrol data again.
-                </Text>
-                <TouchableOpacity
-                  style={styles.retryBtn}
-                  onPress={() => void loadPatrols()}
-                >
-                  <Text style={styles.retryBtnText}>Retry</Text>
-                </TouchableOpacity>
-              </View>
-            ) : null}
+
 
             {extraRunningCount > 0 ? (
               <View style={styles.warningBanner}>

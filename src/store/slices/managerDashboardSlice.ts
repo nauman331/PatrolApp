@@ -23,10 +23,10 @@ const initialState: ManagerDashboardState = {
 
 export const fetchManagerDashboard = createAsyncThunk<
   ManagerDashboardData,
-  void,
+  string | undefined,
   { rejectValue: string }
->('managerDashboard/fetch', async (_arg, { rejectWithValue }) => {
-  const result = await getManagerDashboard();
+>('managerDashboard/fetch', async (date, { rejectWithValue }) => {
+  const result = await getManagerDashboard(date);
   if (!result.success || !result.data) {
     return rejectWithValue(result.message ?? 'Failed to load dashboard');
   }

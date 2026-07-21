@@ -13,11 +13,11 @@ import managerDashboardReducer from './slices/managerDashboardSlice';
 
 // Persist configuration
 const persistConfig = {
-    key: 'root',
+    key: 'auth',
     storage: AsyncStorage,
     version: 1,
-    whitelist: ['auth'], // Only persist auth slice
-    timeout: 100000, // 100 seconds
+    whitelist: ['userRole', 'token', 'guardId'],
+    timeout: 100000,
 };
 
 const persistedAuthReducer = persistReducer(persistConfig, authReducer);

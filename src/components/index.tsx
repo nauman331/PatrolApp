@@ -94,12 +94,14 @@ export const NavBar: React.FC<NavBarProps> = ({
 interface SectionHeaderProps {
   title: string;
   action?: string;
+  onActionPress?: () => void;
   dark?: boolean;
 }
 
 export const SectionHeader: React.FC<SectionHeaderProps> = ({
   title,
   action,
+  onActionPress,
   dark,
 }) => (
   <View style={styles.secHdr}>
@@ -111,7 +113,15 @@ export const SectionHeader: React.FC<SectionHeaderProps> = ({
     >
       {title}
     </Text>
-    {action && <Text style={styles.seeAll}>{action}</Text>}
+    {action && (
+      onActionPress ? (
+        <TouchableOpacity onPress={onActionPress} activeOpacity={0.7}>
+          <Text style={styles.seeAll}>{action}</Text>
+        </TouchableOpacity>
+      ) : (
+        <Text style={styles.seeAll}>{action}</Text>
+      )
+    )}
   </View>
 );
 
