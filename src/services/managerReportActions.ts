@@ -34,26 +34,27 @@ function mapManagerIncidentToMapped(data: ManagerIncidentDetailData): MappedInci
 export async function shareReport(type: 'patrol' | 'incident', data: any, action: 'download' | 'share' | 'email') {
   try {
     let filePath: string;
+    let cachePath: string;
     let fileName: string;
     let title: string;
     let messageBody = '';
 
     if (type === 'incident') {
       const mapped = mapManagerIncidentToMapped(data as ManagerIncidentDetailData);
-      filePath = await buildIncidentReportPdf(mapped);
+      const res = await buildIncidentReportPdf(mapped);
+      filePath = res.filePath;
+      cachePath = res.cachePath;
       fileName = `Incident_Report_${data.id}.pdf`;
       title = `Incident Report #${data.id} - ${data.site_name}`;
       messageBody = `Please find attached the Incident Report.\n\nIncident: ${data.title}\nSite: ${data.site_name}\nGuard: ${data.guard_name}\nSeverity: ${data.severity}\nDate: ${data.location_date}`;
     } else {
-      filePath = await buildPatrolReportPdf(data as ManagerPatrolReportDetailData);
+      const res = await buildPatrolReportPdf(data as ManagerPatrolReportDetailData);
+      filePath = res.filePath;
+      cachePath = res.cachePath;
       fileName = `Patrol_Report_${data.guard.id}_${data.date}.pdf`;
       title = `Patrol Report: ${data.site.name} - ${data.guard.name}`;
       messageBody = `Please find attached the Patrol Report.\n\nGuard: ${data.guard.name}\nSite: ${data.site.name}\nDate: ${data.date_label}\nCompliance: ${data.summary.compliance_percentage}%`;
     }
-
-    const fileUri = (Platform.OS === 'android' && !filePath.startsWith('content://'))
-        ? `file://${filePath}`
-        : filePath;
 
     if (action === 'download') {
       if (Platform.OS === 'android') {
@@ -64,17 +65,23 @@ export async function shareReport(type: 'patrol' | 'incident', data: any, action
       return;
     }
 
+    // For sharing on Android, we use the cachePath which is a guaranteed local file
+    // content:// URIs from MediaStore sometimes cause issues with the Uri.getScheme() check in Share
+    let shareUrl = Platform.OS === 'android' ? cachePath : filePath;
+    if (Platform.OS === 'android' && !shareUrl.startsWith('file://') && !shareUrl.startsWith('content://')) {
+        shareUrl = `file://${shareUrl}`;
+    }
+
     const shareOptions: any = {
       title: title,
       subject: title,
       message: messageBody,
-      url: fileUri,
+      url: shareUrl,
       type: 'application/pdf',
       failOnCancel: false,
     };
 
     if (action === 'email') {
-        // This targets ONLY email applications (Gmail, Outlook, Mail, etc.)
         try {
             await Share.shareSingle({
                 ...shareOptions,
@@ -83,11 +90,9 @@ export async function shareReport(type: 'patrol' | 'incident', data: any, action
             return;
         } catch (err) {
             console.log('Direct email failed, falling back to general share chooser');
-            // If direct email fails (no default app), we allow it to fall through to Share.open
         }
     }
 
-    // Opens the Share Modal for WhatsApp and other apps
     try {
         await Share.open(shareOptions);
     } catch (err: any) {
@@ -102,6 +107,6 @@ export async function shareReport(type: 'patrol' | 'incident', data: any, action
         return;
     }
     console.error('Report action failed', err);
-    Alert.alert('Error', 'Could not complete the action. Please ensure you have the required apps installed.');
+    Alert.alert('Error', `Could not complete the action: ${err instanceof Error ? err.message : 'Unknown error'}`);
   }
 }

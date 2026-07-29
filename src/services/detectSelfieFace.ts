@@ -82,9 +82,24 @@ export async function detectFaceInSelfie(asset: Asset): Promise<boolean> {
   try {
     const faces = await FaceDetection.detect(imageUri, {
       performanceMode: 'accurate',
-      minFaceSize: 0.1,
+      landmarkMode: 'all',
+      classificationMode: 'all',
+      minFaceSize: 0.15,
     });
-    return Array.isArray(faces) && faces.length > 0;
+
+    if (!Array.isArray(faces) || faces.length !== 1) {
+      return false;
+    }
+
+    const face = faces[0];
+
+    // Basic heuristic to filter out non-human or cartoonish images
+    // if ML Kit provides classifications, we can check them.
+    // Real faces usually have some variation.
+    // We also check if landmarks are present which is more common in real faces for ML Kit.
+    const hasLandmarks = face.landmarks && Object.keys(face.landmarks).length > 0;
+
+    return hasLandmarks;
   } catch {
     return false;
   }

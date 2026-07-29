@@ -327,7 +327,7 @@ export default function ShiftSignInScreen() {
             </View>
 
             <View style={styles.siteBox}>
-              <Text style={styles.siteBoxLbl}>CURRENT SITE</Text>
+              <Text style={styles.siteBoxLbl}>Current Site</Text>
               <Text style={styles.siteBoxName} numberOfLines={2}>
                 {truncateSiteName(shift.site)}
               </Text>
@@ -427,10 +427,10 @@ export default function ShiftSignInScreen() {
                 )}
                 <Text style={styles.signInBtnText}>
                   {checkingIn
-                    ? 'SIGNING IN...'
+                    ? 'Signing in...'
                     : isActiveShift
-                      ? 'CONTINUE SHIFT'
-                      : 'SIGN IN TO SHIFT'}
+                      ? 'Continue Shift'
+                      : 'Sign In to Shift'}
                 </Text>
               </View>
             </TouchableOpacity>
@@ -510,7 +510,6 @@ const styles = StyleSheet.create({
     fontSize: FontSizes.xs,
     color: 'rgba(255,255,255,0.4)',
     letterSpacing: 1,
-    textTransform: 'uppercase',
     marginBottom: 4,
   },
   siteBoxName: {

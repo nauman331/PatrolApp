@@ -429,7 +429,7 @@ export default function OngoingShiftScreen() {
               </View>
               <View style={[styles.smallCard, Shadows.card]}>
                 <FileText size={22} color={Colors.info} />
-                <Text style={styles.smallTitle}>SignOut Notes</Text>
+                <Text style={styles.smallTitle}>Sign Out Notes</Text>
                 <TextInput
                   style={styles.notesInput}
                   value={signoutNotes}
@@ -475,7 +475,7 @@ export default function OngoingShiftScreen() {
                       style={styles.selfiePlaceholderLogo}
                       resizeMode="contain"
                     />
-                    <Text style={styles.selfieTitle}>SignOut Selfie</Text>
+                    <Text style={styles.selfieTitle}>Sign Out Selfie</Text>
                     <Text style={styles.selfieHint}>Tap to capture</Text>
                   </>
                 )}
@@ -555,7 +555,7 @@ export default function OngoingShiftScreen() {
             {checkingOut ? (
               <ActivityIndicator color={Colors.white} />
             ) : (
-              <Text style={styles.endBtnText}>END SHIFT</Text>
+              <Text style={styles.endBtnText}>End Shift</Text>
             )}
           </TouchableOpacity>
         </ScrollView>
