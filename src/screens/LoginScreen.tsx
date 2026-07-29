@@ -56,12 +56,14 @@ export default function LoginScreen({ }: LoginScreenProps) {
   useEffect(() => {
     (async () => {
       const saved = await getSavedLogin();
-      if (!saved?.remember || saved.role !== 'manager') return;
+      if (!saved?.remember) return;
 
-      setRememberManager(true);
-      setRole('manager');
-      if (saved.email) setManagerEmail(saved.email);
-      if (saved.password) setManagerPassword(saved.password);
+      if (saved.role === 'manager') {
+        setRememberManager(true);
+        setRole('manager');
+        if (saved.email) setManagerEmail(saved.email);
+        if (saved.password) setManagerPassword(saved.password);
+      }
     })();
   }, []);
 
@@ -141,6 +143,10 @@ export default function LoginScreen({ }: LoginScreenProps) {
           }),
         );
         await syncAuthTokensToStorage(token, guardId);
+        await saveSavedLogin({
+          role: 'guard',
+          remember: false,
+        });
       } else {
         setGuardError(
           res.message || 'The verification code is invalid. Please try again.',
@@ -301,7 +307,7 @@ export default function LoginScreen({ }: LoginScreenProps) {
                       if (otpSent) resetOtpFlow();
                     }}
                     onFocus={() => scrollToField(phoneFieldRef)}
-                    placeholder="923350964001"
+                    placeholder="+923350964001"
                     placeholderTextColor="#888"
                     keyboardType="phone-pad"
                     editable={!loading}
@@ -346,7 +352,7 @@ export default function LoginScreen({ }: LoginScreenProps) {
                   </>
                 )}
 
-                <TouchableOpacity
+                  <TouchableOpacity
                   style={styles.loginBtn}
                   onPress={handleGuardSubmit}
                   disabled={loading}

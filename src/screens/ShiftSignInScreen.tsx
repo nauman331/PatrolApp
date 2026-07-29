@@ -38,7 +38,6 @@ import {
   ArrowLeft,
   CheckCircle,
   FileText,
-  RefreshCw,
 } from 'lucide-react-native';
 import { useRoute } from '@react-navigation/native';
 import { useSelector } from 'react-redux';
@@ -101,6 +100,7 @@ export default function ShiftSignInScreen() {
   const [watermarkJob, setWatermarkJob] = useState<SelfieWatermarkJob | null>(null);
   const [watermarking, setWatermarking] = useState(false);
   const pendingSelfieRef = useRef<Asset | null>(null);
+  const isFetchingLocation = useRef(false);
   const [resolvedSiteId, setResolvedSiteId] = useState<
     string | number | undefined
   >(params?.siteId);
@@ -148,46 +148,58 @@ export default function ShiftSignInScreen() {
 
   const locationFallback = shift.site || shift.zones || 'Current location';
 
-  const refreshLocation = useCallback(async () => {
-    if (locationFetched) {
-      return;
-    }
-
-    setLocationLoading(true);
-    try {
-      const allowed = await requestLocationPermission();
-      if (!allowed) {
-        Alert.alert(
-          'Permission required',
-          'Location permission is needed to check in.',
-        );
+  const refreshLocation = useCallback(
+    async (showPermissionAlert = false) => {
+      if (locationFetched || isFetchingLocation.current) {
         return;
       }
 
-      let fix;
+      isFetchingLocation.current = true;
+      setLocationLoading(true);
       try {
-        fix = await fetchLocationFix(true, locationFallback);
-      } catch {
-        fix = await fetchLocationFix(false, locationFallback);
-      }
+        const allowed = await requestLocationPermission();
+        if (!allowed) {
+          if (showPermissionAlert) {
+            Alert.alert(
+              'Permission required',
+              'Location permission is needed to check in.',
+            );
+          }
+          return;
+        }
 
-      setLocationCoords(fix.coordinates);
-      setLocationLabel(fix.displayName);
-      setLocationFetched(true);
-    } catch (error: any) {
-      const code = error?.code ? ` (code ${error.code})` : '';
-      Alert.alert(
-        `Location unavailable${code}`,
-        'Could not get GPS coordinates. Enable location services and try again.',
-      );
-    } finally {
-      setLocationLoading(false);
-    }
-  }, [locationFetched, locationFallback]);
+        let fix;
+        try {
+          fix = await fetchLocationFix(true, locationFallback);
+        } catch {
+          fix = await fetchLocationFix(false, locationFallback);
+        }
+
+        setLocationCoords(fix.coordinates);
+        setLocationLabel(fix.displayName);
+        setLocationFetched(true);
+      } catch (error: any) {
+        // Fail silently, retry logic in useEffect will handle auto-fetches
+      } finally {
+        setLocationLoading(false);
+        isFetchingLocation.current = false;
+      }
+    },
+    [locationFetched, locationFallback],
+  );
 
   useEffect(() => {
-    refreshLocation();
+    refreshLocation(false);
   }, [refreshLocation]);
+
+  useEffect(() => {
+    if (!locationFetched && !locationLoading) {
+      const timer = setTimeout(() => {
+        refreshLocation(false);
+      }, 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [locationFetched, locationLoading, refreshLocation]);
 
   const handleCaptureSelfie = async () => {
     const asset = await captureFaceSelfieFromCamera();
@@ -211,11 +223,8 @@ export default function ShiftSignInScreen() {
       return;
     }
     if (!locationCoords.trim()) {
-      Alert.alert('Error', 'Location is required. Tap refresh to fetch GPS.');
-      return;
-    }
-    if (!signinNotes.trim()) {
-      Alert.alert('Error', 'Please add sign-in notes.');
+      Alert.alert('Error', 'Location required');
+      refreshLocation(true);
       return;
     }
     if (!selfie?.uri) {
@@ -238,7 +247,12 @@ export default function ShiftSignInScreen() {
       });
 
       if (result.success) {
-        const signInTime = new Date().toISOString();
+        const serverData = result.data as any;
+        const signInTime =
+          serverData?.signin_time ||
+          serverData?.sign_in_time ||
+          (isActiveShift && shift.signInTime ? shift.signInTime : new Date().toISOString());
+
         let siteIdToSave = shift.siteId;
         if (siteIdToSave == null && shift.rosterId != null) {
           const jobs = await getGuardMyJobs(guardId);
@@ -254,6 +268,7 @@ export default function ShiftSignInScreen() {
           signInTime,
           shiftId: shift.id,
           siteId: siteIdToSave,
+          siteInfo: serverData?.site_info || serverData,
         });
         navigation.replace(GUARD_ROUTES.ONGOING_SHIFT, {
           rosterId: shift.rosterId,
@@ -312,7 +327,7 @@ export default function ShiftSignInScreen() {
             </View>
 
             <View style={styles.siteBox}>
-              <Text style={styles.siteBoxLbl}>CURRENT SITE</Text>
+              <Text style={styles.siteBoxLbl}>Current Site</Text>
               <Text style={styles.siteBoxName} numberOfLines={2}>
                 {truncateSiteName(shift.site)}
               </Text>
@@ -330,30 +345,6 @@ export default function ShiftSignInScreen() {
 
           <View style={styles.body}>
             {/* Location */}
-            <View style={[styles.card, Shadows.card]}>
-              <View style={styles.cardTitleRow}>
-                <MapPin size={16} color={Colors.accent} />
-                <Text style={styles.cardTitle}>Location</Text>
-              </View>
-              <Text style={styles.locationValue} numberOfLines={2}>
-                {locationLoading
-                  ? 'Fetching location...'
-                  : locationLabel || 'Location not available'}
-              </Text>
-              <TouchableOpacity
-                style={[
-                  styles.secondaryBtn,
-                  (locationLoading || locationFetched) && styles.secondaryBtnDisabled,
-                ]}
-                onPress={refreshLocation}
-                disabled={locationLoading || locationFetched}
-              >
-                <RefreshCw size={14} color={Colors.accent} />
-                <Text style={styles.secondaryBtnText}>
-                  {locationFetched ? 'Location captured' : 'Refresh location'}
-                </Text>
-              </TouchableOpacity>
-            </View>
 
             {/* Sign-in notes */}
             <View style={[styles.card, Shadows.card]}>
@@ -436,10 +427,10 @@ export default function ShiftSignInScreen() {
                 )}
                 <Text style={styles.signInBtnText}>
                   {checkingIn
-                    ? 'SIGNING IN...'
+                    ? 'Signing in...'
                     : isActiveShift
-                      ? 'CONTINUE SHIFT'
-                      : 'SIGN IN TO SHIFT'}
+                      ? 'Continue Shift'
+                      : 'Sign In to Shift'}
                 </Text>
               </View>
             </TouchableOpacity>
@@ -519,7 +510,6 @@ const styles = StyleSheet.create({
     fontSize: FontSizes.xs,
     color: 'rgba(255,255,255,0.4)',
     letterSpacing: 1,
-    textTransform: 'uppercase',
     marginBottom: 4,
   },
   siteBoxName: {
@@ -567,7 +557,6 @@ const styles = StyleSheet.create({
   locationValue: {
     fontSize: 13,
     color: Colors.textPrimary,
-    marginBottom: 12,
     fontWeight: '600',
     lineHeight: 18,
   },

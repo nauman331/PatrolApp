@@ -9,7 +9,7 @@ import {
 import { useFocusEffect } from '@react-navigation/native';
 import { Colors, FontSizes, Radii, Shadows } from '../../theme';
 import { SectionHeader } from '../../components';
-import { MapPin, Map, Tag, Info, User, Phone, Mail } from 'lucide-react-native';
+import { MapPin, Map, Tag, Info, FileText, ChevronRight, ExternalLink, Globe } from 'lucide-react-native';
 import type { ManagerStackScreenProps } from '../../navigation/types';
 import {
   ManagerStackHeader,
@@ -19,8 +19,9 @@ import {
 } from './managerShared';
 import AuthErrorBanner from '../../components/AuthErrorBanner';
 import { formatDateTimeFull } from '../../utils';
+import { API_BASE_URL } from '../../config/env';
 import {
-  ManagerShiftReportFixedShimmer,
+  ManagerSiteDetailShimmer,
 } from '../../components/Shimmer';
 import {
   getManagerSiteDetail,
@@ -69,7 +70,23 @@ export default function ManagerSiteDetailScreen({ route }: Props) {
     }
   };
 
+  const openDocument = (path: string | null) => {
+    if (path) {
+      const url = `${API_BASE_URL}/storage/${path}`;
+      Linking.openURL(url);
+    }
+  };
+
   const showShimmer = loading && !data;
+
+  const documents = [
+    { label: 'Emergency Procedures', path: data?.emergency_procedures },
+    { label: 'Patrol Checkpoints', path: data?.patrol_checkpoints },
+    { label: 'Incident Reporting Guide', path: data?.incident_reporting_guide },
+    { label: 'NFC Scan Protocol', path: data?.nfc_scan_protocol },
+  ];
+
+  const hasDocuments = documents.some(doc => !!doc.path);
 
   return (
     <ManagerStackShell
@@ -87,12 +104,20 @@ export default function ManagerSiteDetailScreen({ route }: Props) {
         {error ? <AuthErrorBanner message={error} /> : null}
 
         {showShimmer ? (
-          <ManagerShiftReportFixedShimmer />
+          <ManagerSiteDetailShimmer />
         ) : data ? (
-          <>
+          <View style={{ marginTop: 10 }}>
             <SectionHeader title="Site Information" />
             <ManagerCard>
               <View style={styles.infoRow}>
+                <Info size={16} color={Colors.accent} />
+                <View style={styles.infoContent}>
+                  <Text style={styles.infoLabel}>Site Name</Text>
+                  <Text style={styles.infoText}>{data.site_name}</Text>
+                </View>
+              </View>
+
+              <View style={[styles.infoRow, { marginTop: 12 }]}>
                 <MapPin size={16} color={Colors.accent} />
                 <View style={styles.infoContent}>
                   <Text style={styles.infoLabel}>Address</Text>
@@ -120,45 +145,44 @@ export default function ManagerSiteDetailScreen({ route }: Props) {
               </View>
 
               <View style={[styles.infoRow, { marginTop: 12 }]}>
-                <View style={{ flexDirection: 'row', gap: 12 }}>
-                   <View style={{ flex: 1 }}>
-                      <Text style={styles.infoLabel}>State</Text>
-                      <Text style={styles.infoText}>{data.state?.toUpperCase()}</Text>
-                   </View>
-                   <View style={{ flex: 1 }}>
-                      <Text style={styles.infoLabel}>Radius</Text>
-                      <Text style={styles.infoText}>{data.signin_radius}m</Text>
-                   </View>
+                <Globe size={16} color={Colors.accent} />
+                <View style={styles.infoContent}>
+                  <Text style={styles.infoLabel}>State</Text>
+                  <Text style={styles.infoText}>{data.state ? data.state.charAt(0).toUpperCase() + data.state.slice(1).toLowerCase() : ''}</Text>
                 </View>
               </View>
             </ManagerCard>
 
-            <SectionHeader title="Owner Information" />
-            <ManagerCard>
-              <View style={styles.infoRow}>
-                <User size={16} color={Colors.accent} />
-                <View style={styles.infoContent}>
-                  <Text style={styles.infoLabel}>Name</Text>
-                  <Text style={styles.infoText}>{data.user.name}</Text>
-                </View>
-              </View>
-              <View style={[styles.infoRow, { marginTop: 12 }]}>
-                <Mail size={16} color={Colors.accent} />
-                <View style={styles.infoContent}>
-                  <Text style={styles.infoLabel}>Email</Text>
-                  <Text style={styles.infoText}>{data.user.email}</Text>
-                </View>
-              </View>
-              {data.user.phone && (
-                <View style={[styles.infoRow, { marginTop: 12 }]}>
-                  <Phone size={16} color={Colors.accent} />
-                  <View style={styles.infoContent}>
-                    <Text style={styles.infoLabel}>Phone</Text>
-                    <Text style={styles.infoText}>{data.user.phone}</Text>
-                  </View>
-                </View>
-              )}
-            </ManagerCard>
+            {hasDocuments && (
+              <>
+                <SectionHeader title="Site Documents" />
+                <ManagerCard>
+                  {documents.map((doc, index) => (
+                    <TouchableOpacity
+                      key={index}
+                      style={[styles.docRow, index > 0 && styles.docRowBorder]}
+                      onPress={() => openDocument(doc.path ?? null)}
+                      disabled={!doc.path}
+                    >
+                      <View style={styles.docIconWrap}>
+                        <FileText size={18} color={doc.path ? Colors.accent : Colors.textMuted} />
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={[styles.docLabel, !doc.path && { color: Colors.textMuted }]}>
+                          {doc.label}
+                        </Text>
+                        <Text style={styles.docStatus}>
+                          {doc.path ? 'View Document' : 'Not Uploaded'}
+                        </Text>
+                      </View>
+                      {doc.path ? (
+                        <ExternalLink size={14} color={Colors.textMuted} />
+                      ) : null}
+                    </TouchableOpacity>
+                  ))}
+                </ManagerCard>
+              </>
+            )}
 
             <SectionHeader title={`NFC Tags (${data.nfc_tags.length})`} />
             {data.nfc_tags.length > 0 ? (
@@ -177,12 +201,7 @@ export default function ManagerSiteDetailScreen({ route }: Props) {
             ) : (
               <Text style={styles.emptyText}>No NFC tags assigned to this site.</Text>
             )}
-
-            <View style={styles.footer}>
-                <Text style={styles.footerText}>Created: {formatDateTimeFull(data.created_at)}</Text>
-                <Text style={styles.footerText}>Updated: {formatDateTimeFull(data.updated_at)}</Text>
-            </View>
-          </>
+          </View>
         ) : null}
       </ManagerStackListLayout>
     </ManagerStackShell>
@@ -202,7 +221,6 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: '600',
     color: Colors.textMuted,
-    textTransform: 'uppercase',
     marginBottom: 2,
   },
   infoText: {
@@ -246,5 +264,33 @@ const styles = StyleSheet.create({
   footerText: {
     fontSize: 10,
     color: Colors.textMuted,
+  },
+  docRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    gap: 12,
+  },
+  docRowBorder: {
+    borderTopWidth: 1,
+    borderTopColor: Colors.border,
+  },
+  docIconWrap: {
+    width: 36,
+    height: 36,
+    borderRadius: Radii.sm,
+    backgroundColor: Colors.bgAlt,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  docLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: Colors.textPrimary,
+  },
+  docStatus: {
+    fontSize: 11,
+    color: Colors.textMuted,
+    marginTop: 1,
   },
 });

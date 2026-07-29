@@ -1,5 +1,6 @@
 import { Alert, Platform } from 'react-native';
 import ReactNativeBlobUtil from 'react-native-blob-util';
+import Share from 'react-native-share';
 import { type ManagerIncidentDetailData, type ManagerPatrolReportDetailData } from './managerApi';
 import { buildIncidentReportPdf } from './incidentPdfGenerator';
 import { buildPatrolReportPdf } from './patrolPdfGenerator';
@@ -33,15 +34,26 @@ function mapManagerIncidentToMapped(data: ManagerIncidentDetailData): MappedInci
 export async function shareReport(type: 'patrol' | 'incident', data: any, action: 'download' | 'share' | 'email') {
   try {
     let filePath: string;
+    let cachePath: string;
     let fileName: string;
+    let title: string;
+    let messageBody = '';
 
     if (type === 'incident') {
       const mapped = mapManagerIncidentToMapped(data as ManagerIncidentDetailData);
-      filePath = await buildIncidentReportPdf(mapped);
-      fileName = `incident-report-${data.id}.pdf`;
+      const res = await buildIncidentReportPdf(mapped);
+      filePath = res.filePath;
+      cachePath = res.cachePath;
+      fileName = `Incident_Report_${data.id}.pdf`;
+      title = `Incident Report #${data.id} - ${data.site_name}`;
+      messageBody = `Please find attached the Incident Report.\n\nIncident: ${data.title}\nSite: ${data.site_name}\nGuard: ${data.guard_name}\nSeverity: ${data.severity}\nDate: ${data.location_date}`;
     } else {
-      filePath = await buildPatrolReportPdf(data as ManagerPatrolReportDetailData);
-      fileName = `patrol-report-${data.guard.id}-${data.date}.pdf`;
+      const res = await buildPatrolReportPdf(data as ManagerPatrolReportDetailData);
+      filePath = res.filePath;
+      cachePath = res.cachePath;
+      fileName = `Patrol_Report_${data.guard.id}_${data.date}.pdf`;
+      title = `Patrol Report: ${data.site.name} - ${data.guard.name}`;
+      messageBody = `Please find attached the Patrol Report.\n\nGuard: ${data.guard.name}\nSite: ${data.site.name}\nDate: ${data.date_label}\nCompliance: ${data.summary.compliance_percentage}%`;
     }
 
     if (action === 'download') {
@@ -53,19 +65,48 @@ export async function shareReport(type: 'patrol' | 'incident', data: any, action
       return;
     }
 
-    // For share and email, we use the same open/preview mechanism since we don't have react-native-share
-    // On iOS openDocument provides share options.
-    // On Android we can use actionViewIntent which opens the PDF, then user can share from there.
+    // For sharing on Android, we use the cachePath which is a guaranteed local file
+    // content:// URIs from MediaStore sometimes cause issues with the Uri.getScheme() check in Share
+    let shareUrl = Platform.OS === 'android' ? cachePath : filePath;
+    if (Platform.OS === 'android' && !shareUrl.startsWith('file://') && !shareUrl.startsWith('content://')) {
+        shareUrl = `file://${shareUrl}`;
+    }
 
-    if (Platform.OS === 'ios') {
-      await ReactNativeBlobUtil.ios.openDocument(filePath);
-    } else {
-      const openTarget = filePath.startsWith('content://') ? filePath : `file://${filePath}`;
-      await ReactNativeBlobUtil.android.actionViewIntent(openTarget, 'application/pdf');
+    const shareOptions: any = {
+      title: title,
+      subject: title,
+      message: messageBody,
+      url: shareUrl,
+      type: 'application/pdf',
+      failOnCancel: false,
+    };
+
+    if (action === 'email') {
+        try {
+            await Share.shareSingle({
+                ...shareOptions,
+                social: Share.Social.EMAIL,
+            });
+            return;
+        } catch (err) {
+            console.log('Direct email failed, falling back to general share chooser');
+        }
+    }
+
+    try {
+        await Share.open(shareOptions);
+    } catch (err: any) {
+        if (err?.message?.includes('User did not share') || err?.message?.includes('User cancelled')) {
+            return;
+        }
+        throw err;
     }
 
   } catch (err) {
+    if (err instanceof Error && (err.message.includes('User did not share') || err.message.includes('User cancelled'))) {
+        return;
+    }
     console.error('Report action failed', err);
-    Alert.alert('Error', 'Failed to process report action');
+    Alert.alert('Error', `Could not complete the action: ${err instanceof Error ? err.message : 'Unknown error'}`);
   }
 }

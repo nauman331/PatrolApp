@@ -3,14 +3,20 @@ import {
   View,
   Text,
   StyleSheet,
+  TouchableOpacity,
 } from 'react-native';
-import { useFocusEffect } from '@react-navigation/native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { Colors, FontSizes, Radii, Shadows } from '../../theme';
 import { SectionHeader } from '../../components';
-import { MapPin, Clock, Footprints } from 'lucide-react-native';
+import { MapPin, Clock, Footprints, Download, Share2, Mail } from 'lucide-react-native';
 import type { ManagerStackScreenProps } from '../../navigation/types';
-import { ManagerStackHeader, ManagerStackListLayout, ManagerStackShell } from './managerShared';
+import {
+  ManagerStackHeader,
+  ManagerStackListLayout,
+  ManagerStackShell,
+} from './managerShared';
 import AuthErrorBanner from '../../components/AuthErrorBanner';
+import { formatDateTimeFull } from '../../utils';
 import {
   ManagerShiftReportFixedShimmer,
   ManagerShiftReportListShimmer,
@@ -19,14 +25,17 @@ import {
   getManagerPatrolReportDetail,
   type ManagerPatrolReportDetailData,
 } from '../../services/managerApi';
+import { formatFullDisplayDate } from '../../services/guardJobsMapper';
+import { shareReport } from '../../services/managerReportActions';
 
 type Props = ManagerStackScreenProps<'ManagerShiftReport'>;
 
 export default function ManagerShiftReportScreen({ route }: Props) {
+  const navigation = useNavigation<any>();
   const {
     guardId,
     siteId,
-    date,
+    date: routeDate,
     guardName: routeGuardName,
     site: routeSite,
   } = route.params ?? {};
@@ -36,15 +45,17 @@ export default function ManagerShiftReportScreen({ route }: Props) {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const fetchDetail = useCallback(async () => {
-    if (!guardId || !siteId || !date) {
-      setError('Missing report parameters');
+  const displayDate = routeDate || new Date().toISOString().slice(0, 10);
+
+  const fetchDetail = useCallback(async (dateStr: string) => {
+    if (!guardId || !siteId) {
+      setError('Missing guard or site parameters');
       setLoading(false);
       return;
     }
 
     setError(null);
-    const result = await getManagerPatrolReportDetail(guardId, siteId, date);
+    const result = await getManagerPatrolReportDetail(guardId, siteId, dateStr);
 
     if (result.success && result.data) {
       setData(result.data);
@@ -55,19 +66,18 @@ export default function ManagerShiftReportScreen({ route }: Props) {
 
     setLoading(false);
     setRefreshing(false);
-  }, [guardId, siteId, date]);
+  }, [guardId, siteId]);
 
   useFocusEffect(
     useCallback(() => {
-      setLoading(true);
-      fetchDetail();
-    }, [fetchDetail]),
+      fetchDetail(displayDate);
+    }, [fetchDetail, displayDate]),
   );
 
   const onRefresh = useCallback(() => {
     setRefreshing(true);
-    fetchDetail();
-  }, [fetchDetail]);
+    fetchDetail(displayDate);
+  }, [fetchDetail, displayDate]);
 
   const guardName = data?.guard.name ?? routeGuardName ?? 'Guard';
   const siteName = data?.site.name ?? routeSite ?? 'Site';
@@ -77,7 +87,7 @@ export default function ManagerShiftReportScreen({ route }: Props) {
 
   const summaryCards = summary
     ? [
-        { value: String(summary.patrols_count), label: 'Patrols', highlight: true },
+        { value: String(summary.patrols_count), label: 'Patrols', highlight: false },
         {
           value: String(summary.completed_count),
           label: 'Completed',
@@ -101,7 +111,7 @@ export default function ManagerShiftReportScreen({ route }: Props) {
       header={
         <ManagerStackHeader
           title="Patrol Report"
-          subtitle={`${siteName} · ${guardName}${data?.date_label ? ` · ${data.date_label}` : ''}`}
+          subtitle={`${siteName} · ${guardName}${data?.date ? ` · ${formatFullDisplayDate(data.date)}` : ''}`}
         />
       }
     >
@@ -109,7 +119,7 @@ export default function ManagerShiftReportScreen({ route }: Props) {
         refreshing={refreshing}
         onRefresh={onRefresh}
         fixedContent={
-          <>
+          <View style={{ marginHorizontal: -4 }}>
             {error ? <AuthErrorBanner message={error} /> : null}
             {showShimmer ? (
               <ManagerShiftReportFixedShimmer />
@@ -127,23 +137,56 @@ export default function ManagerShiftReportScreen({ route }: Props) {
                     >
                       <Text
                         style={[styles.sumNum, s.highlight && styles.sumNumHL]}
+                        numberOfLines={1}
+                        adjustsFontSizeToFit
                       >
                         {s.value}
                       </Text>
-                      <Text style={styles.sumLabel}>{s.label}</Text>
+                      <Text style={styles.sumLabel} numberOfLines={1}>
+                        {s.label}
+                      </Text>
                     </View>
                   ))}
                 </View>
 
-                {data?.site.address ? (
-                  <View style={[styles.siteCard, Shadows.card]}>
-                    <MapPin size={14} color={Colors.accent} />
-                    <Text style={styles.siteAddress}>{data.site.address}</Text>
+                {data ? (
+                  <View style={styles.actionRow}>
+                    <TouchableOpacity
+                      style={[styles.actionBtn, Shadows.card]}
+                      onPress={() => shareReport('patrol', data, 'download')}
+                    >
+                      <Download size={16} color={Colors.accent} />
+                      <Text style={styles.actionBtnText}>Download</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[styles.actionBtn, Shadows.card]}
+                      onPress={() => shareReport('patrol', data, 'share')}
+                    >
+                      <Share2 size={16} color={Colors.accent} />
+                      <Text style={styles.actionBtnText}>Share</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[styles.actionBtn, Shadows.card]}
+                      onPress={() => shareReport('patrol', data, 'email')}
+                    >
+                      <Mail size={16} color={Colors.accent} />
+                      <Text style={styles.actionBtnText}>Email</Text>
+                    </TouchableOpacity>
                   </View>
+                ) : null}
+
+                {data?.site.address ? (
+                  <TouchableOpacity
+                    style={[styles.siteCard, Shadows.card]}
+                    onPress={() => navigation.navigate('ManagerSiteDetail', { siteId: data.site.id })}
+                  >
+                    <MapPin size={14} color={Colors.accent} />
+                    <Text style={styles.siteAddress} numberOfLines={1}>{data.site.address}</Text>
+                  </TouchableOpacity>
                 ) : null}
               </>
             )}
-          </>
+          </View>
         }
         listHeader={<SectionHeader title="Patrols" />}
       >
@@ -166,8 +209,8 @@ export default function ManagerShiftReportScreen({ route }: Props) {
                   <View style={styles.patrolMeta}>
                     <Clock size={12} color={Colors.textMuted} />
                     <Text style={styles.patrolTime}>
-                      {patrol.started_at}
-                      {patrol.completed_at ? ` – ${patrol.completed_at}` : ''}
+                      {formatDateTimeFull(patrol.started_at)}
+                      {patrol.completed_at ? ` – ${formatDateTimeFull(patrol.completed_at)}` : ''}
                     </Text>
                   </View>
                   <Text style={styles.scannerSummary}>
@@ -191,7 +234,7 @@ export default function ManagerShiftReportScreen({ route }: Props) {
                       <View style={{ flex: 1 }}>
                         <Text style={styles.scannerName}>{scanner.name}</Text>
                         <Text style={styles.scannerTime}>
-                          {scanner.scan_at ?? 'Not scanned'}
+                          {scanner.scan_at ? formatDateTimeFull(scanner.scan_at) : 'Not scanned'}
                         </Text>
                       </View>
                     </View>
@@ -212,23 +255,31 @@ const styles = StyleSheet.create({
     color: Colors.textMuted,
     marginBottom: 12,
   },
-  summaryRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 8 },
+  summaryRow: {
+    flexDirection: 'row',
+    gap: 5,
+    marginBottom: 10,
+    marginTop: 10,
+  },
   sumCard: {
+    flex: 1,
     backgroundColor: Colors.bgCard,
-    borderRadius: Radii.lg,
-    padding: 12,
-    paddingHorizontal: 14,
-    minWidth: 90,
-    borderWidth: 1.5,
+    borderRadius: Radii.md,
+    paddingVertical: 10,
+    paddingHorizontal: 2,
+    borderWidth: 1.2,
     borderColor: Colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minWidth: 0,
   },
   sumCardHL: {
     borderColor: Colors.accentAlpha25,
     backgroundColor: Colors.accentLight,
   },
-  sumNum: { fontSize: 20, fontWeight: '800', color: Colors.textPrimary },
+  sumNum: { fontSize: 14, fontWeight: '800', color: Colors.textPrimary },
   sumNumHL: { color: Colors.accent },
-  sumLabel: { fontSize: FontSizes.xs, color: Colors.textMuted, marginTop: 2 },
+  sumLabel: { fontSize: 8.5, color: Colors.textMuted, marginTop: 2, fontWeight: '600' },
   siteCard: {
     backgroundColor: Colors.bgCard,
     borderRadius: Radii.md,
@@ -239,6 +290,28 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   siteAddress: { fontSize: 12, color: Colors.textSecondary, flex: 1 },
+  actionRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 10,
+  },
+  actionBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: Colors.bgCard,
+    paddingVertical: 10,
+    borderRadius: Radii.md,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  actionBtnText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: Colors.textPrimary,
+  },
   patrolCard: {
     backgroundColor: Colors.bgCard,
     borderRadius: Radii.lg,

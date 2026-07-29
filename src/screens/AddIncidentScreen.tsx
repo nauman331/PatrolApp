@@ -12,6 +12,7 @@ import {
   ActivityIndicator,
   Platform,
   PermissionsAndroid,
+  Keyboard,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRoute } from '@react-navigation/native';
@@ -41,12 +42,18 @@ import {
   Siren,
   Tag,
   Users,
+  X,
 } from 'lucide-react-native';
 import { useGuardNavigation } from '../navigation/utils';
 import { GUARD_ROUTES } from '../navigation/constants';
 import type { GuardStackScreenProps } from '../navigation/types';
 import type { RootState } from '../store/store';
-import { getGuardMyJobs, guardReportIncident } from '../services/guardApi';
+import {
+  getGuardMyJobs,
+  guardReportIncident,
+  uploadIncidentImage,
+  uploadIncidentSignature,
+} from '../services/guardApi';
 import {
   findIncidentContextByRoster,
   type IncidentJobContext,
@@ -61,8 +68,10 @@ const MAX_INCIDENT_PHOTOS = 5;
 
 interface IncidentPhoto {
   uri: string;
-  base64: string;
   timestamp: string;
+  path?: string;
+  url?: string;
+  uploading?: boolean;
 }
 
 const SIGNATURE_PAD_STYLE = `
@@ -73,12 +82,28 @@ const SIGNATURE_PAD_STYLE = `
     width: 100%;
     height: 100%;
     margin: 0;
+    padding: 0;
+    overflow: hidden;
     background-color: #ffffff !important;
+    touch-action: none;
+    -ms-touch-action: none;
+    overscroll-behavior: none;
+    -webkit-overflow-scrolling: touch;
+  }
+  .m-signature-pad--body canvas {
+    touch-action: none;
+    -ms-touch-action: none;
+  }
+  * {
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    user-select: none;
   }
   canvas {
     width: 100% !important;
     height: 100% !important;
     background-color: #ffffff !important;
+    touch-action: none;
   }
 `;
 
@@ -181,9 +206,14 @@ function resizeList<T>(
   ];
 }
 
-async function uriToBase64(uri: string): Promise<string> {
-  const path = uri.startsWith('file://') ? uri.replace('file://', '') : uri;
-  return ReactNativeBlobUtil.fs.readFile(path, 'base64');
+async function saveBase64ToFile(
+  base64: string,
+  filename: string,
+): Promise<string> {
+  const path = `${ReactNativeBlobUtil.fs.dirs.CacheDir}/${filename}`;
+  const data = base64.replace(/^data:image\/\w+;base64,/, '');
+  await ReactNativeBlobUtil.fs.writeFile(path, data, 'base64');
+  return `file://${path}`;
 }
 
 async function requestCameraPermission(): Promise<boolean> {
@@ -240,6 +270,7 @@ function Field({
   placeholder,
   keyboardType,
   half,
+  required,
 }: {
   label: string;
   value: string;
@@ -247,10 +278,14 @@ function Field({
   placeholder?: string;
   keyboardType?: 'default' | 'numeric' | 'email-address' | 'phone-pad';
   half?: boolean;
+  required?: boolean;
 }) {
   return (
     <View style={[styles.fieldWrap, half && styles.fieldHalf]}>
-      <Text style={styles.fieldLabel}>{label}</Text>
+      <Text style={styles.fieldLabel}>
+        {label}
+        {required && <Text style={{ color: Colors.danger }}> *</Text>}
+      </Text>
       <TextInput
         style={styles.fieldInput}
         value={value}
@@ -270,12 +305,18 @@ export default function AddIncidentScreen() {
   const guardId = useSelector((state: RootState) => state.auth?.guardId ?? null);
   const signatureRef = useRef<any>(null);
   const pendingPhotoRef = useRef<{ timestamp: string } | null>(null);
+  const unlockTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [photos, setPhotos] = useState<IncidentPhoto[]>([]);
   const [viewerUri, setViewerUri] = useState<string | null>(null);
   const [watermarkJob, setWatermarkJob] = useState<SelfieWatermarkJob | null>(null);
   const [watermarking, setWatermarking] = useState(false);
   const [signatureUri, setSignatureUri] = useState('');
+  const [uploadedSignature, setUploadedSignature] = useState<{
+    path: string;
+    url: string;
+  } | null>(null);
+  const [uploadingSignature, setUploadingSignature] = useState(false);
   const [signaturePadActive, setSignaturePadActive] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [jobsLoading, setJobsLoading] = useState(true);
@@ -406,37 +447,15 @@ export default function AddIncidentScreen() {
       return;
     }
 
-    Alert.alert('Add photo', 'Choose a source', [
-      {
-        text: 'Camera',
-        onPress: async () => {
-          const result = await launchCamera({
-            mediaType: 'photo',
-            quality: 0.8,
-            maxWidth: 1280,
-            maxHeight: 1280,
-            saveToPhotos: false,
-            ...(Platform.OS === 'ios' ? { includeBase64: true } : {}),
-          });
-          appendPhotoResult(result);
-        },
-      },
-      {
-        text: 'Gallery',
-        onPress: async () => {
-          const result = await launchImageLibrary({
-            mediaType: 'photo',
-            quality: 0.8,
-            maxWidth: 1280,
-            maxHeight: 1280,
-            selectionLimit: 1,
-            ...(Platform.OS === 'ios' ? { includeBase64: true } : {}),
-          });
-          appendPhotoResult(result);
-        },
-      },
-      { text: 'Cancel', style: 'cancel' },
-    ]);
+    const result = await launchCamera({
+      mediaType: 'photo',
+      quality: 0.8,
+      maxWidth: 1280,
+      maxHeight: 1280,
+      saveToPhotos: false,
+      ...(Platform.OS === 'ios' ? { includeBase64: true } : {}),
+    });
+    appendPhotoResult(result);
   };
 
   const startPhotoWatermark = useCallback(
@@ -474,23 +493,44 @@ export default function AddIncidentScreen() {
   };
 
   const handleWatermarkComplete = useCallback(async (uri: string) => {
+    const pending = pendingPhotoRef.current;
+    const timestamp = pending?.timestamp ?? formatPhotoTimestamp(new Date());
+
+    // Create a temporary photo entry with uploading state
+    const newPhoto: IncidentPhoto = { uri, timestamp, uploading: true };
+    setPhotos(prev => [newPhoto, ...prev]);
+
+    // Finish watermarking UI immediately so user can see the photo in the list
+    setWatermarkJob(null);
+    setWatermarking(false);
+    pendingPhotoRef.current = null;
+
     try {
-      const base64 = await uriToBase64(uri);
-      const pending = pendingPhotoRef.current;
-      setPhotos(prev => [
-        ...prev,
-        {
-          uri,
-          base64,
-          timestamp: pending?.timestamp ?? formatPhotoTimestamp(new Date()),
-        },
-      ]);
+      const photoRes = await uploadIncidentImage(uri);
+
+      if (photoRes.success && photoRes.data) {
+        setPhotos(prev =>
+          prev.map(p =>
+            p.uri === uri
+              ? {
+                  ...p,
+                  path: photoRes.data?.path,
+                  url: photoRes.data?.url,
+                  uploading: false,
+                }
+              : p,
+          ),
+        );
+      } else {
+        Alert.alert(
+          'Upload Failed',
+          'Failed to upload photo. ' + (photoRes.message || ''),
+        );
+        setPhotos(prev => prev.filter(p => p.uri !== uri));
+      }
     } catch {
-      Alert.alert('Error', 'Could not process photo watermark.');
-    } finally {
-      pendingPhotoRef.current = null;
-      setWatermarkJob(null);
-      setWatermarking(false);
+      Alert.alert('Error', 'Could not upload photo.');
+      setPhotos(prev => prev.filter(p => p.uri !== uri));
     }
   }, []);
 
@@ -500,6 +540,10 @@ export default function AddIncidentScreen() {
     setWatermarkJob(null);
     setWatermarking(false);
   }, []);
+
+  const handleDeletePhoto = (index: number) => {
+    setPhotos(prev => prev.filter((_, i) => i !== index));
+  };
 
   const photosFull = photos.length >= MAX_INCIDENT_PHOTOS;
 
@@ -516,7 +560,10 @@ export default function AddIncidentScreen() {
     });
   };
 
-  const buildPayload = () => {
+  const buildPayload = (
+    uploadedPhotos: { path: string; url: string }[],
+    uploadedSignature?: { path: string; url: string },
+  ) => {
     const now = new Date();
     const incidentType =
       form.incidentType === 'Other'
@@ -575,22 +622,29 @@ export default function AddIncidentScreen() {
         wittness_phone: witness.wittness_phone.trim(),
         witness_more_info: witness.witness_more_info.trim(),
       })),
-      photo: photos.map(photo => ({
-        imgPath: toDataUri(photo.base64),
-        timestamp: photo.timestamp,
-      })),
-      signature: signatureUri.trim() || undefined,
+      photo: uploadedPhotos,
+      signature: uploadedSignature,
     };
   };
 
   const handleSubmit = async () => {
-    if (jobsLoading) return;
+    const photosUploading = photos.some(p => p.uploading);
+    if (jobsLoading || watermarking || uploadingSignature || photosUploading)
+      return;
 
     if (!selectedJob?.siteId) {
       Alert.alert(
         'No active shift',
         'Please sign in to a shift first so site and roster can be linked to this report.',
       );
+      return;
+    }
+    if (!form.title.trim()) {
+      Alert.alert('Required', 'Please enter an incident title.');
+      return;
+    }
+    if (!form.location.trim()) {
+      Alert.alert('Required', 'Please enter the incident location.');
       return;
     }
     if (!form.incidentType) {
@@ -609,8 +663,12 @@ export default function AddIncidentScreen() {
       Alert.alert('Required', 'Please describe the incident.');
       return;
     }
-    if (!signatureUri.trim()) {
+    if (!signatureUri.trim() && !uploadedSignature) {
       Alert.alert('Required', 'Please draw and save your signature.');
+      return;
+    }
+    if (uploadingSignature || photosUploading) {
+      Alert.alert('Please wait', 'Uploads are still in progress.');
       return;
     }
     if (!guardId) {
@@ -618,14 +676,89 @@ export default function AddIncidentScreen() {
       return;
     }
 
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    const phoneRegex = /^(?:\+?61|0)[2-478](?:[ -]?[0-9]){8}$/;
+
+    for (let i = 0; i < peopleForms.length; i++) {
+      if (!peopleForms[i].name.trim()) {
+        Alert.alert('Required', `Please enter a name for Person ${i + 1}.`);
+        return;
+      }
+      if (!peopleForms[i].phone.trim()) {
+        Alert.alert('Required', `Please enter a phone number for Person ${i + 1}.`);
+        return;
+      }
+      const email = peopleForms[i].email.trim();
+      if (email && !emailRegex.test(email)) {
+        Alert.alert('Invalid Email', `Please enter a valid email for Person ${i + 1}.`);
+        return;
+      }
+      const phone = peopleForms[i].phone.trim();
+      if (phone && !phoneRegex.test(phone)) {
+        Alert.alert('Invalid Phone', `Please enter a valid Australian phone number for Person ${i + 1} (e.g. 0412 345 678).`);
+        return;
+      }
+    }
+
+    for (let i = 0; i < witnessForms.length; i++) {
+      if (!witnessForms[i].wittness_name.trim()) {
+        Alert.alert('Required', `Please enter a name for Witness ${i + 1}.`);
+        return;
+      }
+      if (!witnessForms[i].wittness_phone.trim()) {
+        Alert.alert('Required', `Please enter a phone number for Witness ${i + 1}.`);
+        return;
+      }
+      const email = witnessForms[i].wittness_email.trim();
+      if (email && !emailRegex.test(email)) {
+        Alert.alert('Invalid Email', `Please enter a valid email for Witness ${i + 1}.`);
+        return;
+      }
+      const phone = witnessForms[i].wittness_phone.trim();
+      if (phone && !phoneRegex.test(phone)) {
+        Alert.alert('Invalid Phone', `Please enter a valid Australian phone number for Witness ${i + 1} (e.g. 0412 345 678).`);
+        return;
+      }
+    }
+
     try {
       setSubmitting(true);
-      const payload = buildPayload();
+
+      // 1. Ensure signature is uploaded
+      let finalSignature = uploadedSignature;
+      if (!finalSignature && signatureUri) {
+        const sigRes = await uploadIncidentSignature(signatureUri);
+        if (!sigRes.success || !sigRes.data) {
+          Alert.alert(
+            'Upload Failed',
+            'Failed to upload signature. ' + (sigRes.message || ''),
+          );
+          setSubmitting(false);
+          return;
+        }
+        finalSignature = sigRes.data;
+      }
+
+      // 2. Prepare photos (they should already be uploaded)
+      const uploadedPhotos = photos
+        .filter(p => p.path && p.url)
+        .map(p => ({ path: p.path!, url: p.url! }));
+
+      if (uploadedPhotos.length !== photos.length) {
+        Alert.alert(
+          'Error',
+          'Some photos failed to upload. Please remove them and try again.',
+        );
+        setSubmitting(false);
+        return;
+      }
+
+      const payload = buildPayload(uploadedPhotos, finalSignature || undefined);
       const result = await guardReportIncident(selectedJob.siteId, payload);
 
       if (result.success) {
         dispatch(fetchGuardIncidents());
-        Alert.alert('Success', result.message ?? 'Incident reported successfully!', [
+        Alert.alert('Success', 'Incident report submitted successfully!', [
           {
             text: 'OK',
             onPress: () => navigation.navigate(GUARD_ROUTES.INCIDENTS),
@@ -641,8 +774,31 @@ export default function AddIncidentScreen() {
     }
   };
 
-  const lockScrollForSignature = () => setSignaturePadActive(true);
-  const unlockScrollForSignature = () => setSignaturePadActive(false);
+  const lockScrollForSignature = useCallback(() => {
+    Keyboard.dismiss();
+    setSignaturePadActive(true);
+    if (unlockTimeoutRef.current) {
+      clearTimeout(unlockTimeoutRef.current);
+      unlockTimeoutRef.current = null;
+    }
+  }, []);
+
+  const unlockScrollForSignature = useCallback(() => {
+    setSignaturePadActive(false);
+    if (unlockTimeoutRef.current) {
+      clearTimeout(unlockTimeoutRef.current);
+      unlockTimeoutRef.current = null;
+    }
+  }, []);
+
+  const handleEndSigning = useCallback(() => {
+    // Keep scroll locked for a while after lift-up to allow multi-stroke
+    if (unlockTimeoutRef.current) clearTimeout(unlockTimeoutRef.current);
+    unlockTimeoutRef.current = setTimeout(() => {
+      setSignaturePadActive(false);
+      unlockTimeoutRef.current = null;
+    }, 500);
+  }, []);
 
   const handleSaveSignature = () => {
     signatureRef.current?.readSignature();
@@ -650,18 +806,39 @@ export default function AddIncidentScreen() {
   };
 
   const handleClearSignature = () => {
-    if (signatureUri) return;
     signatureRef.current?.clearSignature();
     setSignatureUri('');
+    setUploadedSignature(null);
     unlockScrollForSignature();
   };
 
-  const handleSignatureOK = (sig: string) => {
+  const handleSignatureOK = async (sig: string) => {
     unlockScrollForSignature();
     if (sig?.trim()) {
-      setSignatureUri(
-        sig.startsWith('data:') ? sig : toDataUri(sig, 'image/png'),
-      );
+      const dataUri = sig.startsWith('data:') ? sig : toDataUri(sig, 'image/png');
+      try {
+        setUploadingSignature(true);
+        const fileUri = await saveBase64ToFile(
+          dataUri,
+          `signature_${Date.now()}.png`,
+        );
+        setSignatureUri(fileUri);
+
+        // Upload signature immediately as requested
+        const sigRes = await uploadIncidentSignature(fileUri);
+        if (sigRes.success && sigRes.data) {
+          setUploadedSignature(sigRes.data);
+        } else {
+          Alert.alert(
+            'Upload Failed',
+            'Failed to upload signature. ' + (sigRes.message || ''),
+          );
+        }
+      } catch (err) {
+        Alert.alert('Error', 'Failed to process signature image.');
+      } finally {
+        setUploadingSignature(false);
+      }
     }
   };
 
@@ -686,7 +863,7 @@ export default function AddIncidentScreen() {
           <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
             <ArrowLeft size={20} color={Colors.white} />
           </TouchableOpacity>
-          <Text style={styles.hdrTitle}>Report Incident</Text>
+          <Text style={styles.hdrTitle}>Incident Report</Text>
           <View style={styles.headerSpacer} />
         </View>
       </SafeAreaView>
@@ -697,14 +874,13 @@ export default function AddIncidentScreen() {
           contentContainerStyle={styles.bodyContent}
           showsVerticalScrollIndicator={false}
           scrollEnabled={!signaturePadActive}
-          keyboardShouldPersistTaps="handled"
-          nestedScrollEnabled
+          keyboardShouldPersistTaps="always"
         >
           <View style={styles.card}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
               <AlertTriangle size={14} color={Colors.danger} style={styles.icon} />
               <Text style={[styles.label, { color: Colors.textSecondary }]}>
-                Incident Title
+                Incident Title <Text style={{ color: Colors.danger }}>*</Text>
               </Text>
             </View>
             <TextInput
@@ -719,7 +895,7 @@ export default function AddIncidentScreen() {
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
               <MapPin size={14} color={Colors.accent} style={styles.icon} />
               <Text style={[styles.label, { color: Colors.textSecondary }]}>
-                Location
+                Location <Text style={{ color: Colors.danger }}>*</Text>
               </Text>
             </View>
             <TextInput
@@ -734,7 +910,7 @@ export default function AddIncidentScreen() {
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
               <Tag size={14} color={Colors.accent} style={styles.icon} />
               <Text style={[styles.label, { color: Colors.textSecondary }]}>
-                Incident Type
+                Incident Type <Text style={{ color: Colors.danger }}>*</Text>
               </Text>
             </View>
             <View style={styles.chipContainer}>
@@ -783,7 +959,7 @@ export default function AddIncidentScreen() {
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
               <ShieldAlert size={14} color={Colors.warning} style={styles.icon} />
               <Text style={[styles.label, { color: Colors.textSecondary }]}>
-                Severity / Injury
+                Severity / Injury <Text style={{ color: Colors.danger }}>*</Text>
               </Text>
             </View>
             <View style={styles.row}>
@@ -796,7 +972,7 @@ export default function AddIncidentScreen() {
                   <Text
                     style={[
                       styles.chipText,
-                      form.severity === s && { color: '#fff' },
+                      form.severity === s && styles.chipTextActive,
                     ]}
                   >
                     {s}
@@ -820,20 +996,22 @@ export default function AddIncidentScreen() {
                   value={person.name}
                   onChangeText={v => updatePerson(index, { name: v })}
                   placeholder="Person Name"
+                  required
                 />
                 <Field
                   label="Email"
                   value={person.email}
                   onChangeText={v => updatePerson(index, { email: v })}
-                  placeholder="Person Email"
+                  placeholder="e.g. name@example.com"
                   keyboardType="email-address"
                 />
                 <Field
                   label="Phone"
                   value={person.phone}
                   onChangeText={v => updatePerson(index, { phone: v })}
-                  placeholder="Person Phone"
+                  placeholder="e.g. 0412 345 678"
                   keyboardType="phone-pad"
+                  required
                 />
                 <View style={styles.fieldRow}>
                   <Field
@@ -932,6 +1110,7 @@ export default function AddIncidentScreen() {
                   value={witness.wittness_name}
                   onChangeText={v => updateWitness(index, { wittness_name: v })}
                   placeholder="Witness Name"
+                  required
                 />
                 <Field
                   label="Witness Detail"
@@ -951,15 +1130,16 @@ export default function AddIncidentScreen() {
                   label="Witness Email"
                   value={witness.wittness_email}
                   onChangeText={v => updateWitness(index, { wittness_email: v })}
-                  placeholder="Witness Email"
+                  placeholder="e.g. name@example.com"
                   keyboardType="email-address"
                 />
                 <Field
                   label="Witness Phone"
                   value={witness.wittness_phone}
                   onChangeText={v => updateWitness(index, { wittness_phone: v })}
-                  placeholder="Witness Phone"
+                  placeholder="e.g. 0412 345 678"
                   keyboardType="phone-pad"
+                  required
                 />
                 <Field
                   label="More Info"
@@ -1008,7 +1188,7 @@ export default function AddIncidentScreen() {
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
               <FileText size={14} color={Colors.accent} style={styles.icon} />
               <Text style={[styles.label, { color: Colors.textSecondary }]}>
-                Incident Details
+                Incident Details <Text style={{ color: Colors.danger }}>*</Text>
               </Text>
             </View>
             <TextInput
@@ -1043,23 +1223,33 @@ export default function AddIncidentScreen() {
                 disabled={photosFull || watermarking}
                 activeOpacity={0.85}
               >
-                {watermarking ? (
-                  <ActivityIndicator size="small" color={Colors.accent} />
-                ) : (
-                  <>
-                    <Camera size={22} color={Colors.accent} />
-                    <Text style={styles.addPhotoLabel}>Add</Text>
-                  </>
-                )}
+                <Camera size={22} color={Colors.accent} />
+                <Text style={styles.addPhotoLabel}>Add</Text>
               </TouchableOpacity>
               {photos.map((photo, i) => (
-                <TouchableOpacity
-                  key={i}
-                  activeOpacity={0.85}
-                  onPress={() => setViewerUri(photo.uri)}
-                >
-                  <Image source={{ uri: photo.uri }} style={styles.photo} />
-                </TouchableOpacity>
+                <View key={i} style={styles.photoContainer}>
+                  <TouchableOpacity
+                    activeOpacity={0.85}
+                    onPress={() => setViewerUri(photo.uri)}
+                    disabled={photo.uploading}
+                    style={{ width: 80, height: 80 }}
+                  >
+                    <Image source={{ uri: photo.uri }} style={styles.photo} />
+                    {photo.uploading && (
+                      <View style={styles.photoOverlay}>
+                        <ActivityIndicator size="small" color={Colors.white} />
+                      </View>
+                    )}
+                  </TouchableOpacity>
+                  {!photo.uploading && (
+                    <TouchableOpacity
+                      style={styles.deletePhotoBtn}
+                      onPress={() => handleDeletePhoto(i)}
+                    >
+                      <X size={14} color={Colors.white} />
+                    </TouchableOpacity>
+                  )}
+                </View>
               ))}
             </ScrollView>
             <Text style={styles.helperText}>
@@ -1073,8 +1263,16 @@ export default function AddIncidentScreen() {
             <View style={styles.cardLabelRow}>
               <PenLine size={16} color={Colors.accent} />
               <Text style={styles.cardLabel}>
-                {signatureSaved ? 'Signature saved' : 'Draw your signature, then tap Save'}
+                {signatureSaved
+                  ? 'Signature saved'
+                  : uploadingSignature
+                    ? 'Uploading signature...'
+                    : 'Draw your signature, then tap Save'}
+                {!signatureSaved && <Text style={{ color: Colors.danger }}> *</Text>}
               </Text>
+              {uploadingSignature && (
+                <ActivityIndicator size="small" color={Colors.accent} />
+              )}
             </View>
             {signatureSaved ? (
               <View style={styles.signatureSavedBox}>
@@ -1091,23 +1289,21 @@ export default function AddIncidentScreen() {
               <>
                 <View
                   style={styles.signatureBox}
-                  collapsable={false}
-                  onStartShouldSetResponder={() => {
+                  onStartShouldSetResponderCapture={() => {
                     lockScrollForSignature();
-                    return true;
+                    return false;
                   }}
-                  onMoveShouldSetResponder={() => true}
-                  onResponderTerminationRequest={() => false}
-                  onResponderRelease={unlockScrollForSignature}
-                  onResponderTerminate={unlockScrollForSignature}
                 >
                   <SignatureCanvas
                     ref={signatureRef}
                     onOK={handleSignatureOK}
-                    onEmpty={() => setSignatureUri('')}
+                    onEmpty={() => {
+                      setSignatureUri('');
+                      setUploadedSignature(null);
+                      unlockScrollForSignature();
+                    }}
                     onBegin={lockScrollForSignature}
-                    onEnd={unlockScrollForSignature}
-                    nestedScrollEnabled
+                    onEnd={handleEndSigning}
                     descriptionText=""
                     clearText=""
                     confirmText=""
@@ -1115,14 +1311,35 @@ export default function AddIncidentScreen() {
                     webStyle={SIGNATURE_PAD_STYLE}
                     backgroundColor="#FFFFFF"
                     penColor="#000000"
+                    containerStyle={{ flex: 1 }}
                   />
                 </View>
                 <View style={styles.signatureActions}>
-                  <TouchableOpacity onPress={handleClearSignature}>
-                    <Text style={styles.clearText}>Clear</Text>
+                  <TouchableOpacity
+                    onPress={handleClearSignature}
+                    disabled={uploadingSignature}
+                  >
+                    <Text
+                      style={[
+                        styles.clearText,
+                        uploadingSignature && { opacity: 0.5 },
+                      ]}
+                    >
+                      Clear
+                    </Text>
                   </TouchableOpacity>
-                  <TouchableOpacity onPress={handleSaveSignature}>
-                    <Text style={styles.clearText}>Save Signature</Text>
+                  <TouchableOpacity
+                    onPress={handleSaveSignature}
+                    disabled={uploadingSignature}
+                  >
+                    <Text
+                      style={[
+                        styles.clearText,
+                        uploadingSignature && { opacity: 0.5 },
+                      ]}
+                    >
+                      Save Signature
+                    </Text>
                   </TouchableOpacity>
                 </View>
               </>
@@ -1140,9 +1357,22 @@ export default function AddIncidentScreen() {
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={[styles.submitBtn, submitting && styles.submitBtnDisabled]}
+            style={[
+              styles.submitBtn,
+              (submitting ||
+                watermarking ||
+                uploadingSignature ||
+                photos.some(p => p.uploading)) &&
+                styles.submitBtnDisabled,
+            ]}
             onPress={handleSubmit}
-            disabled={submitting || jobsLoading}
+            disabled={
+              submitting ||
+              jobsLoading ||
+              watermarking ||
+              uploadingSignature ||
+              photos.some(p => p.uploading)
+            }
           >
             {submitting ? (
               <ActivityIndicator color="#fff" />
@@ -1315,10 +1545,10 @@ const styles = StyleSheet.create({
   chipText: {
     fontSize: FontSizes.xs,
     color: Colors.textPrimary,
+    fontWeight: '600',
   },
   chipTextActive: {
     color: '#fff',
-    fontWeight: '600',
   },
 
   photoScroll: {
@@ -1326,8 +1556,10 @@ const styles = StyleSheet.create({
   },
   photoScrollContent: {
     alignItems: 'center',
-    gap: 10,
-    paddingRight: 4,
+    gap: 12,
+    paddingTop: 8,
+    paddingBottom: 8,
+    paddingHorizontal: 8,
   },
   photo: {
     width: 80,
@@ -1335,6 +1567,38 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     borderWidth: 2,
     borderColor: Colors.border,
+  },
+  photoContainer: {
+    position: 'relative',
+    width: 80,
+    height: 80,
+  },
+  photoOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0,0,0,0.4)',
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 5,
+  },
+  deletePhotoBtn: {
+    position: 'absolute',
+    top: 4,
+    right: 4,
+    backgroundColor: Colors.danger,
+    width: 15,
+    height: 15,
+    borderRadius: 11,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 0,
+    borderColor: Colors.white,
+    zIndex: 10,
+    elevation: 3,
   },
   addPhotoBtn: {
     width: 80,
@@ -1366,7 +1630,7 @@ const styles = StyleSheet.create({
   },
 
   signatureBox: {
-    height: 160,
+    height: 220,
     borderWidth: 1.5,
     borderColor: Colors.border,
     borderRadius: Radii.md,
@@ -1375,7 +1639,7 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   signatureSavedBox: {
-    height: 160,
+    height: 220,
     borderWidth: 1.5,
     borderColor: Colors.border,
     borderRadius: Radii.md,
@@ -1406,12 +1670,16 @@ const styles = StyleSheet.create({
   signatureActions: {
     flexDirection: 'row',
     justifyContent: 'space-between',
+    paddingHorizontal: 4,
+    paddingTop: 4,
     marginBottom: 4,
   },
   clearText: {
-    fontSize: 13,
+    fontSize: 14,
     color: Colors.accent,
-    fontWeight: '600',
+    fontWeight: '700',
+    paddingVertical: 8,
+    paddingHorizontal: 4,
   },
 
   footer: {

@@ -328,7 +328,6 @@ export default function ProfileScreen({ onLogout }: Props) {
               <View style={styles.headerSpacer} />
             )}
           </View>
-          <Text style={styles.hdrSub}>{formatFullDisplayDate()}</Text>
         </View>
       </SafeAreaView>
 
@@ -442,7 +441,7 @@ export default function ProfileScreen({ onLogout }: Props) {
                   </View>
                 )}
 
-              
+
 
                 <View style={styles.card}>
                   <Text style={styles.sectionTitle}>Quick Actions</Text>

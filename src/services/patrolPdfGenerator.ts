@@ -171,7 +171,7 @@ function footers(l: L, reportTitle: string) {
 
 export async function buildPatrolReportPdf(
   data: ManagerPatrolReportDetailData,
-): Promise<string> {
+): Promise<{ filePath: string; cachePath: string; base64: string }> {
   const doc = new jsPDF({ unit: 'pt', format: 'a4' });
   const l = layout(doc);
 
@@ -243,6 +243,7 @@ export async function buildPatrolReportPdf(
 
   await ReactNativeBlobUtil.fs.writeFile(cachePath, pdfBase64, 'base64');
 
+  let savedPath = cachePath;
   if (Platform.OS === 'android') {
     try {
       const contentUri =
@@ -255,21 +256,21 @@ export async function buildPatrolReportPdf(
           'Download',
           cachePath,
         );
-      await ReactNativeBlobUtil.fs.unlink(cachePath).catch(() => undefined);
-      return contentUri;
+      savedPath = contentUri || cachePath;
     } catch {
       const legacyPath = `${ReactNativeBlobUtil.fs.dirs.LegacyDownloadDir}/${fileName}`;
-      await ReactNativeBlobUtil.fs.cp(cachePath, legacyPath);
-      await ReactNativeBlobUtil.fs.unlink(cachePath).catch(() => undefined);
-      await ReactNativeBlobUtil.fs.scanFile([
-        { path: legacyPath, mime: 'application/pdf' },
-      ]);
-      return legacyPath;
+      try {
+        await ReactNativeBlobUtil.fs.cp(cachePath, legacyPath);
+        savedPath = legacyPath;
+        await ReactNativeBlobUtil.fs.scanFile([{ path: legacyPath, mime: 'application/pdf' }]);
+      } catch {
+        savedPath = cachePath;
+      }
     }
+  } else {
+    savedPath = `${ReactNativeBlobUtil.fs.dirs.DocumentDir}/${fileName}`;
+    await ReactNativeBlobUtil.fs.writeFile(savedPath, pdfBase64, 'base64');
   }
 
-  const filePath = `${ReactNativeBlobUtil.fs.dirs.DocumentDir}/${fileName}`;
-  await ReactNativeBlobUtil.fs.writeFile(filePath, pdfBase64, 'base64');
-  await ReactNativeBlobUtil.fs.unlink(cachePath).catch(() => undefined);
-  return filePath;
+  return { filePath: savedPath, cachePath, base64: pdfBase64 };
 }

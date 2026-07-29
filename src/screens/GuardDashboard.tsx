@@ -32,6 +32,7 @@ import {
   ScanLine,
 } from 'lucide-react-native';
 import {
+  formatFullDisplayDate,
   mapApiJobToShift,
   type MappedShift,
 } from '../services/guardJobsMapper';
@@ -39,6 +40,7 @@ import {
   getActiveShiftSession,
   type ActiveShiftSession,
   promptCheckInRequired,
+  saveActiveShiftSession,
 } from '../services/activeShiftSession';
 import { useFocusEffect } from '@react-navigation/native';
 import { useGuardNavigation } from '../navigation/utils';
@@ -56,18 +58,33 @@ function getTimeGreeting(): string {
   return 'Good Evening';
 }
 
-function formatTodayLabel(): string {
-  return new Date().toLocaleDateString(undefined, {
-    weekday: 'long',
-    day: 'numeric',
-    month: 'long',
-    year: 'numeric',
-  });
-}
 
 function firstName(fullName: string): string {
   const part = fullName.trim().split(/\s+/)[0];
   return part || 'Guard';
+}
+
+function pad(n: number) {
+  return String(n).padStart(2, '0');
+}
+
+function formatElapsed(ms: number) {
+  const totalSec = Math.floor(Math.max(0, ms) / 1000);
+  const h = Math.floor(totalSec / 3600);
+  const m = Math.floor((totalSec % 3600) / 60);
+  const s = totalSec % 60;
+  return `${pad(h)}:${pad(m)}:${pad(s)}`;
+}
+
+function normalizeDate(iso?: string) {
+  if (!iso) return new Date();
+  const normalized = iso.includes('T') ? iso : iso.replace(' ', 'T');
+  const d = new Date(normalized);
+  if (Number.isNaN(d.getTime())) {
+    const fallback = new Date(iso.replace(/-/g, '/'));
+    return Number.isNaN(fallback.getTime()) ? new Date() : fallback;
+  }
+  return d;
 }
 
 export default function GuardDashboard() {
@@ -79,6 +96,7 @@ export default function GuardDashboard() {
   const [activeSession, setActiveSession] = useState<ActiveShiftSession | null>(
     null,
   );
+  const [elapsed, setElapsed] = useState('00:00:00');
   const appStateRef = useRef(AppState.currentState);
 
   const loadDashboard = useCallback(async () => {
@@ -87,10 +105,54 @@ export default function GuardDashboard() {
       getGuardDashboardData(guardId),
       getActiveShiftSession(),
     ]);
+
+    let finalSession = session;
+
     if (result.success && result.data) {
       setDashboard(result.data);
+
+      // SYNC SESSION: If we have an active shift from API but no local session, save it.
+      const apiJobs = result.data.today_jobs ?? [];
+      const apiActiveShift = apiJobs
+        .map(mapApiJobToShift)
+        .find(shift => shift?.status === 'active');
+
+      if (apiActiveShift) {
+        const siteInfo = {
+          site_id: Number(apiActiveShift.siteId) || 0,
+          emergency_procedures: apiActiveShift.emergency_procedures,
+          patrol_checkpoints: apiActiveShift.patrol_checkpoints,
+          incident_reporting_guide: apiActiveShift.incident_reporting_guide,
+          nfc_scan_protocol: apiActiveShift.nfc_scan_protocol,
+          site_map: apiActiveShift.site_map,
+          work_instruction: apiActiveShift.work_instruction,
+          health_safety_policy: apiActiveShift.health_safety_policy,
+        };
+
+        if (!session) {
+          const newSession: ActiveShiftSession = {
+            rosterId: apiActiveShift.rosterId,
+            site: apiActiveShift.site,
+            zones: apiActiveShift.zones,
+            signInTime: apiActiveShift.signInTime ?? new Date().toISOString(),
+            shiftId: String(apiActiveShift.id).startsWith('#')
+              ? undefined
+              : String(apiActiveShift.id),
+            siteId: apiActiveShift.siteId,
+            siteInfo,
+          };
+          await saveActiveShiftSession(newSession);
+          finalSession = newSession;
+        } else if (!session.siteInfo || JSON.stringify(session.siteInfo) !== JSON.stringify(siteInfo)) {
+          // Update existing session with latest site info
+          const updatedSession = { ...session, siteInfo };
+          await saveActiveShiftSession(updatedSession);
+          finalSession = updatedSession;
+        }
+      }
     }
-    setActiveSession(session);
+
+    setActiveSession(finalSession);
     setDashboardLoading(false);
   }, [guardId]);
 
@@ -136,6 +198,23 @@ export default function GuardDashboard() {
     [todayPatrols],
   );
 
+  const activeSignInTime = activeShift?.signInTime ?? activeSession?.signInTime;
+
+  useEffect(() => {
+    if (!activeSignInTime) {
+      setElapsed('00:00:00');
+      return;
+    }
+    const start = normalizeDate(activeSignInTime).getTime();
+    const tick = () => {
+      const diff = Date.now() - start;
+      setElapsed(formatElapsed(diff));
+    };
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, [activeSignInTime]);
+
   const hasOngoingShift =
     activeSession != null || activeShift?.status === 'active';
 
@@ -148,17 +227,19 @@ export default function GuardDashboard() {
 
   const openOngoingShift = async () => {
     const session = await getActiveShiftSession();
-    if (session) {
-      navigation.navigate(GUARD_ROUTES.ONGOING_SHIFT, session);
-      return;
-    }
-    if (activeShift?.status === 'active') {
+    // Use the API's sign-in time if available, otherwise fallback to local session
+    const finalRosterId = activeShift?.rosterId ?? session?.rosterId;
+    const finalSignInTime =
+      activeShift?.signInTime ?? session?.signInTime ?? new Date().toISOString();
+
+    if (finalRosterId) {
       navigation.navigate(GUARD_ROUTES.ONGOING_SHIFT, {
-        rosterId: activeShift.rosterId,
-        site: activeShift.site,
-        zones: activeShift.zones,
-        signInTime: new Date().toISOString(),
-        shiftId: activeShift.id,
+        rosterId: finalRosterId,
+        site: activeShift?.site ?? session?.site ?? 'Site',
+        zones: activeShift?.zones ?? session?.zones ?? 'All Zones',
+        signInTime: finalSignInTime,
+        shiftId: activeShift?.id ?? session?.shiftId,
+        siteId: activeShift?.siteId ?? session?.siteId,
       });
     }
   };
@@ -181,11 +262,30 @@ export default function GuardDashboard() {
     );
   };
 
-  const requireCheckedInShift = (action: (session: ActiveShiftSession) => void) => {
+  const requireCheckedInShift = (
+    action: (session: ActiveShiftSession) => void,
+  ) => {
     if (activeSession != null) {
       action(activeSession);
       return;
     }
+
+    // Fallback: if we know there's an active shift from API but session state hasn't updated yet
+    if (activeShift?.status === 'active') {
+      const fallbackSession: ActiveShiftSession = {
+        rosterId: activeShift.rosterId,
+        site: activeShift.site,
+        zones: activeShift.zones,
+        signInTime: activeShift.signInTime ?? new Date().toISOString(),
+        shiftId: String(activeShift.id).startsWith('#')
+          ? undefined
+          : String(activeShift.id),
+        siteId: activeShift.siteId,
+      };
+      action(fallbackSession);
+      return;
+    }
+
     promptCheckInRequired(() => navigation.navigate(GUARD_ROUTES.SHIFTS));
   };
 
@@ -302,7 +402,7 @@ export default function GuardDashboard() {
           ) : (
             <Text style={styles.greetAccent}>{greetingName}!</Text>
           )}
-          <Text style={styles.greetSub}>{formatTodayLabel()}</Text>
+          <Text style={styles.greetSub}>{formatFullDisplayDate()}</Text>
         </View>
 
         <View style={styles.body}>
@@ -316,7 +416,7 @@ export default function GuardDashboard() {
                 onPress={openOngoingShift}
               >
                 <View style={styles.shiftLeft}>
-                  <Text style={styles.shiftLbl}>ACTIVE SHIFT</Text>
+                  <Text style={styles.shiftLbl}>Active Shift • {elapsed}</Text>
                   <Text style={styles.shiftSite} numberOfLines={2}>
                     {shiftSite}
                   </Text>
@@ -404,11 +504,11 @@ export default function GuardDashboard() {
               ))}
             </View>
 
-            <TouchableOpacity
-              onPress={() => navigation.navigate(GUARD_ROUTES.SHIFTS)}
-            >
-              <SectionHeader title="Today's Patrols" action="See All" />
-            </TouchableOpacity>
+            <SectionHeader
+              title="Today's Shifts"
+              action="See All"
+              onActionPress={() => navigation.navigate(GUARD_ROUTES.SHIFTS)}
+            />
 
             {showPatrolShimmer ? (
               <PatrolListShimmer count={3} />

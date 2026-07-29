@@ -22,14 +22,17 @@ export async function downloadIncidentPdf(incident: MappedIncident): Promise<voi
         // Opening is optional; file is already in Downloads.
       }
       Alert.alert(
-        'PDF saved',
-        `Report #${incident.id} saved.\nOpen Files → Downloads → PatrolApp → ${fileName}`,
+        'Report Downloaded',
+        `Incident Report #${incident.id} has been saved successfully to your Downloads folder.`,
       );
       return;
     }
 
     await ReactNativeBlobUtil.ios.openDocument(savedRef);
-    Alert.alert('PDF saved', `Report #${incident.id} is ready to view or share.`);
+    Alert.alert(
+      'Report Generated',
+      `Incident Report #${incident.id} is ready to view or share.`,
+    );
   } catch (err: unknown) {
     const message =
       err instanceof Error ? err.message : 'Unknown error while saving PDF';

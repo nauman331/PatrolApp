@@ -139,20 +139,112 @@ function mapSeverity(injuryType: string): IncidentSeverity {
   return 'MEDIUM';
 }
 
-function formatDisplayDate(date?: string, time?: string): string {
-  if (!date) return '—';
-  const parts = date.split('-');
-  if (parts.length === 3) {
-    const [, month, day] = parts;
-    const monthNames = [
-      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
-    ];
-    const m = parseInt(month, 10);
-    const label = `${parseInt(day, 10)} ${monthNames[m - 1] ?? month}`;
-    return time ? `${label} ${time}` : label;
+export function formatAppDateTime(dateStr?: string, timeStr?: string): string {
+  if (!dateStr && !timeStr) return '—';
+
+  let prefix = '';
+  let cleanDate = dateStr?.trim() || '';
+  const cleanTime = timeStr?.trim() || '';
+
+  // Handle strings like "Site Name - Jul 9, 2026"
+  if (cleanDate.includes(' - ')) {
+    const lastIndex = cleanDate.lastIndexOf(' - ');
+    const possiblePrefix = cleanDate.substring(0, lastIndex);
+    const possibleDate = cleanDate.substring(lastIndex + 3).trim();
+
+    // If the part after " - " looks like it might contain a date (has numbers or month name)
+    if (possibleDate.match(/[a-zA-Z]{3}/) || possibleDate.match(/\d/)) {
+      prefix = possiblePrefix + ' - ';
+      cleanDate = possibleDate;
+    }
   }
-  return time ? `${date} ${time}` : date;
+
+  // Show time if time is explicitly provided or if the date string contains a time separator
+  const hasExplicitTime = cleanTime.length > 0 || cleanDate.includes(':');
+
+  let d: Date | null = null;
+
+  const tryParse = (str: string) => {
+    if (!str) return null;
+    let parsed = new Date(str);
+    if (!isNaN(parsed.getTime())) return parsed;
+
+    // Fix for some Android versions/environments that don't like dashes in date strings
+    parsed = new Date(str.replace(/-/g, '/'));
+    if (!isNaN(parsed.getTime())) return parsed;
+
+    // Handle DD/MM/YYYY or DD-MM-YYYY
+    const dmyMatch = str.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})/);
+    if (dmyMatch) {
+      const day = parseInt(dmyMatch[1], 10);
+      const month = parseInt(dmyMatch[2], 10) - 1;
+      const year = parseInt(dmyMatch[3], 10);
+
+      let hours = 0,
+        mins = 0;
+      const timeMatch = str.match(/(\d{1,2}):(\d{2})/);
+      if (timeMatch) {
+        hours = parseInt(timeMatch[1], 10);
+        mins = parseInt(timeMatch[2], 10);
+      }
+
+      parsed = new Date(year, month, day, hours, mins, 0);
+      if (!isNaN(parsed.getTime())) return parsed;
+    }
+
+    // Handle MMM D, YYYY or MMM D YYYY (e.g. Jul, 9 2026 or Jul 9 2026)
+    const mdyMatch = str.match(/^([a-zA-Z]{3})[ ,]+(\d{1,2})[ ,]+(\d{4})/);
+    if (mdyMatch) {
+      const monthStr = mdyMatch[1].toLowerCase();
+      const day = parseInt(mdyMatch[2], 10);
+      const year = parseInt(mdyMatch[3], 10);
+      const months: Record<string, number> = {
+        jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5,
+        jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11
+      };
+
+      if (months[monthStr] !== undefined) {
+        let hours = 0, mins = 0;
+        const timeMatch = str.match(/(\d{1,2}):(\d{2})/);
+        if (timeMatch) {
+          hours = parseInt(timeMatch[1], 10);
+          mins = parseInt(timeMatch[2], 10);
+        }
+        parsed = new Date(year, months[monthStr], day, hours, mins, 0);
+        if (!isNaN(parsed.getTime())) return parsed;
+      }
+    }
+
+    return null;
+  };
+
+  if (cleanDate && cleanTime) {
+    d = tryParse(`${cleanDate.replace(/-/g, '/')} ${cleanTime}`);
+  }
+
+  if (!d || isNaN(d.getTime())) {
+    d = tryParse(cleanDate || cleanTime);
+  }
+
+  if (!d || isNaN(d.getTime())) {
+    return cleanDate || cleanTime || '—';
+  }
+
+  const dd = String(d.getDate()).padStart(2, '0');
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const yyyy = d.getFullYear();
+
+  if (!hasExplicitTime) {
+    return `${prefix}${dd}/${mm}/${yyyy}`;
+  }
+
+  let h = d.getHours();
+  const mins = String(d.getMinutes()).padStart(2, '0');
+  const ampm = h >= 12 ? 'PM' : 'AM';
+  h = h % 12 || 12;
+  const hh = String(h).padStart(2, '0');
+
+  return `${prefix}${dd}/${mm}/${yyyy} ${hh}:${mins} ${ampm}`;
 }
 
 export function mapApiIncident(raw: unknown): MappedIncident | null {
@@ -235,9 +327,9 @@ export function mapApiIncident(raw: unknown): MappedIncident | null {
     signatureUri: getIncidentAssetUrl(signature),
     createdAt: cleanText(row.created_at),
     updatedAt: cleanText(row.updated_at),
-    displayDateTime: formatDisplayDate(
-      cleanText(row.incident_date),
-      cleanText(row.incident_time),
+    displayDateTime: formatAppDateTime(
+      cleanText(row.incident_date ?? row.date),
+      cleanText(row.incident_time ?? row.time),
     ),
   };
 }

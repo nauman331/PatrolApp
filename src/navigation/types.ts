@@ -65,6 +65,10 @@ export type GuardStackParamList = {
         incidentId: number;
     };
     GuardSops: undefined;
+    PdfViewer: {
+        uri: string;
+        title?: string;
+    };
     Profile: undefined;
     PrivacyPolicy: undefined;
     TermsConditions: undefined;
@@ -81,6 +85,8 @@ export type ManagerStackParamList = {
         guardId?: string;
         name?: string;
         rosterId?: number;
+        siteName?: string;
+        statusText?: string;
     };
     ManagerGuardAttendance: {
         guardId?: string;
@@ -98,6 +104,12 @@ export type ManagerStackParamList = {
         incidentId: number;
     };
     ManagerRoster: undefined;
+    ManagerRosterDetail: {
+        rosterId: number;
+    };
+    ManagerSiteDetail: {
+        siteId: number;
+    };
     ManagerProfile: undefined;
     PrivacyPolicy: undefined;
     TermsConditions: undefined;

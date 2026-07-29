@@ -6,16 +6,21 @@ import {
   StyleSheet,
   TextInput,
   ActivityIndicator,
+  Modal,
+  ScrollView,
 } from 'react-native';
+import { useNavigation } from '@react-navigation/native';
 import { Colors, FontSizes, Radii, Shadows } from '../../theme';
 import { SectionHeader } from '../../components';
 import {
   MapPin,
-  Clock,
   Users,
-  ChevronLeft,
-  ChevronRight,
   Search,
+  Clock,
+  Filter,
+  Calendar,
+  X,
+  Check,
 } from 'lucide-react-native';
 import {
   ManagerCompactTabShell,
@@ -25,68 +30,63 @@ import {
 } from './managerShared';
 import AuthErrorBanner from '../../components/AuthErrorBanner';
 import {
-  ManagerRosterCalendarFixedShimmer,
   ManagerRosterListShimmer,
 } from '../../components/Shimmer';
 import { useDebouncedValue } from '../../hooks/useDebouncedValue';
+import { ManagerCalendarModal } from './ManagerCalendarModal';
 import {
-  apiPeriodForWeekFilter,
-  isDateThisWeek,
-  isDateToday,
-  isFrontendWeekFilter,
-  type WeekPeriodFilter,
-} from './managerDateFilters';
-import {
-  getManagerRosterCalendar,
+  getManagerGuardsSites,
   getManagerRosterShifts,
   getManagerRosterSites,
-  type ManagerCalendarEvent,
+  type ManagerFilterGuard,
+  type ManagerFilterSite,
   type ManagerPeriod,
   type ManagerShiftAssignment,
   type ManagerSiteAssignment,
 } from '../../services/managerApi';
+import { formatFullDisplayDate } from '../../services/guardJobsMapper';
+import { formatDate } from '../../utils';
 
-type RosterTab = 'calendar' | 'shifts' | 'sites';
+type RosterTab = 'shifts' | 'sites';
 
-const WEEK_DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-const PERIOD_FILTERS: WeekPeriodFilter[] = ['Today', 'This Week', 'This Month'];
+const PERIOD_FILTERS = [
+  'Today',
+  'This Week',
+  'This Month',
+  'Custom',
+] as const;
+type WeekPeriodFilter = (typeof PERIOD_FILTERS)[number];
 
-function buildCalendarCells(month: number, year: number) {
-  const firstDay = new Date(year, month - 1, 1);
-  const daysInMonth = new Date(year, month, 0).getDate();
-  const startOffset = (firstDay.getDay() + 6) % 7;
-  const cells: (number | null)[] = [];
-
-  for (let i = 0; i < startOffset; i++) cells.push(null);
-  for (let d = 1; d <= daysInMonth; d++) cells.push(d);
-  while (cells.length % 7 !== 0) cells.push(null);
-
-  return cells;
-}
-
-function dateKey(year: number, month: number, day: number): string {
-  return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+function apiPeriodForFilter(filter: WeekPeriodFilter): ManagerPeriod {
+  if (filter === 'Today') return 'today';
+  if (filter === 'This Week') return 'this_week';
+  if (filter === 'This Month') return 'this_month';
+  if (filter === 'Custom') return 'custom';
+  return 'today';
 }
 
 export default function ManagerRosterScreen() {
-  const now = new Date();
-  const [tab, setTab] = useState<RosterTab>('calendar');
-  const [month, setMonth] = useState(now.getMonth() + 1);
-  const [year, setYear] = useState(now.getFullYear());
-  const [selectedDay, setSelectedDay] = useState(now.getDate());
-  const [periodFilter, setPeriodFilter] = useState<WeekPeriodFilter>('This Week');
+  const navigation = useNavigation<any>();
+  const [tab, setTab] = useState<RosterTab>('shifts');
+  const [periodFilter, setPeriodFilter] = useState<WeekPeriodFilter>('Today');
   const [search, setSearch] = useState('');
   const debouncedSearch = useDebouncedValue(search, 400);
 
-  const [calendarData, setCalendarData] = useState<Awaited<
-    ReturnType<typeof getManagerRosterCalendar>
-  >['data']>(undefined);
   const [shiftsData, setShiftsData] = useState<Awaited<
     ReturnType<typeof getManagerRosterShifts>
   >['data']>(undefined);
   const [sitesData, setSitesData] = useState<Awaited<
     ReturnType<typeof getManagerRosterSites>
   >['data']>(undefined);
+
+  const [guards, setGuards] = useState<ManagerFilterGuard[]>([]);
+  const [sites, setSites] = useState<ManagerFilterSite[]>([]);
+  const [selectedGuardIds, setSelectedGuardIds] = useState<number[]>([]);
+  const [selectedSiteIds, setSelectedSiteIds] = useState<number[]>([]);
+  const [showGuardFilter, setShowGuardFilter] = useState(false);
+  const [showSiteFilter, setShowSiteFilter] = useState(false);
+  const [showAllFilters, setShowAllFilters] = useState(false);
+
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -94,33 +94,50 @@ export default function ManagerRosterScreen() {
   const [hasMore, setHasMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const apiPeriod: ManagerPeriod = apiPeriodForWeekFilter(periodFilter);
+  const [startDate, setStartDate] = useState(new Date());
+  const [endDate, setEndDate] = useState(new Date());
+  const [showStartPicker, setShowStartPicker] = useState(false);
+  const [showEndPicker, setShowEndPicker] = useState(false);
 
-  const fetchCalendar = useCallback(async () => {
-    setError(null);
-    const result = await getManagerRosterCalendar(month, year);
-    if (result.success && result.data) {
-      setCalendarData(result.data);
-    } else {
-      setCalendarData(undefined);
-      setError(result.message ?? 'Failed to load calendar');
+  const apiPeriod = apiPeriodForFilter(periodFilter);
+
+  useEffect(() => {
+    async function loadFilters() {
+      const res = await getManagerGuardsSites();
+      if (res.success && res.data) {
+        setGuards(res.data.guards);
+        setSites(res.data.sites);
+      }
     }
-    setLoading(false);
-    setRefreshing(false);
-  }, [month, year]);
+    loadFilters();
+  }, []);
 
   const fetchShifts = useCallback(
     async (pageNum: number, append: boolean) => {
-      if (pageNum === 1 && !append) setLoading(true);
-      else setLoadingMore(true);
+      if (pageNum === 1 && !append) {
+        setLoading(true);
+        setShiftsData({ assignments: [] } as any);
+      } else {
+        setLoadingMore(true);
+      }
       setError(null);
 
-      const result = await getManagerRosterShifts({
+      const params = {
         period: apiPeriod,
         search: debouncedSearch,
         page: pageNum,
-        per_page: apiPeriod === 'this_week' ? 50 : 20,
-      });
+        per_page: 20,
+        guard_ids: selectedGuardIds,
+        site_ids: selectedSiteIds,
+        ...(apiPeriod === 'custom'
+          ? {
+              start_date: startDate.toISOString().slice(0, 10),
+              end_date: endDate.toISOString().slice(0, 10),
+            }
+          : {}),
+      };
+
+      const result = await getManagerRosterShifts(params);
 
       if (result.success && result.data) {
         setShiftsData(prev => {
@@ -141,21 +158,42 @@ export default function ManagerRosterScreen() {
       setLoadingMore(false);
       setRefreshing(false);
     },
-    [apiPeriod, debouncedSearch],
+    [
+      apiPeriod,
+      debouncedSearch,
+      selectedGuardIds,
+      selectedSiteIds,
+      startDate,
+      endDate,
+    ],
   );
 
   const fetchSites = useCallback(
     async (pageNum: number, append: boolean) => {
-      if (pageNum === 1 && !append) setLoading(true);
-      else setLoadingMore(true);
+      if (pageNum === 1 && !append) {
+        setLoading(true);
+        setSitesData({ sites: [] } as any);
+      } else {
+        setLoadingMore(true);
+      }
       setError(null);
 
-      const result = await getManagerRosterSites({
+      const params = {
         period: apiPeriod,
         search: debouncedSearch,
         page: pageNum,
         per_page: 20,
-      });
+        guard_ids: selectedGuardIds,
+        site_ids: selectedSiteIds,
+        ...(apiPeriod === 'custom'
+          ? {
+              start_date: startDate.toISOString().slice(0, 10),
+              end_date: endDate.toISOString().slice(0, 10),
+            }
+          : {}),
+      };
+
+      const result = await getManagerRosterSites(params);
 
       if (result.success && result.data) {
         setSitesData(prev => {
@@ -176,111 +214,53 @@ export default function ManagerRosterScreen() {
       setLoadingMore(false);
       setRefreshing(false);
     },
-    [apiPeriod, debouncedSearch],
+    [
+      apiPeriod,
+      debouncedSearch,
+      selectedGuardIds,
+      selectedSiteIds,
+      startDate,
+      endDate,
+    ],
   );
 
   useEffect(() => {
-    setLoading(true);
-    if (tab === 'calendar') {
-      fetchCalendar();
-    } else if (tab === 'shifts') {
-      fetchShifts(1, false);
-    } else {
-      fetchSites(1, false);
-    }
-  }, [tab, apiPeriod, debouncedSearch, month, year, fetchCalendar, fetchShifts, fetchSites]);
+    fetchShifts(1, false);
+    fetchSites(1, false);
+  }, [fetchShifts, fetchSites]);
 
   const onRefresh = useCallback(() => {
     setRefreshing(true);
-    if (tab === 'calendar') fetchCalendar();
-    else if (tab === 'shifts') fetchShifts(1, false);
-    else fetchSites(1, false);
-  }, [fetchCalendar, fetchShifts, fetchSites, tab]);
+    fetchShifts(1, false);
+    fetchSites(1, false);
+  }, [fetchShifts, fetchSites]);
 
   const loadMore = useCallback(() => {
-    if (tab === 'calendar' || isFrontendWeekFilter(periodFilter)) return;
     if (loadingMore || !hasMore || loading) return;
     if (tab === 'shifts') fetchShifts(page + 1, true);
     else fetchSites(page + 1, true);
-  }, [
-    fetchShifts,
-    fetchSites,
-    hasMore,
-    loading,
-    loadingMore,
-    page,
-    periodFilter,
-    tab,
-  ]);
+  }, [fetchShifts, fetchSites, hasMore, loading, loadingMore, page, tab]);
 
   const handlePeriodFilter = (filter: WeekPeriodFilter) => {
     setPeriodFilter(filter);
-    if (!isFrontendWeekFilter(filter)) {
-      setLoading(true);
-    }
+    setLoading(true);
   };
 
-  const changeMonth = useCallback(
-    (delta: number) => {
-      const d = new Date(year, month - 1 + delta, 1);
-      setMonth(d.getMonth() + 1);
-      setYear(d.getFullYear());
-      setSelectedDay(1);
-      setLoading(true);
-    },
-    [month, year],
-  );
+  const showShiftsShimmer = loading && tab === 'shifts';
+  const showSitesShimmer = loading && tab === 'sites';
 
-  const calendarCells = useMemo(
-    () => buildCalendarCells(month, year),
-    [month, year],
-  );
-
-  const datesWithShifts = useMemo(
-    () => new Set(calendarData?.dates_with_shifts ?? []),
-    [calendarData],
-  );
-
-  const selectedDateKey = dateKey(year, month, selectedDay);
-  const dayEvents = useMemo(
-    () => (calendarData?.events ?? []).filter(e => e.date === selectedDateKey),
-    [calendarData, selectedDateKey],
-  );
-
-  const filteredAssignments = useMemo(() => {
-    const items = shiftsData?.assignments ?? [];
-    if (periodFilter === 'Today') {
-      return items.filter(s => isDateToday(s.date));
-    }
-    if (periodFilter === 'This Week') {
-      return items.filter(s => isDateThisWeek(s.date));
-    }
-    return items;
-  }, [periodFilter, shiftsData]);
-
-  const monthLabel =
-    calendarData?.month_label ??
-    new Date(year, month - 1).toLocaleDateString(undefined, {
-      month: 'long',
-      year: 'numeric',
-    });
-
-  const showCalendarShimmer = loading && tab === 'calendar' && !calendarData;
-  const showShiftsShimmer = loading && tab === 'shifts' && !shiftsData;
-  const showSitesShimmer = loading && tab === 'sites' && !sitesData;
-
-  const subtitle =
-    tab === 'sites' && sitesData
-      ? sitesData.sites_label
-      : tab === 'shifts' && shiftsData
-        ? shiftsData.period_label
-        : 'Shift & site assignments';
+  const subtitle = useMemo(() => {
+    if (periodFilter === 'Today') return "Today's assignments";
+    if (periodFilter === 'This Week') return "This week's assignments";
+    if (tab === 'shifts' && shiftsData?.period_label) return shiftsData.period_label;
+    if (tab === 'sites' && sitesData?.period_label) return sitesData.period_label;
+    return 'Shift & Site Assignments';
+  }, [periodFilter, tab, shiftsData, sitesData]);
 
   const tabToolbar = (
     <View style={styles.tabRow}>
       {(
         [
-          { key: 'calendar', label: 'Calendar' },
           { key: 'shifts', label: 'Shifts' },
           { key: 'sites', label: 'Sites' },
         ] as const
@@ -301,119 +281,137 @@ export default function ManagerRosterScreen() {
     </View>
   );
 
-  const shiftsToolbar =
-    tab !== 'calendar' ? (
-      <>
-        <View style={[styles.searchRow, Shadows.card]}>
-          <Search size={16} color={Colors.textMuted} />
-          <TextInput
-            style={styles.searchInput}
-            placeholder="Search guard or site..."
-            placeholderTextColor={Colors.textMuted}
-            value={search}
-            onChangeText={setSearch}
+  const shiftsToolbar = (
+    <>
+      <View style={[styles.searchRow, Shadows.card]}>
+        <Search size={16} color={Colors.textMuted} />
+        <TextInput
+          style={styles.searchInput}
+          placeholder="Search..."
+          placeholderTextColor={Colors.textMuted}
+          value={search}
+          onChangeText={setSearch}
+        />
+        <TouchableOpacity
+          style={[
+            styles.filterBtn,
+            (selectedGuardIds.length > 0 || selectedSiteIds.length > 0) &&
+              styles.filterBtnActive,
+          ]}
+          onPress={() => setShowAllFilters(true)}
+        >
+          <Filter
+            size={16}
+            color={
+              selectedGuardIds.length > 0 || selectedSiteIds.length > 0
+                ? Colors.accent
+                : Colors.textMuted
+            }
           />
-        </View>
-        <View style={sharedStyles.chipRow}>
-          {PERIOD_FILTERS.map(f => (
-            <TouchableOpacity
-              key={f}
-              style={[
-                sharedStyles.chip,
-                periodFilter === f && sharedStyles.chipActive,
-              ]}
-              onPress={() => handlePeriodFilter(f)}
-            >
-              <Text
-                style={[
-                  sharedStyles.chipText,
-                  periodFilter === f && sharedStyles.chipTextActive,
-                ]}
-              >
-                {f}
+          {(selectedGuardIds.length > 0 || selectedSiteIds.length > 0) && (
+            <View style={styles.filterBadge}>
+              <Text style={styles.filterBadgeText}>
+                {selectedGuardIds.length + selectedSiteIds.length}
               </Text>
-            </TouchableOpacity>
-          ))}
+            </View>
+          )}
+        </TouchableOpacity>
+      </View>
+      <View style={[sharedStyles.chipRow, { flexWrap: 'nowrap', gap: 3, marginBottom: 12 }]}>
+        {PERIOD_FILTERS.map(f => (
+          <TouchableOpacity
+            key={f}
+            style={[
+              sharedStyles.chip,
+              { flex: 1, paddingHorizontal: 2, paddingVertical: 5, alignItems: 'center' },
+              periodFilter === f && sharedStyles.chipActive,
+            ]}
+            onPress={() => handlePeriodFilter(f)}
+          >
+            <Text
+              style={[
+                sharedStyles.chipText,
+                { fontSize: 8, textAlign: 'center' },
+                periodFilter === f && sharedStyles.chipTextActive,
+              ]}
+              numberOfLines={1}
+              adjustsFontSizeToFit
+            >
+              {f}
+            </Text>
+          </TouchableOpacity>
+        ))}
+        <TouchableOpacity
+          style={[
+            sharedStyles.chip,
+            { flex: 1, paddingHorizontal: 2, paddingVertical: 5, alignItems: 'center' },
+            selectedGuardIds.length > 0 && sharedStyles.chipActive,
+          ]}
+          onPress={() => setShowGuardFilter(true)}
+        >
+          <Text
+            style={[
+              sharedStyles.chipText,
+              { fontSize: 8, textAlign: 'center' },
+              selectedGuardIds.length > 0 && sharedStyles.chipTextActive,
+            ]}
+            numberOfLines={1}
+            adjustsFontSizeToFit
+          >
+            Guards{selectedGuardIds.length > 0 ? `(${selectedGuardIds.length})` : ''}
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[
+            sharedStyles.chip,
+            { flex: 1, paddingHorizontal: 2, paddingVertical: 5, alignItems: 'center' },
+            selectedSiteIds.length > 0 && sharedStyles.chipActive,
+          ]}
+          onPress={() => setShowSiteFilter(true)}
+        >
+          <Text
+            style={[
+              sharedStyles.chipText,
+              { fontSize: 8, textAlign: 'center' },
+              selectedSiteIds.length > 0 && sharedStyles.chipTextActive,
+            ]}
+            numberOfLines={1}
+            adjustsFontSizeToFit
+          >
+            Sites{selectedSiteIds.length > 0 ? `(${selectedSiteIds.length})` : ''}
+          </Text>
+        </TouchableOpacity>
+      </View>
+      {periodFilter === 'Custom' && (
+        <View style={styles.customDateRow}>
+          <TouchableOpacity
+            style={styles.datePickerBtn}
+            onPress={() => setShowStartPicker(true)}
+          >
+            <Calendar size={14} color={Colors.accent} />
+            <Text style={styles.datePickerText}>
+              From: {formatDate(startDate)}
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.datePickerBtn}
+            onPress={() => setShowEndPicker(true)}
+          >
+            <Calendar size={14} color={Colors.accent} />
+            <Text style={styles.datePickerText}>
+              To: {formatDate(endDate)}
+            </Text>
+          </TouchableOpacity>
         </View>
-      </>
-    ) : null;
-
-  const calendarFixed =
-    tab === 'calendar' ? (
-      showCalendarShimmer ? (
-        <ManagerRosterCalendarFixedShimmer />
-      ) : (
-        <>
-          <View style={[styles.calendarHeader, Shadows.card]}>
-            <TouchableOpacity onPress={() => changeMonth(-1)}>
-              <ChevronLeft size={18} color={Colors.textPrimary} />
-            </TouchableOpacity>
-            <Text style={styles.monthLabel}>{monthLabel}</Text>
-            <TouchableOpacity onPress={() => changeMonth(1)}>
-              <ChevronRight size={18} color={Colors.textPrimary} />
-            </TouchableOpacity>
-          </View>
-          <View style={[styles.calendar, Shadows.card]}>
-            <View style={styles.weekRow}>
-              {WEEK_DAYS.map(d => (
-                <Text key={d} style={styles.weekDay}>
-                  {d}
-                </Text>
-              ))}
-            </View>
-            <View style={styles.daysGrid}>
-              {calendarCells.map((day, index) => {
-                if (day == null) {
-                  return <View key={`empty-${index}`} style={styles.dayCell} />;
-                }
-
-                const key = dateKey(year, month, day);
-                const hasShift = datesWithShifts.has(key);
-                const isSelected = day === selectedDay;
-                const isToday =
-                  day === now.getDate() &&
-                  month === now.getMonth() + 1 &&
-                  year === now.getFullYear();
-
-                return (
-                  <TouchableOpacity
-                    key={key}
-                    style={[
-                      styles.dayCell,
-                      isSelected && styles.daySelected,
-                      isToday && !isSelected && styles.dayToday,
-                    ]}
-                    onPress={() => setSelectedDay(day)}
-                  >
-                    <Text
-                      style={[
-                        styles.dayText,
-                        isSelected && styles.dayTextSelected,
-                        hasShift && !isSelected && styles.dayTextShift,
-                      ]}
-                    >
-                      {day}
-                    </Text>
-                    {hasShift ? <View style={styles.shiftDot} /> : null}
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-          </View>
-        </>
-      )
-    ) : null;
+      )}
+    </>
+  );
 
   const listHeader =
-    tab === 'calendar' ? (
-      <SectionHeader
-        title="Shifts"
-        action={dayEvents[0]?.date_label ?? selectedDateKey}
-      />
-    ) : tab === 'shifts' ? (
+    tab === 'shifts' ? (
       <SectionHeader
         title="Shift Assignments"
-        action={shiftsData?.period_label ?? 'This Week'}
+        action={periodFilter === 'Custom' ? '' : periodFilter}
       />
     ) : (
       <SectionHeader
@@ -439,60 +437,46 @@ export default function ManagerRosterScreen() {
             {shiftsToolbar}
           </>
         }
-        fixedContent={calendarFixed}
         listHeader={listHeader}
       >
-        {showCalendarShimmer ? (
-          <ManagerRosterListShimmer variant="calendar" count={2} />
-        ) : showShiftsShimmer ? (
+        {showShiftsShimmer ? (
           <ManagerRosterListShimmer variant="shifts" />
         ) : showSitesShimmer ? (
           <ManagerRosterListShimmer variant="sites" />
-        ) : tab === 'calendar' ? (
-          dayEvents.length === 0 ? (
-            <Text style={styles.emptyText}>No shifts on this day.</Text>
-          ) : (
-            dayEvents.map((event: ManagerCalendarEvent) => (
-              <View key={event.roster_id} style={[styles.shiftRow, Shadows.card]}>
-                <View style={styles.shiftIcon}>
-                  <Clock size={14} color={Colors.accent} />
-                </View>
-                <View style={styles.rowBody}>
-                  <Text style={styles.shiftGuard}>{event.guard_name}</Text>
-                  <Text style={styles.shiftMeta}>
-                    {event.site_name} · {event.shift_time}
-                  </Text>
-                  <Text style={styles.shiftZone}>{event.zone}</Text>
-                </View>
-              </View>
-            ))
-          )
         ) : tab === 'shifts' ? (
-          filteredAssignments.length === 0 ? (
+          (shiftsData?.assignments ?? []).length === 0 ? (
             <Text style={styles.emptyText}>No shift assignments found.</Text>
           ) : (
-            filteredAssignments.map((s: ManagerShiftAssignment) => (
-              <View key={s.roster_id} style={[styles.shiftRow, Shadows.card]}>
+            (shiftsData?.assignments ?? []).map((s: ManagerShiftAssignment) => (
+              <TouchableOpacity
+                key={s.roster_id}
+                style={[styles.shiftRow, Shadows.card]}
+                onPress={() => navigation.navigate('ManagerRosterDetail', { rosterId: s.roster_id })}
+              >
                 <View style={styles.shiftIcon}>
-                  <Users size={14} color={Colors.accent} />
+                  <Clock size={15} color={Colors.accent} />
                 </View>
                 <View style={styles.rowBody}>
-                  <Text style={styles.shiftGuard}>{s.guard_name}</Text>
-                  <Text style={styles.shiftMeta}>
-                    {s.site_name} · {s.shift_time}
+                  <Text style={styles.shiftGuard}>
+                    {s.title || s.site_name || 'Shift Assignment'}
                   </Text>
+                  <Text style={styles.shiftMeta}>{s.guard_name} · {s.shift_time} · {formatFullDisplayDate(s.date)}</Text>
                   <Text style={styles.shiftZone}>
-                    {s.zone} · {s.date_label}
+                   {s.zone}
                   </Text>
                 </View>
-              </View>
+              </TouchableOpacity>
             ))
           )
         ) : (sitesData?.sites ?? []).length === 0 ? (
           <Text style={styles.emptyText}>No site assignments found.</Text>
         ) : (
           (sitesData?.sites ?? []).map((s: ManagerSiteAssignment) => (
-            <View key={s.site_id} style={[styles.siteRow, Shadows.card]}>
+            <TouchableOpacity
+              key={s.site_id}
+              style={[styles.siteRow, Shadows.card]}
+              onPress={() => navigation.navigate('ManagerSiteDetail', { siteId: s.site_id })}
+            >
               <View style={styles.siteIcon}>
                 <MapPin size={16} color={Colors.accent} />
               </View>
@@ -502,7 +486,7 @@ export default function ManagerRosterScreen() {
                 <Text style={styles.siteMeta}>{s.shifts_label}</Text>
                 <Text style={styles.siteLead}>{s.lead_label}</Text>
               </View>
-            </View>
+            </TouchableOpacity>
           ))
         )}
 
@@ -510,9 +494,460 @@ export default function ManagerRosterScreen() {
           <ActivityIndicator color={Colors.accent} style={styles.loadMore} />
         ) : null}
       </ManagerListLayout>
+
+      {showStartPicker && (
+        <ManagerCalendarModal
+          visible={showStartPicker}
+          selectedDate={startDate}
+          onClose={() => setShowStartPicker(false)}
+          onSelectDate={(date) => {
+            setStartDate(date);
+            setShowStartPicker(false);
+          }}
+        />
+      )}
+      {showEndPicker && (
+        <ManagerCalendarModal
+          visible={showEndPicker}
+          selectedDate={endDate}
+          onClose={() => setShowEndPicker(false)}
+          onSelectDate={(date) => {
+            setEndDate(date);
+            setShowEndPicker(false);
+          }}
+        />
+      )}
+
+      {showGuardFilter && (
+        <ManagerSearchableFilterModal
+          visible={showGuardFilter}
+          title="Guards"
+          data={guards}
+          selectedIds={selectedGuardIds}
+          onClose={() => setShowGuardFilter(false)}
+          onApply={ids => {
+            setSelectedGuardIds(ids);
+            setShowGuardFilter(false);
+          }}
+          onClear={() => {
+            setSelectedGuardIds([]);
+            setShowGuardFilter(false);
+          }}
+        />
+      )}
+      {showSiteFilter && (
+        <ManagerSearchableFilterModal
+          visible={showSiteFilter}
+          title="Sites"
+          data={sites}
+          selectedIds={selectedSiteIds}
+          onClose={() => setShowSiteFilter(false)}
+          onApply={ids => {
+            setSelectedSiteIds(ids);
+            setShowSiteFilter(false);
+          }}
+          onClear={() => {
+            setSelectedSiteIds([]);
+            setShowSiteFilter(false);
+          }}
+        />
+      )}
+      {showAllFilters && (
+        <ManagerRosterFiltersModal
+          visible={showAllFilters}
+          guards={guards}
+          sites={sites}
+          selectedGuardIds={selectedGuardIds}
+          selectedSiteIds={selectedSiteIds}
+          onClose={() => setShowAllFilters(false)}
+          onApply={(gIds, sIds) => {
+            setSelectedGuardIds(gIds);
+            setSelectedSiteIds(sIds);
+            setShowAllFilters(false);
+          }}
+          onClear={() => {
+            setSelectedGuardIds([]);
+            setSelectedSiteIds([]);
+            setShowAllFilters(false);
+          }}
+        />
+      )}
     </ManagerCompactTabShell>
   );
 }
+
+function ManagerSearchableFilterModal({
+  visible,
+  title,
+  data,
+  selectedIds,
+  onClose,
+  onApply,
+  onClear,
+}: {
+  visible: boolean;
+  title: string;
+  data: { id: number; name: string }[];
+  selectedIds: number[];
+  onClose: () => void;
+  onApply: (ids: number[]) => void;
+  onClear: () => void;
+}) {
+  const [search, setSearch] = useState('');
+  const [tempSelectedIds, setTempSelectedIds] = useState<number[]>(selectedIds);
+
+  useEffect(() => {
+    if (visible) {
+      setTempSelectedIds(selectedIds);
+      setSearch('');
+    }
+  }, [visible, selectedIds]);
+
+  const filteredData = useMemo(() => {
+    if (!search) return data;
+    const s = search.toLowerCase();
+    return data.filter(item => item.name.toLowerCase().includes(s));
+  }, [data, search]);
+
+  const toggleId = (id: number) => {
+    setTempSelectedIds(prev =>
+      prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id],
+    );
+  };
+
+  return (
+    <Modal visible={visible} transparent animationType="slide">
+      <View style={modalStyles.overlay}>
+        <View style={modalStyles.container}>
+          <View style={modalStyles.header}>
+            <Text style={modalStyles.title}>{title} Filter</Text>
+            <TouchableOpacity onPress={onClose}>
+              <X size={20} color={Colors.textPrimary} />
+            </TouchableOpacity>
+          </View>
+
+          <View style={modalStyles.searchBox}>
+            <Search size={16} color={Colors.textMuted} />
+            <TextInput
+              style={modalStyles.searchInput}
+              placeholder={`Search ${title.toLowerCase()}...`}
+              placeholderTextColor={Colors.textMuted}
+              value={search}
+              onChangeText={setSearch}
+            />
+          </View>
+
+          <ScrollView style={modalStyles.content}>
+            <View style={modalStyles.chipRow}>
+              {filteredData.map(item => (
+                <TouchableOpacity
+                  key={item.id}
+                  style={[
+                    modalStyles.chip,
+                    tempSelectedIds.includes(item.id) && modalStyles.chipActive,
+                  ]}
+                  onPress={() => toggleId(item.id)}
+                >
+                  <Text
+                    style={[
+                      modalStyles.chipText,
+                      tempSelectedIds.includes(item.id) && modalStyles.chipTextActive,
+                    ]}
+                  >
+                    {item.name}
+                  </Text>
+                  {tempSelectedIds.includes(item.id) && (
+                    <Check size={12} color={Colors.accent} />
+                  )}
+                </TouchableOpacity>
+              ))}
+              {filteredData.length === 0 && (
+                <Text style={modalStyles.emptyText}>No results found.</Text>
+              )}
+            </View>
+          </ScrollView>
+
+          <View style={modalStyles.footer}>
+            <TouchableOpacity style={modalStyles.resetBtn} onPress={onClear}>
+              <Text style={modalStyles.resetBtnText}>Clear</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={modalStyles.applyBtn}
+              onPress={() => onApply(tempSelectedIds)}
+            >
+              <Text style={modalStyles.applyBtnText}>Apply</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+function ManagerRosterFiltersModal({
+  visible,
+  guards,
+  sites,
+  selectedGuardIds,
+  selectedSiteIds,
+  onClose,
+  onApply,
+  onClear,
+}: {
+  visible: boolean;
+  guards: ManagerFilterGuard[];
+  sites: ManagerFilterSite[];
+  selectedGuardIds: number[];
+  selectedSiteIds: number[];
+  onClose: () => void;
+  onApply: (guardIds: number[], siteIds: number[]) => void;
+  onClear: () => void;
+}) {
+  const [search, setSearch] = useState('');
+  const [tempGuardIds, setTempGuardIds] = useState<number[]>(selectedGuardIds);
+  const [tempSiteIds, setTempSiteIds] = useState<number[]>(selectedSiteIds);
+
+  useEffect(() => {
+    if (visible) {
+      setTempGuardIds(selectedGuardIds);
+      setTempSiteIds(selectedSiteIds);
+      setSearch('');
+    }
+  }, [visible, selectedGuardIds, selectedSiteIds]);
+
+  const filteredGuards = useMemo(() => {
+    if (!search) return guards;
+    const s = search.toLowerCase();
+    return guards.filter(g => g.name.toLowerCase().includes(s));
+  }, [guards, search]);
+
+  const filteredSites = useMemo(() => {
+    if (!search) return sites;
+    const s = search.toLowerCase();
+    return sites.filter(s_item => s_item.name.toLowerCase().includes(s));
+  }, [sites, search]);
+
+  const toggleGuard = (id: number) => {
+    setTempGuardIds(prev =>
+      prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id],
+    );
+  };
+
+  const toggleSite = (id: number) => {
+    setTempSiteIds(prev =>
+      prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id],
+    );
+  };
+
+  return (
+    <Modal visible={visible} transparent animationType="slide">
+      <View style={modalStyles.overlay}>
+        <View style={modalStyles.container}>
+          <View style={modalStyles.header}>
+            <Text style={modalStyles.title}>Filters</Text>
+            <TouchableOpacity onPress={onClose}>
+              <X size={20} color={Colors.textPrimary} />
+            </TouchableOpacity>
+          </View>
+
+          <View style={modalStyles.searchBox}>
+            <Search size={16} color={Colors.textMuted} />
+            <TextInput
+              style={modalStyles.searchInput}
+              placeholder="Search guards or sites..."
+              placeholderTextColor={Colors.textMuted}
+              value={search}
+              onChangeText={setSearch}
+            />
+          </View>
+
+          <ScrollView style={modalStyles.content}>
+            {filteredGuards.length > 0 && (
+              <>
+                <Text style={modalStyles.sectionTitle}>Guards</Text>
+                <View style={modalStyles.chipRow}>
+                  {filteredGuards.map(g => (
+                    <TouchableOpacity
+                      key={g.id}
+                      style={[
+                        modalStyles.chip,
+                        tempGuardIds.includes(g.id) && modalStyles.chipActive,
+                      ]}
+                      onPress={() => toggleGuard(g.id)}
+                    >
+                      <Text
+                        style={[
+                          modalStyles.chipText,
+                          tempGuardIds.includes(g.id) && modalStyles.chipTextActive,
+                        ]}
+                      >
+                        {g.name}
+                      </Text>
+                      {tempGuardIds.includes(g.id) && (
+                        <Check size={12} color={Colors.accent} />
+                      )}
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </>
+            )}
+
+            {filteredSites.length > 0 && (
+              <>
+                <Text
+                  style={[
+                    modalStyles.sectionTitle,
+                    { marginTop: filteredGuards.length > 0 ? 20 : 0 },
+                  ]}
+                >
+                  Sites
+                </Text>
+                <View style={modalStyles.chipRow}>
+                  {filteredSites.map(s => (
+                    <TouchableOpacity
+                      key={s.id}
+                      style={[
+                        modalStyles.chip,
+                        tempSiteIds.includes(s.id) && modalStyles.chipActive,
+                      ]}
+                      onPress={() => toggleSite(s.id)}
+                    >
+                      <Text
+                        style={[
+                          modalStyles.chipText,
+                          tempSiteIds.includes(s.id) && modalStyles.chipTextActive,
+                        ]}
+                      >
+                        {s.name}
+                      </Text>
+                      {tempSiteIds.includes(s.id) && (
+                        <Check size={12} color={Colors.accent} />
+                      )}
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </>
+            )}
+
+            {filteredGuards.length === 0 && filteredSites.length === 0 && (
+              <Text style={modalStyles.emptyText}>No results found.</Text>
+            )}
+          </ScrollView>
+
+          <View style={modalStyles.footer}>
+            <TouchableOpacity style={modalStyles.resetBtn} onPress={onClear}>
+              <Text style={modalStyles.resetBtnText}>Clear All</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={modalStyles.applyBtn}
+              onPress={() => onApply(tempGuardIds, tempSiteIds)}
+            >
+              <Text style={modalStyles.applyBtnText}>Apply Filters</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+const modalStyles = StyleSheet.create({
+  overlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'flex-end',
+  },
+  container: {
+    backgroundColor: Colors.white,
+    borderTopLeftRadius: Radii.xl,
+    borderTopRightRadius: Radii.xl,
+    maxHeight: '80%',
+  },
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border,
+  },
+  title: { fontSize: 18, fontWeight: '700', color: Colors.textPrimary },
+  searchBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.bgPage,
+    marginHorizontal: 20,
+    marginTop: 15,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: Radii.md,
+    gap: 8,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 14,
+    color: Colors.textPrimary,
+    padding: 0,
+  },
+  content: { padding: 20, flexGrow: 1 },
+  emptyText: {
+    fontSize: 13,
+    color: Colors.textMuted,
+    textAlign: 'center',
+    marginTop: 20,
+    width: '100%',
+  },
+  sectionTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: Colors.textSecondary,
+    marginBottom: 12,
+  },
+  chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  chip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: Radii.md,
+    backgroundColor: Colors.bgPage,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  chipActive: {
+    backgroundColor: Colors.accentLight,
+    borderColor: Colors.accentAlpha25,
+  },
+  chipText: { fontSize: 13, color: Colors.textPrimary, fontWeight: '500' },
+  chipTextActive: { color: Colors.accent, fontWeight: '700' },
+  footer: {
+    flexDirection: 'row',
+    padding: 20,
+    gap: 12,
+    borderTopWidth: 1,
+    borderTopColor: Colors.border,
+  },
+  resetBtn: {
+    flex: 1,
+    paddingVertical: 14,
+    alignItems: 'center',
+    borderRadius: Radii.md,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  resetBtnText: { color: Colors.textSecondary, fontWeight: '600' },
+  applyBtn: {
+    flex: 2,
+    backgroundColor: Colors.accent,
+    paddingVertical: 14,
+    alignItems: 'center',
+    borderRadius: Radii.md,
+  },
+  applyBtnText: { color: Colors.white, fontWeight: '700' },
+});
 
 const styles = StyleSheet.create({
   tabRow: { flexDirection: 'row', gap: 6, marginBottom: 12 },
@@ -551,6 +986,55 @@ const styles = StyleSheet.create({
     color: Colors.textPrimary,
     padding: 0,
   },
+  filterBtn: {
+    padding: 8,
+    borderRadius: Radii.sm,
+    backgroundColor: Colors.bgPage,
+    position: 'relative',
+  },
+  filterBtnActive: {
+    backgroundColor: Colors.accentLight,
+  },
+  filterBadge: {
+    position: 'absolute',
+    top: -4,
+    right: -4,
+    backgroundColor: Colors.accent,
+    borderRadius: 8,
+    minWidth: 16,
+    height: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 4,
+  },
+  filterBadgeText: {
+    color: Colors.white,
+    fontSize: 9,
+    fontWeight: '800',
+  },
+  customDateRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 4,
+    marginBottom: 10,
+  },
+  datePickerBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    backgroundColor: Colors.bgCard,
+    borderRadius: Radii.md,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  datePickerText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: Colors.textPrimary,
+  },
   emptyText: {
     fontSize: FontSizes.sm,
     color: Colors.textMuted,
@@ -559,56 +1043,6 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   loadMore: { marginVertical: 12 },
-  calendarHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: Colors.bgCard,
-    borderRadius: Radii.md,
-    padding: 12,
-    marginBottom: 10,
-  },
-  monthLabel: { fontSize: 14, fontWeight: '800', color: Colors.textPrimary },
-  calendar: {
-    backgroundColor: Colors.bgCard,
-    borderRadius: Radii.lg,
-    padding: 12,
-    marginBottom: 4,
-  },
-  weekRow: { flexDirection: 'row', marginBottom: 8 },
-  weekDay: {
-    flex: 1,
-    textAlign: 'center',
-    fontSize: FontSizes.xs,
-    fontWeight: '700',
-    color: Colors.textMuted,
-  },
-  daysGrid: { flexDirection: 'row', flexWrap: 'wrap' },
-  dayCell: {
-    width: `${100 / 7}%`,
-    aspectRatio: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  daySelected: {
-    backgroundColor: Colors.accent,
-    borderRadius: 20,
-  },
-  dayToday: {
-    borderWidth: 1,
-    borderColor: Colors.accentAlpha25,
-    borderRadius: 20,
-  },
-  dayText: { fontSize: 12, color: Colors.textPrimary },
-  dayTextSelected: { color: Colors.white, fontWeight: '800' },
-  dayTextShift: { fontWeight: '700', color: Colors.accent },
-  shiftDot: {
-    width: 4,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: Colors.accent,
-    marginTop: 2,
-  },
   shiftRow: {
     backgroundColor: Colors.bgCard,
     borderRadius: Radii.md,

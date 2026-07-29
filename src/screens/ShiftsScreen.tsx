@@ -72,11 +72,11 @@ const badgeConfig: Record<
   ShiftStatus,
   { bg: string; color: string; label: string }
 > = {
-  active: { bg: Colors.accentLight, color: Colors.accent, label: '● ACTIVE' },
-  done: { bg: Colors.successLight, color: Colors.success, label: '✓ DONE' },
-  upcoming: { bg: Colors.infoLight, color: Colors.info, label: 'UPCOMING' },
-  ready: { bg: Colors.warningLight, color: '#c05621', label: 'READY' },
-  missed: { bg: Colors.dangerLight, color: Colors.danger, label: 'MISSED' },
+  active: { bg: Colors.accentLight, color: Colors.accent, label: '● Active' },
+  done: { bg: Colors.successLight, color: Colors.success, label: '✓ Done' },
+  upcoming: { bg: Colors.infoLight, color: Colors.info, label: 'Upcoming' },
+  ready: { bg: Colors.warningLight, color: '#c05621', label: 'Ready' },
+  missed: { bg: Colors.dangerLight, color: Colors.danger, label: 'Missed' },
 };
 
 const FILTERS: ShiftListFilter[] = [
@@ -87,6 +87,32 @@ const FILTERS: ShiftListFilter[] = [
   'Completed',
   'Missed',
 ];
+
+function pad(n: number) {
+  return String(n).padStart(2, '0');
+}
+
+function formatSignInLabel(iso?: string) {
+  if (!iso) return '—';
+  const normalized = iso.includes('T') ? iso : iso.replace(' ', 'T');
+  const d = new Date(normalized);
+  if (Number.isNaN(d.getTime())) {
+    const fallback = new Date(iso.replace(/-/g, '/'));
+    if (Number.isNaN(fallback.getTime())) return iso;
+    const dd = pad(fallback.getDate());
+    const mm = pad(fallback.getMonth() + 1);
+    const yyyy = fallback.getFullYear();
+    const hh = pad(fallback.getHours());
+    const min = pad(fallback.getMinutes());
+    return `${dd}-${mm}-${yyyy} ${hh}:${min}`;
+  }
+  const dd = pad(d.getDate());
+  const mm = pad(d.getMonth() + 1);
+  const yyyy = d.getFullYear();
+  const hh = pad(d.getHours());
+  const min = pad(d.getMinutes());
+  return `${dd}-${mm}-${yyyy} ${hh}:${min}`;
+}
 
 function truncateSiteName(site: string, maxWords = 6): string {
   const words = site.trim().split(/\s+/).filter(Boolean);
@@ -193,14 +219,18 @@ export default function ShiftsScreen() {
   );
 
   const handleOngoing = async (shift: Shift) => {
-    const session = activeSession ?? (await getActiveShiftSession());
+    const session = await getActiveShiftSession();
+    // Prioritize API sign-in time to ensure the counter resumes accurately
+    const signInTime =
+      shift.signInTime || session?.signInTime || new Date().toISOString();
+
     navigation.navigate(GUARD_ROUTES.ONGOING_SHIFT, {
-      rosterId: session?.rosterId ?? shift.rosterId,
-      site: session?.site ?? shift.site,
-      zones: session?.zones ?? shift.zones,
-      signInTime: session?.signInTime ?? new Date().toISOString(),
-      shiftId: session?.shiftId ?? shift.id,
-      siteId: session?.siteId ?? shift.siteId,
+      rosterId: shift.rosterId,
+      site: shift.site,
+      zones: shift.zones,
+      signInTime: signInTime,
+      shiftId: shift.id,
+      siteId: shift.siteId,
     });
   };
 
@@ -274,6 +304,20 @@ export default function ShiftsScreen() {
             <View style={styles.metaRow}>
               <CalendarDays size={12} color={Colors.textSecondary} />
               <Text style={styles.siMetaItem}>{shift.date}</Text>
+            </View>
+          ) : null}
+
+          {shift.status === 'active' && shift.signInTime ? (
+            <View style={styles.metaRow}>
+              <CheckCircle size={12} color={Colors.accent} />
+              <Text
+                style={[
+                  styles.siMetaItem,
+                  { color: Colors.accent, fontWeight: '700' },
+                ]}
+              >
+                In: {formatSignInLabel(shift.signInTime)}
+              </Text>
             </View>
           ) : null}
         </View>
@@ -392,7 +436,7 @@ export default function ShiftsScreen() {
             <Text style={styles.hdrTitle}>My Shifts</Text>
             <View style={styles.countBadge}>
               <Text style={styles.countBadgeText}>
-                {loading ? '...' : `${shiftCount} SHIFTS`}
+                {loading ? '...' : `${shiftCount} Shifts`}
               </Text>
             </View>
           </View>
@@ -488,7 +532,6 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: Colors.textMuted,
     letterSpacing: 1,
-    textTransform: 'uppercase',
     marginBottom: 8,
     marginTop: 4,
   },

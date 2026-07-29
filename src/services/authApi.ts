@@ -33,7 +33,6 @@ export async function logout() {
   await AsyncStorage.removeItem('authToken');
   await AsyncStorage.removeItem('guardId');
   await clearActiveShiftSession();
-  await clearSavedLogin();
   store.dispatch(clearAuth());
 }
 

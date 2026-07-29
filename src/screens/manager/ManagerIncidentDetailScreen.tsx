@@ -6,6 +6,7 @@ import {
   Image,
   Linking,
   TouchableOpacity,
+  Pressable,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { Colors, FontSizes, Radii, Shadows } from '../../theme';
@@ -15,10 +16,14 @@ import {
   Phone,
   Clock,
   User,
+  Download,
+  Share2,
+  Mail,
 } from 'lucide-react-native';
 import type { ManagerStackScreenProps } from '../../navigation/types';
 import { ManagerStackHeader, ManagerStackListLayout, ManagerStackShell } from './managerShared';
 import AuthErrorBanner from '../../components/AuthErrorBanner';
+import ImageViewerModal from '../../components/ImageViewerModal';
 import {
   ManagerIncidentDetailBodyShimmer,
   ManagerIncidentDetailHeaderShimmer,
@@ -28,6 +33,8 @@ import {
   mapSeverityColor,
   type ManagerIncidentDetailData,
 } from '../../services/managerApi';
+import { formatAppDateTime } from '../../services/incidentsMapper';
+import { shareReport } from '../../services/managerReportActions';
 
 type Props = ManagerStackScreenProps<'ManagerIncidentDetail'>;
 
@@ -37,6 +44,9 @@ export default function ManagerIncidentDetailScreen({ route }: Props) {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const [viewerVisible, setViewerVisible] = useState(false);
+  const [viewerUri, setViewerUri] = useState<string | null>(null);
 
   const fetchDetail = useCallback(async () => {
     setError(null);
@@ -73,7 +83,7 @@ export default function ManagerIncidentDetailScreen({ route }: Props) {
       header={
         <ManagerStackHeader
           title="Incident Report"
-          subtitle={data?.location_date ?? 'Loading...'}
+          subtitle={data ? formatAppDateTime(data.location_date) : 'Loading...'}
         />
       }
     >
@@ -84,7 +94,9 @@ export default function ManagerIncidentDetailScreen({ route }: Props) {
           <>
             {error ? <AuthErrorBanner message={error} /> : null}
             {showShimmer ? (
-              <ManagerIncidentDetailHeaderShimmer />
+              <View style={{ marginTop: 18 }}>
+                <ManagerIncidentDetailHeaderShimmer />
+              </View>
             ) : data ? (
               <View style={[styles.headerCard, Shadows.card]}>
                 <View style={styles.headerTop}>
@@ -98,7 +110,7 @@ export default function ManagerIncidentDetailScreen({ route }: Props) {
                   </View>
                   <View style={{ flex: 1 }}>
                     <Text style={styles.title}>{data.title}</Text>
-                    <Text style={styles.subtitle}>{data.location_date}</Text>
+                    <Text style={styles.subtitle}>{formatAppDateTime(data.location_date, data.time)}</Text>
                   </View>
                   <View
                     style={[
@@ -111,9 +123,32 @@ export default function ManagerIncidentDetailScreen({ route }: Props) {
                     </Text>
                   </View>
                 </View>
-                <Text style={styles.timeRow}>
-                  <Clock size={12} color={Colors.textMuted} /> {data.time}
-                </Text>
+              </View>
+            ) : null}
+
+            {data ? (
+              <View style={styles.actionRow}>
+                <TouchableOpacity
+                  style={[styles.actionBtn, Shadows.card]}
+                  onPress={() => shareReport('incident', data, 'download')}
+                >
+                  <Download size={16} color={Colors.accent} />
+                  <Text style={styles.actionBtnText}>Download</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.actionBtn, Shadows.card]}
+                  onPress={() => shareReport('incident', data, 'share')}
+                >
+                  <Share2 size={16} color={Colors.accent} />
+                  <Text style={styles.actionBtnText}>Share</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.actionBtn, Shadows.card]}
+                  onPress={() => shareReport('incident', data, 'email')}
+                >
+                  <Mail size={16} color={Colors.accent} />
+                  <Text style={styles.actionBtnText}>Email</Text>
+                </TouchableOpacity>
               </View>
             ) : null}
           </>
@@ -161,14 +196,23 @@ export default function ManagerIncidentDetailScreen({ route }: Props) {
                 <Text style={styles.sectionTitle}>Photos</Text>
                 <View style={styles.photoGrid}>
                   {data.photos.map((photo, index) => (
-                    <View key={index} style={styles.photoItem}>
+                    <Pressable
+                      key={index}
+                      style={styles.photoItem}
+                      onPress={() => {
+                        setViewerUri(photo.url);
+                        setViewerVisible(true);
+                      }}
+                    >
                       <Image
                         source={{ uri: photo.url }}
                         style={styles.photo}
                         resizeMode="cover"
                       />
-                      <Text style={styles.photoTs}>{photo.timestamp}</Text>
-                    </View>
+                      <Text style={styles.photoTs}>
+                        {formatAppDateTime(photo.timestamp)}
+                      </Text>
+                    </Pressable>
                   ))}
                 </View>
               </View>
@@ -185,10 +229,16 @@ export default function ManagerIncidentDetailScreen({ route }: Props) {
               </View>
             ) : null}
 
-            <Text style={styles.createdAt}>Reported {data.created_at}</Text>
+            <Text style={styles.createdAt}>Reported {formatAppDateTime(data.created_at)}</Text>
           </>
         ) : null}
       </ManagerStackListLayout>
+
+      <ImageViewerModal
+        visible={viewerVisible}
+        uri={viewerUri}
+        onClose={() => setViewerVisible(false)}
+      />
     </ManagerStackShell>
   );
 }
@@ -198,6 +248,7 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.bgCard,
     borderRadius: Radii.lg,
     padding: 14,
+    marginTop: 18,
     marginBottom: 12,
     borderLeftWidth: 4,
     borderLeftColor: Colors.danger,
@@ -223,6 +274,28 @@ const styles = StyleSheet.create({
     borderRadius: Radii.sm,
   },
   severityText: { fontSize: 9, fontWeight: '800' },
+  actionRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 12,
+  },
+  actionBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: Colors.bgCard,
+    paddingVertical: 10,
+    borderRadius: Radii.md,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  actionBtnText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: Colors.textPrimary,
+  },
   timeRow: { fontSize: FontSizes.xs, color: Colors.textMuted },
   detailCard: {
     backgroundColor: Colors.bgCard,

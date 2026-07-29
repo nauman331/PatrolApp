@@ -28,6 +28,7 @@ export const GUARD_ROUTES = {
     ADD_INCIDENT: 'AddIncident',
     VIEW_INCIDENT: 'ViewIncidentReport',
     SOPS: 'GuardSops',
+    PDF_VIEWER: 'PdfViewer',
     PROFILE: 'Profile',
     PRIVACY_POLICY: 'PrivacyPolicy',
     TERMS_CONDITIONS: 'TermsConditions',
@@ -53,16 +54,7 @@ export function navigateGuardBottomTab(
             navigation.navigate(GUARD_ROUTES.DASHBOARD);
             break;
         case GUARD_ROUTES.PATROL_TIMELINE:
-            void (async () => {
-                const session = await getActiveShiftSession();
-                if (!session) {
-                    promptCheckInRequired(() =>
-                        navigation.navigate(GUARD_ROUTES.SHIFTS),
-                    );
-                    return;
-                }
-                navigation.navigate(GUARD_ROUTES.PATROL_TIMELINE);
-            })();
+            navigation.navigate(GUARD_ROUTES.PATROL_TIMELINE);
             break;
         case GUARD_ROUTES.INCIDENTS:
             navigation.navigate(GUARD_ROUTES.INCIDENTS);
@@ -88,6 +80,8 @@ export const MANAGER_ROUTES = {
     SHIFT_REPORT: 'ManagerShiftReport',
     INCIDENT_DETAIL: 'ManagerIncidentDetail',
     ROSTER: 'ManagerRoster',
+    ROSTER_DETAIL: 'ManagerRosterDetail',
+    SITE_DETAIL: 'ManagerSiteDetail',
     PROFILE: 'ManagerProfile',
     PRIVACY_POLICY: 'PrivacyPolicy',
     TERMS_CONDITIONS: 'TermsConditions',

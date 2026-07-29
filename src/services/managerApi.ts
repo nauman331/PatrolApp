@@ -87,6 +87,44 @@ async function managerGet<T>(
   }
 }
 
+async function managerPost<T>(
+  path: string,
+  data?: unknown,
+  fallbackMessage = 'Request failed',
+): Promise<ApiResult<T>> {
+  const requestUrl = `${API_URL}${path}`;
+
+  try {
+    if (__DEV__) {
+      console.log('[PatrolApp] POST', path, data ?? '');
+    }
+
+    const response = await apiClient.post(path, data);
+    const body = (response.data ?? {}) as Record<string, unknown>;
+    const extractedData = extractData<T>(body);
+    const ok = isApiSuccess(body, response.status) && extractedData != null;
+
+    return {
+      success: ok,
+      data: extractedData ?? undefined,
+      pagination: extractPagination(body),
+      message: extractApiErrorMessage(
+        body,
+        ok ? undefined : fallbackMessage,
+        { statusCode: response.status },
+      ),
+    };
+  } catch (error: unknown) {
+    if (__DEV__) {
+      console.warn('[PatrolApp] POST failed:', path, error);
+    }
+    return {
+      success: false,
+      message: getRequestErrorMessage(error, fallbackMessage, requestUrl),
+    };
+  }
+}
+
 // ─── Auth ────────────────────────────────────────────────────────────────────
 
 export type ManagerUser = {
@@ -180,13 +218,15 @@ export async function loginManager(
 export type ManagerDashboardInfo = {
   role: string;
   name: string;
+  selected_date?: string;
+  is_today?: boolean;
   date_label: string;
 };
 
 export type ManagerDashboardStatistics = {
-  guards_on_duty: { count: number };
+  active_guards: { count: number };
   patrols_today: { count: number };
-  open_incidents: { count: number };
+  incident_reports: { count: number };
   active_sites: { count: number };
 };
 
@@ -208,27 +248,33 @@ export type ManagerRecentIncident = {
 export type ManagerActiveGuard = {
   id: number;
   name: string;
-  initials: string;
+  initials?: string;
   site_name: string;
-  status_text: string;
-  status: string;
-  status_color: string;
+  status_text?: string;
+  status?: string;
+  status_color?: string;
+  job_roster_id?: number;
 };
 
 export type ManagerDashboardData = {
   manager_info: ManagerDashboardInfo;
   statistics: ManagerDashboardStatistics;
-  missed_patrol_alerts: ManagerMissedPatrolAlert[];
-  recent_incidents: ManagerRecentIncident[];
+  missed_patrols: ManagerMissedPatrolAlert[];
+  incident_reports: ManagerRecentIncident[];
   active_guards: ManagerActiveGuard[];
 };
 
 export type ManagerDashboardResult = ApiResult<ManagerDashboardData>;
 
-export async function getManagerDashboard(): Promise<ManagerDashboardResult> {
+export async function getManagerDashboard(
+  date?: string,
+): Promise<ManagerDashboardResult> {
+  const params: Record<string, string | number | undefined> = {};
+  if (date) params.date = date;
+
   return managerGet<ManagerDashboardData>(
     '/manager/dashboard',
-    undefined,
+    params,
     'Failed to load dashboard',
   );
 }
@@ -446,23 +492,27 @@ export type GetManagerPatrolReportsParams = {
   search?: string;
   page?: number;
   per_page?: number;
+  guard_ids?: number[];
+  site_ids?: number[];
 };
 
 export async function getManagerPatrolReports(
   params: GetManagerPatrolReportsParams = {},
 ): Promise<ApiResult<ManagerPatrolReportsData>> {
-  const query: Record<string, string | number | undefined> = {
+  const body: Record<string, unknown> = {
     period: params.period ?? 'today',
     page: params.page ?? 1,
     per_page: params.per_page ?? 10,
   };
-  if (params.start_date) query.start_date = params.start_date;
-  if (params.end_date) query.end_date = params.end_date;
-  if (params.search?.trim()) query.search = params.search.trim();
+  if (params.start_date) body.start_date = params.start_date;
+  if (params.end_date) body.end_date = params.end_date;
+  if (params.search?.trim()) body.search = params.search.trim();
+  if (params.guard_ids?.length) body.guard_ids = params.guard_ids;
+  if (params.site_ids?.length) body.site_ids = params.site_ids;
 
-  return managerGet<ManagerPatrolReportsData>(
+  return managerPost<ManagerPatrolReportsData>(
     '/manager/reports/patrols',
-    query,
+    body,
     'Failed to load patrol reports',
   );
 }
@@ -562,23 +612,27 @@ export type GetManagerIncidentReportsParams = {
   search?: string;
   page?: number;
   per_page?: number;
+  guard_ids?: number[];
+  site_ids?: number[];
 };
 
 export async function getManagerIncidentReports(
   params: GetManagerIncidentReportsParams = {},
 ): Promise<ApiResult<ManagerIncidentReportsData>> {
-  const query: Record<string, string | number | undefined> = {
+  const body: Record<string, unknown> = {
     period: params.period ?? 'today',
     page: params.page ?? 1,
     per_page: params.per_page ?? 10,
   };
-  if (params.start_date) query.start_date = params.start_date;
-  if (params.end_date) query.end_date = params.end_date;
-  if (params.search?.trim()) query.search = params.search.trim();
+  if (params.start_date) body.start_date = params.start_date;
+  if (params.end_date) body.end_date = params.end_date;
+  if (params.search?.trim()) body.search = params.search.trim();
+  if (params.guard_ids?.length) body.guard_ids = params.guard_ids;
+  if (params.site_ids?.length) body.site_ids = params.site_ids;
 
-  return managerGet<ManagerIncidentReportsData>(
+  return managerPost<ManagerIncidentReportsData>(
     '/manager/reports/incidents',
-    query,
+    body,
     'Failed to load incident reports',
   );
 }
@@ -632,6 +686,7 @@ export type ManagerShiftAssignment = {
   roster_id: number;
   guard_id: number;
   guard_name: string;
+  title: string;
   site_id: number;
   site_name: string;
   date: string;
@@ -658,23 +713,27 @@ export type GetManagerRosterShiftsParams = {
   search?: string;
   page?: number;
   per_page?: number;
+  guard_ids?: number[];
+  site_ids?: number[];
 };
 
 export async function getManagerRosterShifts(
   params: GetManagerRosterShiftsParams = {},
 ): Promise<ApiResult<ManagerRosterShiftsData>> {
-  const query: Record<string, string | number | undefined> = {
+  const body: Record<string, unknown> = {
     period: params.period ?? 'this_week',
     page: params.page ?? 1,
     per_page: params.per_page ?? 20,
   };
-  if (params.start_date) query.start_date = params.start_date;
-  if (params.end_date) query.end_date = params.end_date;
-  if (params.search?.trim()) query.search = params.search.trim();
+  if (params.start_date) body.start_date = params.start_date;
+  if (params.end_date) body.end_date = params.end_date;
+  if (params.search?.trim()) body.search = params.search.trim();
+  if (params.guard_ids?.length) body.guard_ids = params.guard_ids;
+  if (params.site_ids?.length) body.site_ids = params.site_ids;
 
-  return managerGet<ManagerRosterShiftsData>(
+  return managerPost<ManagerRosterShiftsData>(
     '/manager/roster/shifts',
-    query,
+    body,
     'Failed to load shifts',
   );
 }
@@ -710,24 +769,87 @@ export type GetManagerRosterSitesParams = {
   search?: string;
   page?: number;
   per_page?: number;
+  guard_ids?: number[];
+  site_ids?: number[];
 };
 
 export async function getManagerRosterSites(
   params: GetManagerRosterSitesParams = {},
 ): Promise<ApiResult<ManagerRosterSitesData>> {
-  const query: Record<string, string | number | undefined> = {
+  const body: Record<string, unknown> = {
     period: params.period ?? 'this_week',
     page: params.page ?? 1,
     per_page: params.per_page ?? 20,
   };
-  if (params.start_date) query.start_date = params.start_date;
-  if (params.end_date) query.end_date = params.end_date;
-  if (params.search?.trim()) query.search = params.search.trim();
+  if (params.start_date) body.start_date = params.start_date;
+  if (params.end_date) body.end_date = params.end_date;
+  if (params.search?.trim()) body.search = params.search.trim();
+  if (params.guard_ids?.length) body.guard_ids = params.guard_ids;
+  if (params.site_ids?.length) body.site_ids = params.site_ids;
 
-  return managerGet<ManagerRosterSitesData>(
+  return managerPost<ManagerRosterSitesData>(
     '/manager/roster/sites',
-    query,
+    body,
     'Failed to load sites',
+  );
+}
+
+export type ManagerRosterDetailData = {
+  roster: {
+    id: number;
+    site_id: number;
+    assigned_to: number;
+    shift_date: string;
+    start_time: string;
+    end_time: string;
+    status: string;
+    site: {
+      id: number;
+      site_name: string;
+    };
+    guards: {
+      id: number;
+      name: string;
+    };
+    roster_activity: {
+      id: number;
+      job_roster_id: number;
+      signin_time: string | null;
+      signout_time: string | null;
+      signin_selfie: string | null;
+      signout_selfie: string | null;
+      status: string;
+      signin_notes: string | null;
+      signout_notes: string | null;
+    } | null;
+  };
+  activity: ManagerRosterDetailData['roster']['roster_activity'];
+  incidents: Array<{
+    id: number;
+    signature: string | null;
+    injury_type: string;
+    incident_date: string;
+  }>;
+  patrols: Array<{
+    id: number;
+    roster_id: number;
+    scanners: Array<{
+      id: number;
+      patrolling_report_id: number;
+      name: string;
+      status: string;
+      scan_at: string | null;
+    }>;
+  }>;
+};
+
+export async function getManagerRosterDetail(
+  rosterId: number | string,
+): Promise<ApiResult<ManagerRosterDetailData>> {
+  return managerGet<ManagerRosterDetailData>(
+    `/manager/roster-detail/${rosterId}`,
+    undefined,
+    'Failed to load roster details',
   );
 }
 
@@ -771,6 +893,90 @@ export async function getManagerRosterCalendar(
     '/manager/roster/calendar',
     params,
     'Failed to load calendar',
+  );
+}
+
+// ─── Site Detail ─────────────────────────────────────────────────────────────
+
+export type ManagerSiteDetailData = {
+  id: number;
+  user_id: number;
+  site_name: string;
+  site_description: string | null;
+  address: string;
+  coordinates: string;
+  latitude: string;
+  longitude: string;
+  signin_radius: number;
+  state: string;
+  created_at: string;
+  updated_at: string;
+  emergency_procedures: string | null;
+  patrol_checkpoints: string | null;
+  incident_reporting_guide: string | null;
+  nfc_scan_protocol: string | null;
+  user: {
+    id: number;
+    name: string;
+    email: string;
+    phone: string | null;
+    security_license_no: string | null;
+    email_verified_at: string;
+    user_type: string;
+    email_verification_token: string | null;
+    is_email_verified: number;
+    status: number;
+    otp: string | null;
+    otp_expires_at: string | null;
+    created_at: string;
+    updated_at: string;
+  };
+  nfc_tags: Array<{
+    id: number;
+    site_id: number;
+    name: string;
+    nfc_uid: string;
+    latitude: string | null;
+    longitude: string | null;
+    created_at: string;
+    updated_at: string;
+  }>;
+};
+
+export async function getManagerSiteDetail(
+  siteId: number | string,
+): Promise<ApiResult<ManagerSiteDetailData>> {
+  return managerGet<ManagerSiteDetailData>(
+    `/edit-site/${siteId}`,
+    undefined,
+    'Failed to load site details',
+  );
+}
+
+// ─── Filters Data ────────────────────────────────────────────────────────────
+
+export type ManagerFilterGuard = {
+  id: number;
+  name: string;
+};
+
+export type ManagerFilterSite = {
+  id: number;
+  name: string;
+};
+
+export type ManagerGuardsSitesData = {
+  guards: ManagerFilterGuard[];
+  sites: ManagerFilterSite[];
+};
+
+export async function getManagerGuardsSites(): Promise<
+  ApiResult<ManagerGuardsSitesData>
+> {
+  return managerGet<ManagerGuardsSitesData>(
+    '/manager/get-guards-sites',
+    undefined,
+    'Failed to load filter data',
   );
 }
 
