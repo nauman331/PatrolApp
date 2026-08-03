@@ -14,7 +14,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import Geolocation from '@react-native-community/geolocation';
+import locationService from '../services/LocationService';
 import { type Asset } from 'react-native-image-picker';
 import { useRoute } from '@react-navigation/native';
 import { useSelector } from 'react-redux';
@@ -99,17 +99,8 @@ function resolveCaptureUri(asset: Asset): string {
 }
 
 async function requestLocationPermission(): Promise<boolean> {
-  if (Platform.OS !== 'android') return true;
-  const granted = await PermissionsAndroid.requestMultiple([
-    PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
-    PermissionsAndroid.PERMISSIONS.ACCESS_COARSE_LOCATION,
-  ]);
-  return (
-    granted[PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION] ===
-    PermissionsAndroid.RESULTS.GRANTED ||
-    granted[PermissionsAndroid.PERMISSIONS.ACCESS_COARSE_LOCATION] ===
-    PermissionsAndroid.RESULTS.GRANTED
-  );
+  const status = await locationService.checkPermission();
+  return status === 'granted';
 }
 
 export default function OngoingShiftScreen() {
@@ -146,28 +137,8 @@ export default function OngoingShiftScreen() {
   const locationFallback = site || address || 'Current location';
 
   const getScanCoordinates = useCallback(async () => {
-    let coords = locationCoords.trim();
-    if (coords) return coords;
-
-    const allowed = await requestLocationPermission();
-    if (!allowed) return '';
-
-    try {
-      let fix;
-      try {
-        fix = await fetchLocationFix(true, locationFallback);
-      } catch {
-        fix = await fetchLocationFix(false, locationFallback);
-      }
-      coords = fix.coordinates;
-      setLocationCoords(fix.coordinates);
-      setLocationLabel(fix.displayName);
-      setLocationFetched(true);
-    } catch {
-      coords = '';
-    }
-    return coords;
-  }, [locationCoords, locationFallback]);
+    return await locationService.getFormattedLocation();
+  }, []);
 
   const { scanning: nfcScanning, handleScan: handleNfcScan, scanModal } =
     usePatrolNfcScan({
@@ -240,11 +211,6 @@ export default function OngoingShiftScreen() {
 
   const refreshLocation = useCallback(
     async (showPermissionAlert = false) => {
-      if (locationFetched || isFetchingLocation.current) {
-        return;
-      }
-
-      isFetchingLocation.current = true;
       setLocationLoading(true);
       try {
         const allowed = await requestLocationPermission();
@@ -252,35 +218,36 @@ export default function OngoingShiftScreen() {
           if (showPermissionAlert) {
             Alert.alert('Permission required', 'Location permission is needed.');
           }
+          setLocationLoading(false);
           return;
         }
 
-        let fix;
-        try {
-          fix = await fetchLocationFix(true, locationFallback);
-        } catch {
-          fix = await fetchLocationFix(false, locationFallback);
-        }
+        const coords = await locationService.getFormattedLocation();
+        if (coords) {
+          setLocationCoords(coords);
+          setLocationFetched(true);
 
-        setLocationCoords(fix.coordinates);
-        setLocationLabel(fix.displayName);
-        setLocationFetched(true);
-      } catch {
-        // Fail silently, retry logic in useEffect will handle auto-fetches
+          try {
+            const [lat, lon] = coords.split(',').map(Number);
+            const displayName = await resolveLocationDisplayName(lat, lon, locationFallback);
+            setLocationLabel(displayName);
+          } catch {
+            setLocationLabel(coords);
+          }
+        } else {
+          // If still no coords, at least set a label if we have one
+          if (!locationLabel) setLocationLabel(locationFallback);
+        }
+      } catch (error: any) {
+        // Fail silently
       } finally {
         setLocationLoading(false);
-        isFetchingLocation.current = false;
       }
     },
-    [locationFetched, locationFallback],
+    [locationFallback, locationLabel],
   );
 
   useEffect(() => {
-    Geolocation.setRNConfiguration({
-      skipPermissionRequests: false,
-      authorizationLevel: 'whenInUse',
-      locationProvider: 'auto',
-    });
     refreshLocation(false);
   }, [refreshLocation]);
 
@@ -318,11 +285,18 @@ export default function OngoingShiftScreen() {
       Alert.alert('Error', 'Missing roster for this shift.');
       return;
     }
-    if (!locationCoords.trim()) {
+
+    let currentCoords = locationCoords.trim();
+    if (!currentCoords) {
+      currentCoords = await locationService.getCoordinatesString();
+    }
+
+    if (!currentCoords) {
       Alert.alert('Error', 'Location required');
       refreshLocation(true);
       return;
     }
+
     if (!signoutSelfie?.uri) {
       Alert.alert('Error', 'Please capture sign-out selfie.');
       return;
@@ -332,7 +306,7 @@ export default function OngoingShiftScreen() {
       setCheckingOut(true);
       const result = await guardJobCheckout({
         roster_id: rosterId,
-        signout_location: locationCoords.trim(),
+        signout_location: currentCoords,
         signout_notes: signoutNotes.trim(),
         guard_id: guardId ?? undefined,
         selfie: {
@@ -491,19 +465,6 @@ export default function OngoingShiftScreen() {
               </TouchableOpacity>
             </>
           ) : null}
-
-{/*
-<View style={[styles.card, Shadows.card]}>
-  <Text style={styles.locLbl}>Sign-out location</Text>
-  <Text style={styles.locValue} numberOfLines={2}>
-    {locationLoading
-      ? 'Fetching location...'
-      : locationLabel || 'Location not available'}
-  </Text>
-</View>
-*/}
-
-
 
           <TouchableOpacity
             style={[styles.actionRow, Shadows.card]}
@@ -742,33 +703,34 @@ const styles = StyleSheet.create({
     color: Colors.textMuted,
     marginTop: 4,
   },
-  locLbl: {
-    fontSize: FontSizes.sm,
-    fontWeight: '700',
+  locationValue: {
+    fontSize: 13,
     color: Colors.textPrimary,
-    marginBottom: 6,
+    fontWeight: '800',
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
   },
-  locValue: {
-    fontSize: FontSizes.sm,
-    color: Colors.textPrimary,
-    fontWeight: '600',
-    marginBottom: 10,
-    lineHeight: 18,
+  locationLabel: {
+    fontSize: 11,
+    color: Colors.textMuted,
+    marginTop: 2,
+  },
+  locationBox: {
+    backgroundColor: Colors.bgAlt,
+    padding: 10,
+    borderRadius: Radii.sm,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: Colors.border,
   },
   refreshLocBtn: {
-    alignSelf: 'flex-start',
-    backgroundColor: Colors.accentLight,
-    borderRadius: Radii.sm,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-  },
-  refreshLocBtnDisabled: {
-    opacity: 0.55,
+    alignSelf: 'flex-end',
+    paddingVertical: 4,
+    paddingHorizontal: 8,
   },
   refreshLocText: {
-    fontSize: FontSizes.xs,
-    fontWeight: '700',
+    fontSize: 12,
     color: Colors.accent,
+    fontWeight: '700',
   },
   actionRow: {
     flexDirection: 'row',

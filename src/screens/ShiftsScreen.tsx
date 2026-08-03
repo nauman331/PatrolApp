@@ -49,6 +49,7 @@ import {
   fetchGuardJobs,
   selectJobsItems,
   selectJobsLoading,
+  selectJobsRefreshing,
 } from '../store/slices/jobsSlice';
 
 type Shift = MappedShift;
@@ -144,6 +145,7 @@ export default function ShiftsScreen() {
   const dispatch = useAppDispatch();
   const jobsRaw = useAppSelector(selectJobsItems);
   const loading = useAppSelector(selectJobsLoading);
+  const refreshing = useAppSelector(selectJobsRefreshing);
   const [activeFilter, setActiveFilter] = useState<ShiftListFilter>('All');
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
   const [activeSession, setActiveSession] = useState<ActiveShiftSession | null>(
@@ -404,7 +406,7 @@ export default function ShiftsScreen() {
         </View>
       </ScrollView>
 
-      {loading ? <ShiftListShimmer count={5} /> : null}
+      {loading && jobsRaw.length === 0 ? <ShiftListShimmer count={5} /> : null}
 
       {!loading && filteredShifts.length === 0 ? (
         <View style={styles.loaderWrap}>
@@ -414,12 +416,12 @@ export default function ShiftsScreen() {
     </>
   );
 
-  const listFooter = !loading && hasMore ? (
+  const listFooter = (loading || refreshing) && hasMore ? (
     <View style={styles.footerLoader}>
       <ActivityIndicator size="small" color={Colors.accent} />
       <Text style={styles.footerLoaderText}>Loading more shifts...</Text>
     </View>
-  ) : !loading && filteredShifts.length > 0 && !hasMore ? (
+  ) : !loading && !refreshing && filteredShifts.length > 0 && !hasMore ? (
     <Text style={styles.endHint}>
       Showing all {filteredShifts.length} shift
       {filteredShifts.length === 1 ? '' : 's'}
@@ -436,7 +438,7 @@ export default function ShiftsScreen() {
             <Text style={styles.hdrTitle}>My Shifts</Text>
             <View style={styles.countBadge}>
               <Text style={styles.countBadgeText}>
-                {loading ? '...' : `${shiftCount} Shifts`}
+                {loading && jobsRaw.length === 0 ? '...' : `${shiftCount} Shifts`}
               </Text>
             </View>
           </View>
@@ -444,11 +446,11 @@ export default function ShiftsScreen() {
         </View>
       </SafeAreaView>
 
-      <SafeAreaView style={styles.safeBody} edges={['bottom']}>
+      <View style={styles.safeBody}>
         <FlatList
           style={styles.body}
           contentContainerStyle={styles.bodyContent}
-          data={loading ? [] : listItems}
+          data={listItems}
           keyExtractor={item => item.key}
           renderItem={renderListItem}
           ListHeaderComponent={listHeader}
@@ -462,19 +464,7 @@ export default function ShiftsScreen() {
           maxToRenderPerBatch={10}
           windowSize={7}
         />
-
-        <NavBar
-          variant="light"
-          items={[
-            { icon: Home, label: 'Home' },
-            { icon: Route, label: 'Patrol' },
-            { icon: AlertTriangle, label: 'Incidents' },
-            { icon: ClipboardList, label: 'Shifts', active: true },
-            { icon: User, label: 'Profile' },
-          ]}
-          onPress={i => navigateGuardBottomTab(navigation, i)}
-        />
-      </SafeAreaView>
+      </View>
     </View>
   );
 }

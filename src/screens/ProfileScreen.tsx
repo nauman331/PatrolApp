@@ -255,11 +255,10 @@ export default function ProfileScreen({ onLogout }: Props) {
             setDeleting(false);
 
             if (result.success) {
+              await logout();
               if (onLogout) {
                 onLogout();
-                return;
               }
-              await logout();
             } else {
               Alert.alert('Error', result.message ?? 'Failed to delete account');
             }
@@ -276,11 +275,10 @@ export default function ProfileScreen({ onLogout }: Props) {
         text: 'Logout',
         style: 'destructive',
         onPress: async () => {
+          await logout();
           if (onLogout) {
             onLogout();
-            return;
           }
-          await logout();
         },
       },
     ]);
@@ -331,7 +329,7 @@ export default function ProfileScreen({ onLogout }: Props) {
         </View>
       </SafeAreaView>
 
-      <SafeAreaView style={styles.safeBody} edges={['bottom']}>
+      <View style={styles.safeBody}>
         <KeyboardAvoidingView
           style={styles.keyboardAvoid}
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
@@ -511,30 +509,7 @@ export default function ProfileScreen({ onLogout }: Props) {
             )}
           </ScrollView>
         </KeyboardAvoidingView>
-
-        <NavBar
-          variant={userRole === 'manager' ? 'mgr' : 'light'}
-          items={
-            userRole === 'manager'
-              ? buildManagerNavItems(4)
-              : [
-                  { icon: Home, label: 'Home' },
-                  { icon: Route, label: 'Patrol' },
-                  { icon: AlertTriangle, label: 'Incidents' },
-                  { icon: ClipboardList, label: 'Shifts' },
-                  { icon: User, label: 'Profile', active: true },
-                ]
-          }
-          onPress={i => {
-            if (userRole === 'manager') {
-              navigateManagerBottomTab(navigation, i);
-              return;
-            }
-
-            navigateGuardBottomTab(navigation, i);
-          }}
-        />
-      </SafeAreaView>
+      </View>
     </View>
   );
 }

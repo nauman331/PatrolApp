@@ -10,6 +10,10 @@ import authReducer from './slices/authSlice';
 import jobsReducer from './slices/jobsSlice';
 import incidentsReducer from './slices/incidentsSlice';
 import managerDashboardReducer from './slices/managerDashboardSlice';
+import guardDashboardReducer from './slices/guardDashboardSlice';
+import managerRosterReducer from './slices/managerRosterSlice';
+import managerReportsReducer from './slices/managerReportsSlice';
+import managerGuardsReducer from './slices/managerGuardsSlice';
 
 // Persist configuration
 const persistConfig = {
@@ -31,6 +35,10 @@ export const store = configureStore({
         jobs: jobsReducer,
         incidents: incidentsReducer,
         managerDashboard: managerDashboardReducer,
+        guardDashboard: guardDashboardReducer,
+        managerRoster: managerRosterReducer,
+        managerReports: managerReportsReducer,
+        managerGuards: managerGuardsReducer,
     },
     middleware: (getDefaultMiddleware: any) =>
         getDefaultMiddleware({

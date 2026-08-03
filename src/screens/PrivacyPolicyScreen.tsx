@@ -41,7 +41,7 @@ const SECTIONS = [
   {
     title: 'Contact',
     body:
-      'For privacy-related questions, contact your site administrator or email support@arrowbyte.com.au.',
+      'For privacy-related questions, contact your site administrator or email support@reportpro.com.au.',
   },
 ];
 

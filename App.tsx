@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { StatusBar, StyleSheet, View } from 'react-native';
 import { initNfc } from './src/services/nfcReader';
+import locationService from './src/services/LocationService';
 import { NavigationContainer } from '@react-navigation/native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { RootNavigator } from './src/navigation';
@@ -68,6 +69,8 @@ function AppNavigator() {
 export default function App() {
   useEffect(() => {
     initNfc();
+    locationService.startTracking();
+    return () => locationService.stopTracking();
   }, []);
 
   return (

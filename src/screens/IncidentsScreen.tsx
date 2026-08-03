@@ -132,7 +132,7 @@ export default function IncidentsScreen() {
         </View>
       </SafeAreaView>
 
-      <SafeAreaView style={styles.safeBody} edges={['bottom']}>
+      <View style={styles.safeBody}>
         <ScrollView
           style={styles.body}
           contentContainerStyle={styles.bodyContent}
@@ -278,26 +278,7 @@ export default function IncidentsScreen() {
             })
           )}
         </ScrollView>
-
-        {/* <TouchableOpacity
-          style={styles.fab}
-          onPress={() => navigation.navigate(GUARD_ROUTES.ADD_INCIDENT)}
-        >
-          <Plus size={22} color="white" />
-        </TouchableOpacity> */}
-
-        <NavBar
-          variant="light"
-          items={[
-            { icon: Home, label: 'Home' },
-            { icon: Route, label: 'Patrol' },
-            { icon: AlertTriangle, label: 'Incidents', active: true },
-            { icon: ClipboardList, label: 'Shifts' },
-            { icon: User, label: 'Profile' },
-          ]}
-          onPress={i => navigateGuardBottomTab(navigation, i)}
-        />
-      </SafeAreaView>
+      </View>
     </View>
   );
 }

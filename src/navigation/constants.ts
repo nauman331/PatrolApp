@@ -47,25 +47,12 @@ export function navigateGuardBottomTab(
     navigation: GuardNavigationProp,
     index: number,
 ): void {
-    const route = GUARD_BOTTOM_TAB_ROUTES[index];
-    if (!route) return;
-    switch (route) {
-        case GUARD_ROUTES.DASHBOARD:
-            navigation.navigate(GUARD_ROUTES.DASHBOARD);
-            break;
-        case GUARD_ROUTES.PATROL_TIMELINE:
-            navigation.navigate(GUARD_ROUTES.PATROL_TIMELINE);
-            break;
-        case GUARD_ROUTES.INCIDENTS:
-            navigation.navigate(GUARD_ROUTES.INCIDENTS);
-            break;
-        case GUARD_ROUTES.SHIFTS:
-            navigation.navigate(GUARD_ROUTES.SHIFTS);
-            break;
-        case GUARD_ROUTES.PROFILE:
-            navigation.navigate(GUARD_ROUTES.PROFILE);
-            break;
-    }
+    const routeName = GUARD_BOTTOM_TAB_ROUTES[index];
+    if (!routeName) return;
+
+    // Navigate to the MainTabs host with the target screen as a parameter
+    // This ensures we stay on the same mounted Tab controller
+    (navigation as any).navigate('MainTabs', { screen: routeName });
 }
 
 /**
@@ -99,25 +86,10 @@ export function navigateManagerBottomTab(
     navigation: ManagerNavigationProp,
     index: number,
 ): void {
-    const route = MANAGER_BOTTOM_TAB_ROUTES[index];
-    if (!route) return;
-    switch (route) {
-        case MANAGER_ROUTES.DASHBOARD:
-            navigation.navigate(MANAGER_ROUTES.DASHBOARD);
-            break;
-        case MANAGER_ROUTES.GUARDS:
-            navigation.navigate(MANAGER_ROUTES.GUARDS);
-            break;
-        case MANAGER_ROUTES.REPORTS:
-            navigation.navigate(MANAGER_ROUTES.REPORTS);
-            break;
-        case MANAGER_ROUTES.ROSTER:
-            navigation.navigate(MANAGER_ROUTES.ROSTER);
-            break;
-        case MANAGER_ROUTES.PROFILE:
-            navigation.navigate(MANAGER_ROUTES.PROFILE);
-            break;
-    }
+    const routeName = MANAGER_BOTTOM_TAB_ROUTES[index];
+    if (!routeName) return;
+
+    (navigation as any).navigate('ManagerTabs', { screen: routeName });
 }
 
 /**

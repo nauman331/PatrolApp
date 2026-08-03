@@ -1,4 +1,4 @@
-import Geolocation from '@react-native-community/geolocation';
+import locationService from './LocationService';
 
 export type LocationFix = {
   coordinates: string;
@@ -45,21 +45,14 @@ export async function resolveLocationDisplayName(
   return `${latitude.toFixed(5)}, ${longitude.toFixed(5)}`;
 }
 
-export function getCurrentPosition(
+export async function getCurrentPosition(
   enableHighAccuracy: boolean,
 ): Promise<{ latitude: number; longitude: number }> {
-  return new Promise((resolve, reject) => {
-    Geolocation.getCurrentPosition(
-      pos => {
-        resolve({
-          latitude: pos.coords.latitude,
-          longitude: pos.coords.longitude,
-        });
-      },
-      err => reject(err),
-      { enableHighAccuracy, timeout: 20000, maximumAge: 5000 },
-    );
-  });
+  const loc = await locationService.getCurrentLocation();
+  return {
+    latitude: loc.latitude,
+    longitude: loc.longitude,
+  };
 }
 
 export async function fetchLocationFix(

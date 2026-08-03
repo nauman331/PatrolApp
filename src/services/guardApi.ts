@@ -1,6 +1,7 @@
 import apiClient from './api-client';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { normalizePatrollingReport, normalizePatrollingReports } from './patrolApiUtils';
+import locationService from './LocationService';
 
 export type GuardApiResult<T = void> = {
   success: boolean;
@@ -479,9 +480,12 @@ export async function guardJobCheckin(
         ? String(payload.guard_id).trim()
         : storedGuardId?.trim();
 
+    // Automatically use cached location if not provided or empty
+    const resolvedLocation = payload.location?.trim() || (await locationService.getFormattedLocation());
+
     const formData = new FormData();
     formData.append('roster_id', String(payload.roster_id));
-    formData.append('location', payload.location);
+    formData.append('location', resolvedLocation);
     formData.append('signin_notes', payload.signin_notes);
     if (guardId) {
       formData.append('guard_id', guardId);
@@ -539,9 +543,12 @@ export async function guardJobCheckout(
         ? String(payload.guard_id).trim()
         : storedGuardId?.trim();
 
+    // Automatically use cached location if not provided or empty
+    const resolvedLocation = payload.signout_location?.trim() || (await locationService.getFormattedLocation());
+
     const formData = new FormData();
     formData.append('roster_id', String(payload.roster_id));
-    formData.append('signout_location', payload.signout_location);
+    formData.append('signout_location', resolvedLocation);
     formData.append('signout_notes', payload.signout_notes);
     if (guardId) {
       formData.append('guard_id', guardId);
@@ -681,12 +688,15 @@ export async function guardStartPatrol(
         ? String(payload.guard_id).trim()
         : storedGuardId?.trim();
 
+    // Automatically use cached location if not provided or empty
+    const resolvedLocation = payload.coordinates?.trim() || (await locationService.getFormattedLocation());
+
     const formData = new FormData();
     formData.append('site_id', String(payload.site_id));
     if (guardId) {
       formData.append('guard_id', guardId);
     }
-    formData.append('coordinates', payload.coordinates);
+    formData.append('coordinates', resolvedLocation);
 
     const response = await apiClient.post(
       `/guard/start-patrol/${rosterId}`,
@@ -733,9 +743,12 @@ export interface ScanNfcPayload {
 async function postScanNfc(
   payload: ScanNfcPayload,
 ): Promise<GuardApiResult<PatrollingReport>> {
+  // Automatically use cached location if not provided or empty
+  const resolvedLocation = payload.coordinates?.trim() || (await locationService.getFormattedLocation());
+
   const formData = new FormData();
   formData.append('nfc_uid', payload.nfc_uid.trim());
-  formData.append('coordinates', payload.coordinates.trim());
+  formData.append('coordinates', resolvedLocation);
 
   const patrollingId =
     payload.patrolling_id ?? payload.patrolling_report_id;

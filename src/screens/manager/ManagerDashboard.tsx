@@ -27,7 +27,7 @@ import {
 } from 'lucide-react-native';
 import { useManagerNavigation } from '../../navigation/utils';
 import { MANAGER_ROUTES } from '../../navigation/constants';
-import { ManagerNavBar, MANAGER_TAB_INDEX, sharedStyles } from './managerShared';
+import { MANAGER_TAB_INDEX, sharedStyles } from './managerShared';
 import { ManagerCalendarModal } from './ManagerCalendarModal';
 import { useAppDispatch, useAppSelector } from '../../store/hooks';
 import {
@@ -35,6 +35,9 @@ import {
   selectManagerDashboard,
   selectManagerDashboardError,
   selectManagerDashboardLoading,
+  selectManagerDashboardRefreshing,
+  selectManagerDashboardDate,
+  setSelectedDate,
 } from '../../store/slices/managerDashboardSlice';
 import type {
   ManagerActiveGuard,
@@ -139,12 +142,14 @@ function statCount(stat: unknown): number {
 export default function ManagerDashboard() {
   const navigation = useManagerNavigation();
   const dispatch = useAppDispatch();
+
   const dashboard = useAppSelector(selectManagerDashboard);
   const loading = useAppSelector(selectManagerDashboardLoading);
   const error = useAppSelector(selectManagerDashboardError);
-  const [refreshing, setRefreshing] = useState(false);
+  const refreshing = useAppSelector(selectManagerDashboardRefreshing);
+  const selectedDateStr = useAppSelector(selectManagerDashboardDate);
 
-  const [selectedDate, setSelectedDate] = useState(new Date());
+  const selectedDate = useMemo(() => new Date(selectedDateStr), [selectedDateStr]);
   const [showDatePicker, setShowDatePicker] = useState(false);
 
   const formatDateForApi = (date: Date) => {
@@ -159,9 +164,7 @@ export default function ManagerDashboard() {
   }, [dispatch, selectedDate]);
 
   const onRefresh = useCallback(async () => {
-    setRefreshing(true);
     await dispatch(fetchManagerDashboard(formatDateForApi(selectedDate)));
-    setRefreshing(false);
   }, [dispatch, selectedDate]);
 
   useFocusEffect(
@@ -171,8 +174,7 @@ export default function ManagerDashboard() {
   );
 
   const handleDateSelect = (date: Date) => {
-    setSelectedDate(date);
-    dispatch(fetchManagerDashboard(formatDateForApi(date)));
+    dispatch(setSelectedDate(date.toISOString()));
     setShowDatePicker(false);
   };
 
@@ -229,7 +231,7 @@ export default function ManagerDashboard() {
   return (
     <View style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor={Colors.headerStart} />
-      <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
+      <SafeAreaView style={styles.safe} edges={['top']}>
         <View style={styles.header}>
           <View style={styles.headerDecor} />
           <View style={styles.topRow}>
@@ -459,8 +461,6 @@ export default function ManagerDashboard() {
             onSelectDate={handleDateSelect}
           />
         )}
-
-        <ManagerNavBar activeIndex={MANAGER_TAB_INDEX.DASHBOARD} />
       </SafeAreaView>
     </View>
   );
@@ -620,100 +620,4 @@ const styles = StyleSheet.create({
   guardStatus: { alignItems: 'flex-end' },
   statusDot: { width: 7, height: 7, borderRadius: 4, marginBottom: 3 },
   guardPatrols: { fontSize: FontSizes.xs, color: Colors.textMuted },
-});
-
-const modalStyles = StyleSheet.create({
-  overlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 20,
-  },
-  container: {
-    backgroundColor: Colors.white,
-    borderRadius: Radii.lg,
-    width: '100%',
-    maxWidth: 340,
-    overflow: 'hidden',
-    ...Shadows.header,
-  },
-  header: {
-    backgroundColor: Colors.headerStart,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: 16,
-  },
-  monthText: {
-    color: Colors.white,
-    fontSize: 16,
-    fontWeight: '700',
-  },
-  navBtn: {
-    padding: 4,
-  },
-  weekDays: {
-    flexDirection: 'row',
-    paddingVertical: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.border,
-  },
-  weekDayText: {
-    flex: 1,
-    textAlign: 'center',
-    fontSize: 12,
-    color: Colors.textMuted,
-    fontWeight: '600',
-  },
-  daysGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    padding: 10,
-  },
-  dayCell: {
-    width: '14.28%',
-    aspectRatio: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  dayInner: {
-    width: 34,
-    height: 34,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  dayText: {
-    fontSize: 14,
-    color: Colors.textPrimary,
-    textAlign: 'center',
-    includeFontPadding: false,
-  },
-  selectedDay: {
-    backgroundColor: Colors.accent,
-    borderRadius: 8,
-  },
-  selectedDayText: {
-    color: Colors.white,
-    fontWeight: '700',
-  },
-  todayText: {
-    color: Colors.accent,
-    fontWeight: '700',
-  },
-  footer: {
-    flexDirection: 'row',
-    borderTopWidth: 1,
-    borderTopColor: Colors.border,
-  },
-  closeBtn: {
-    flex: 1,
-    padding: 16,
-    alignItems: 'center',
-  },
-  closeBtnText: {
-    color: Colors.textSecondary,
-    fontSize: 14,
-    fontWeight: '600',
-  },
 });

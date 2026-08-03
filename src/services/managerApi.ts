@@ -1000,7 +1000,8 @@ export function mapManagerStatusColor(statusColor: string): string {
   }
 }
 
-export function mapSeverityColor(severity: string): string {
+export function mapSeverityColor(severity?: string): string {
+  if (!severity) return Colors.textMuted;
   switch (severity.toLowerCase()) {
     case 'high':
       return Colors.danger;
