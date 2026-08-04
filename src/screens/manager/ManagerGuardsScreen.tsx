@@ -20,66 +20,70 @@ import AuthErrorBanner from '../../components/AuthErrorBanner';
 import { ManagerGuardsShimmer } from '../../components/Shimmer';
 import { useDebouncedValue } from '../../hooks/useDebouncedValue';
 import {
-  getManagerGuards,
   guardAvatarPalette,
   mapManagerStatusColor,
   MANAGER_GUARD_FILTERS,
   type ManagerGuardListItem,
-  type ManagerGuardStatusFilter,
-  type ManagerGuardsSummary,
 } from '../../services/managerApi';
+import { useAppDispatch, useAppSelector } from '../../store/hooks';
+import {
+  fetchManagerGuards,
+  selectManagerGuardsData,
+  selectManagerGuardsLoading,
+  selectGuardsFilters,
+  setSearch,
+  setStatusFilter,
+} from '../../store/slices/managerGuardsSlice';
 
 export default function ManagerGuardsScreen() {
   const navigation = useManagerNavigation();
-  const [query, setQuery] = useState('');
-  const debouncedQuery = useDebouncedValue(query, 400);
-  const [filter, setFilter] = useState<ManagerGuardStatusFilter>('all');
-  const [guards, setGuards] = useState<ManagerGuardListItem[]>([]);
-  const [summary, setSummary] = useState<ManagerGuardsSummary | null>(null);
-  const [loading, setLoading] = useState(true);
+  const dispatch = useAppDispatch();
+
+  const { search, statusFilter } = useAppSelector(selectGuardsFilters);
+  const debouncedQuery = useDebouncedValue(search, 400);
+
+  const guardsData = useAppSelector(selectManagerGuardsData);
+  const loading = useAppSelector(selectManagerGuardsLoading);
+
+  const guards = guardsData?.guards ?? [];
+  const summary = guardsData?.summary ?? null;
+
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const fetchGuards = useCallback(async () => {
-    setLoading(true);
+  const fetchGuardsData = useCallback(async () => {
     setError(null);
 
-    const result = await getManagerGuards({
+    const result = await dispatch(fetchManagerGuards({
       search: debouncedQuery,
-      status: 'all',
+      status: 'all', // The API handles the core fetch, we filter locally as per original logic or we could pass statusFilter
       page: 1,
       per_page: 50,
-    });
+    }));
 
-    if (result.success && result.data) {
-      setSummary(result.data.summary);
-      setGuards(result.data.guards);
-    } else {
-      setGuards([]);
-      setSummary(null);
-      setError(result.message ?? 'Failed to load guards');
+    if (fetchManagerGuards.rejected.match(result)) {
+      setError(result.payload as string ?? 'Failed to load guards');
     }
 
-    setLoading(false);
     setRefreshing(false);
-  }, [debouncedQuery]);
+  }, [debouncedQuery, dispatch]);
 
   useEffect(() => {
-    fetchGuards();
-  }, [fetchGuards]);
+    fetchGuardsData();
+  }, [fetchGuardsData]);
 
   const filteredGuards = useMemo(() => {
     return guards.filter(g => {
-      if (filter === 'on_duty') return g.status === 'on_duty';
-      if (filter === 'off_duty') return g.status === 'off_duty';
+      if (statusFilter === 'on_duty') return g.status === 'on_duty';
+      if (statusFilter === 'off_duty') return g.status === 'off_duty';
       return true;
     });
-  }, [guards, filter]);
+  }, [guards, statusFilter]);
 
   const onRefresh = useCallback(() => {
     setRefreshing(true);
-    fetchGuards();
-  }, [fetchGuards]);
+    fetchGuardsData();
+  }, [fetchGuardsData]);
 
   const subtitle = summary
     ? `${summary.on_duty} on duty · ${summary.total} total`
@@ -105,8 +109,8 @@ export default function ManagerGuardsScreen() {
                 style={styles.searchInput}
                 placeholder="Search guards or sites..."
                 placeholderTextColor={Colors.textMuted}
-                value={query}
-                onChangeText={setQuery}
+                value={search}
+                onChangeText={(v) => dispatch(setSearch(v))}
               />
             </View>
             <View style={sharedStyles.chipRow}>
@@ -115,14 +119,14 @@ export default function ManagerGuardsScreen() {
                   key={f.value}
                   style={[
                     sharedStyles.chip,
-                    filter === f.value && sharedStyles.chipActive,
+                    statusFilter === f.value && sharedStyles.chipActive,
                   ]}
-                  onPress={() => setFilter(f.value)}
+                  onPress={() => dispatch(setStatusFilter(f.value))}
                 >
                   <Text
                     style={[
                       sharedStyles.chipText,
-                      filter === f.value && sharedStyles.chipTextActive,
+                      statusFilter === f.value && sharedStyles.chipTextActive,
                     ]}
                   >
                     {f.label}

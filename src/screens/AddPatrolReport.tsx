@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -12,6 +12,8 @@ import {
 } from 'react-native';
 
 import { Colors, FontSizes, Radii, Spacing, Shadows } from '../theme';
+import locationService from '../services/LocationService';
+import { resolveLocationDisplayName } from '../services/locationUtils';
 import DateTimePicker, {
   DateTimePickerEvent,
 } from '@react-native-community/datetimepicker';
@@ -37,6 +39,19 @@ export default function AddPatrolReport() {
     details: '',
   });
 
+  useEffect(() => {
+    async function fetchInitialLocation() {
+      try {
+        const loc = await locationService.getCurrentLocation();
+        const displayName = await resolveLocationDisplayName(loc.latitude, loc.longitude);
+        setForm(f => ({ ...f, location: displayName }));
+      } catch (err) {
+        console.warn('Failed to auto-fill location', err);
+      }
+    }
+    fetchInitialLocation();
+  }, []);
+
   const handleAddPhoto = () => {
     // 👉 later connect camera
     setPhotos(prev => [...prev, 'https://via.placeholder.com/100']);
@@ -55,21 +70,6 @@ export default function AddPatrolReport() {
         </View>
 
         <ScrollView style={styles.body} showsVerticalScrollIndicator={false}>
-          {/* Location Card */}
-          <View style={styles.card}>
-            <View
-              style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}
-            >
-              <MapPin size={12} color={Colors.accent} style={styles.icon} />
-              <Text style={styles.label}>Location</Text>
-            </View>
-            <TextInput
-              style={styles.input}
-              placeholder="Enter location"
-              value={form.location}
-              onChangeText={v => setForm({ ...form, location: v })}
-            />
-          </View>
           {/* Date & Time */}
           <View style={styles.card}>
             <View

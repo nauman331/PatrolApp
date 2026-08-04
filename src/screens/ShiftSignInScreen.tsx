@@ -14,7 +14,7 @@ import {
   PermissionsAndroid,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import Geolocation from '@react-native-community/geolocation';
+import locationService from '../services/LocationService';
 import {
   type Asset,
 } from 'react-native-image-picker';
@@ -70,17 +70,8 @@ function resolveCaptureUri(asset: Asset): string {
 }
 
 async function requestLocationPermission(): Promise<boolean> {
-  if (Platform.OS !== 'android') return true;
-  const granted = await PermissionsAndroid.requestMultiple([
-    PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
-    PermissionsAndroid.PERMISSIONS.ACCESS_COARSE_LOCATION,
-  ]);
-  return (
-    granted[PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION] ===
-      PermissionsAndroid.RESULTS.GRANTED ||
-    granted[PermissionsAndroid.PERMISSIONS.ACCESS_COARSE_LOCATION] ===
-      PermissionsAndroid.RESULTS.GRANTED
-  );
+  const status = await locationService.checkPermission();
+  return status === 'granted';
 }
 
 export default function ShiftSignInScreen() {
@@ -120,19 +111,7 @@ export default function ShiftSignInScreen() {
   }, [params?.rosterId, params?.siteId]);
 
   useEffect(() => {
-    Geolocation.setRNConfiguration({
-      skipPermissionRequests: false,
-      authorizationLevel: 'whenInUse',
-      locationProvider: 'auto',
-    });
-    Geolocation.requestAuthorization(
-      () => {
-        // no-op
-      },
-      () => {
-        // no-op
-      },
-    );
+    // No-op, managed by locationService
   }, []);
 
   const shift = {
@@ -150,11 +129,6 @@ export default function ShiftSignInScreen() {
 
   const refreshLocation = useCallback(
     async (showPermissionAlert = false) => {
-      if (locationFetched || isFetchingLocation.current) {
-        return;
-      }
-
-      isFetchingLocation.current = true;
       setLocationLoading(true);
       try {
         const allowed = await requestLocationPermission();
@@ -165,27 +139,33 @@ export default function ShiftSignInScreen() {
               'Location permission is needed to check in.',
             );
           }
+          setLocationLoading(false);
           return;
         }
 
-        let fix;
-        try {
-          fix = await fetchLocationFix(true, locationFallback);
-        } catch {
-          fix = await fetchLocationFix(false, locationFallback);
-        }
+        const coords = await locationService.getFormattedLocation();
+        if (coords) {
+          setLocationCoords(coords);
+          setLocationFetched(true);
 
-        setLocationCoords(fix.coordinates);
-        setLocationLabel(fix.displayName);
-        setLocationFetched(true);
+          try {
+            const [lat, lon] = coords.split(',').map(Number);
+            const displayName = await resolveLocationDisplayName(lat, lon, locationFallback);
+            setLocationLabel(displayName);
+          } catch {
+            setLocationLabel(coords);
+          }
+        } else {
+          // If still no coords, at least set a label if we have one
+          if (!locationLabel) setLocationLabel(locationFallback);
+        }
       } catch (error: any) {
-        // Fail silently, retry logic in useEffect will handle auto-fetches
+        // Fail silently
       } finally {
         setLocationLoading(false);
-        isFetchingLocation.current = false;
       }
     },
-    [locationFetched, locationFallback],
+    [locationFallback, locationLabel],
   );
 
   useEffect(() => {
@@ -222,11 +202,19 @@ export default function ShiftSignInScreen() {
       Alert.alert('Error', 'Missing roster for this shift.');
       return;
     }
-    if (!locationCoords.trim()) {
+
+    let currentCoords = locationCoords.trim();
+    if (!currentCoords) {
+      // Try to get from service if local state is empty
+      currentCoords = await locationService.getFormattedLocation();
+    }
+
+    if (!currentCoords) {
       Alert.alert('Error', 'Location required');
       refreshLocation(true);
       return;
     }
+
     if (!selfie?.uri) {
       Alert.alert('Error', 'Please capture a selfie before signing in.');
       return;
@@ -236,7 +224,7 @@ export default function ShiftSignInScreen() {
       setCheckingIn(true);
       const result = await guardJobCheckin({
         roster_id: shift.rosterId,
-        location: locationCoords.trim(),
+        location: currentCoords,
         signin_notes: signinNotes.trim(),
         guard_id: guardId ?? undefined,
         selfie: {
@@ -344,8 +332,6 @@ export default function ShiftSignInScreen() {
           </View>
 
           <View style={styles.body}>
-            {/* Location */}
-
             {/* Sign-in notes */}
             <View style={[styles.card, Shadows.card]}>
               <View style={styles.cardTitleRow}>
@@ -436,18 +422,6 @@ export default function ShiftSignInScreen() {
             </TouchableOpacity>
           </View>
         </ScrollView>
-
-        <NavBar
-          variant="light"
-          items={[
-            { icon: Home, label: 'Home' },
-            { icon: Route, label: 'Patrol' },
-            { icon: AlertTriangle, label: 'Incidents' },
-            { icon: ClipboardList, label: 'Shifts', active: true },
-            { icon: User, label: 'Profile' },
-          ]}
-          onPress={i => navigateGuardBottomTab(navigation, i)}
-        />
       </SafeAreaView>
 
       <ImageViewerModal
@@ -557,8 +531,31 @@ const styles = StyleSheet.create({
   locationValue: {
     fontSize: 13,
     color: Colors.textPrimary,
-    fontWeight: '600',
-    lineHeight: 18,
+    fontWeight: '800',
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+  },
+  locationLabel: {
+    fontSize: 11,
+    color: Colors.textMuted,
+    marginTop: 2,
+  },
+  locationBox: {
+    backgroundColor: Colors.bgAlt,
+    padding: 10,
+    borderRadius: Radii.sm,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  refreshLocBtn: {
+    alignSelf: 'flex-end',
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+  },
+  refreshLocText: {
+    fontSize: 12,
+    color: Colors.accent,
+    fontWeight: '700',
   },
   secondaryBtn: {
     flexDirection: 'row',

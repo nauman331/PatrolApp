@@ -83,7 +83,7 @@ export default function ManagerIncidentDetailScreen({ route }: Props) {
       header={
         <ManagerStackHeader
           title="Incident Report"
-          subtitle={data ? formatAppDateTime(data.location_date) : 'Loading...'}
+          subtitle={data ? formatAppDateTime(data.location_date) : 'Incident Report'}
         />
       }
     >
@@ -119,7 +119,7 @@ export default function ManagerIncidentDetailScreen({ route }: Props) {
                     ]}
                   >
                     <Text style={[styles.severityText, { color: severityColor }]}>
-                      {data.severity.toUpperCase()}
+                      {(data.severity || 'Medium').toUpperCase()}
                     </Text>
                   </View>
                 </View>

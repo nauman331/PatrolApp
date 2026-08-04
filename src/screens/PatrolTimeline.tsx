@@ -13,7 +13,7 @@ import {
   PermissionsAndroid,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import Geolocation from '@react-native-community/geolocation';
+import locationService from '../services/LocationService';
 import { useFocusEffect } from '@react-navigation/native';
 import { useSelector } from 'react-redux';
 import { Colors, FontSizes, Radii, Shadows } from '../theme';
@@ -76,30 +76,8 @@ function formatPatrolTime(value?: string | null): string {
 }
 
 async function requestLocationPermission(): Promise<boolean> {
-  if (Platform.OS !== 'android') return true;
-  const granted = await PermissionsAndroid.requestMultiple([
-    PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
-    PermissionsAndroid.PERMISSIONS.ACCESS_COARSE_LOCATION,
-  ]);
-  return (
-    granted[PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION] ===
-      PermissionsAndroid.RESULTS.GRANTED ||
-    granted[PermissionsAndroid.PERMISSIONS.ACCESS_COARSE_LOCATION] ===
-      PermissionsAndroid.RESULTS.GRANTED
-  );
-}
-
-function getCurrentLocation(enableHighAccuracy: boolean): Promise<string> {
-  return new Promise((resolve, reject) => {
-    Geolocation.getCurrentPosition(
-      pos => {
-        const { latitude, longitude } = pos.coords;
-        resolve(`${latitude},${longitude}`);
-      },
-      err => reject(err),
-      { enableHighAccuracy, timeout: 20000, maximumAge: 5000 },
-    );
-  });
+  const status = await locationService.checkPermission();
+  return status === 'granted';
 }
 
 function isPatrolNotFoundMessage(message?: string | null): boolean {
@@ -268,24 +246,7 @@ export default function PatrolTimeline() {
   );
 
   const getScanCoordinates = useCallback(async () => {
-    if (locationRef.current.trim()) return locationRef.current.trim();
-
-    const allowed = await requestLocationPermission();
-    if (!allowed) return '';
-
-    try {
-      const coords = await getCurrentLocation(true);
-      locationRef.current = coords;
-      return coords;
-    } catch {
-      try {
-        const coords = await getCurrentLocation(false);
-        locationRef.current = coords;
-        return coords;
-      } catch {
-        return '';
-      }
-    }
+    return await locationService.getFormattedLocation();
   }, []);
 
   const startPatrol = useCallback(async () => {
@@ -358,10 +319,7 @@ export default function PatrolTimeline() {
         }
       }
 
-      let coords = locationRef.current.trim();
-      if (!coords) {
-        coords = await getScanCoordinates();
-      }
+      let coords = await getScanCoordinates();
       if (!coords) {
         Alert.alert('Error', 'Location is required to start patrolling.');
         return false;
@@ -559,7 +517,7 @@ export default function PatrolTimeline() {
         </View>
       </SafeAreaView>
 
-      <SafeAreaView style={styles.safeBody} edges={['bottom']}>
+      <View style={styles.safeBody}>
         <View style={styles.body}>
         {showShimmer ? (
           <PatrolTimelineShimmer />
@@ -818,20 +776,8 @@ export default function PatrolTimeline() {
           </ScrollView>
         )}
         </View>
-
-        <NavBar
-          variant="light"
-          items={[
-            { icon: Home, label: 'Home' },
-            { icon: Route, label: 'Patrol', active: true },
-            { icon: AlertTriangle, label: 'Incidents' },
-            { icon: ClipboardList, label: 'Shifts' },
-            { icon: User, label: 'Profile' },
-          ]}
-          onPress={i => navigateGuardBottomTab(navigation, i)}
-        />
         {scanModal}
-      </SafeAreaView>
+      </View>
     </View>
   );
 }

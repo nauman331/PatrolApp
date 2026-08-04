@@ -41,7 +41,7 @@ const SECTIONS = [
   {
     title: 'Limitation of Liability',
     body:
-      'PatrolApp is provided as an operational tool. Arrowbyte is not liable for losses arising from network outages, device failures, or decisions made based on incomplete data entry.',
+      'PatrolApp is provided as an operational tool. ReportPro is not liable for losses arising from network outages, device failures, or decisions made based on incomplete data entry.',
   },
   {
     title: 'Changes to Terms',

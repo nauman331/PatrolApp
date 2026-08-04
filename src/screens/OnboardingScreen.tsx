@@ -32,7 +32,7 @@ export default function OnboardingScreen({}: OnboardingScreenProps) {
 
         <View style={styles.content}>
           <View style={styles.badge}>
-            <Text style={styles.badgeText}>SHWANIX TECHNOLOGIES</Text>
+            <Text style={styles.badgeText}>VCPG Technologies</Text>
           </View>
 
           <View style={styles.logoWrap}>

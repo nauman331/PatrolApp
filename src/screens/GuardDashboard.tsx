@@ -45,11 +45,13 @@ import {
 import { useFocusEffect } from '@react-navigation/native';
 import { useGuardNavigation } from '../navigation/utils';
 import { GUARD_ROUTES, navigateGuardBottomTab } from '../navigation/constants';
-import { useAppSelector } from '../store/hooks';
+import { useAppDispatch, useAppSelector } from '../store/hooks';
 import {
-  getGuardDashboardData,
-  type GuardDashboardData,
-} from '../services/guardApi';
+  fetchGuardDashboard,
+  selectDashboardData,
+  selectDashboardLoading,
+  selectDashboardError,
+} from '../store/slices/guardDashboardSlice';
 
 function getTimeGreeting(): string {
   const hour = new Date().getHours();
@@ -89,10 +91,13 @@ function normalizeDate(iso?: string) {
 
 export default function GuardDashboard() {
   const navigation = useGuardNavigation();
+  const dispatch = useAppDispatch();
   const guardId = useAppSelector(state => state.auth?.guardId ?? null);
 
-  const [dashboard, setDashboard] = useState<GuardDashboardData | null>(null);
-  const [dashboardLoading, setDashboardLoading] = useState(true);
+  const dashboard = useAppSelector(selectDashboardData);
+  const dashboardLoading = useAppSelector(selectDashboardLoading);
+  const dashboardError = useAppSelector(selectDashboardError);
+
   const [activeSession, setActiveSession] = useState<ActiveShiftSession | null>(
     null,
   );
@@ -100,19 +105,19 @@ export default function GuardDashboard() {
   const appStateRef = useRef(AppState.currentState);
 
   const loadDashboard = useCallback(async () => {
-    setDashboardLoading(true);
-    const [result, session] = await Promise.all([
-      getGuardDashboardData(guardId),
+    // Redux Thunk now handles dashboard loading
+    const [resultAction, session] = await Promise.all([
+      dispatch(fetchGuardDashboard(guardId)),
       getActiveShiftSession(),
     ]);
 
     let finalSession = session;
 
-    if (result.success && result.data) {
-      setDashboard(result.data);
+    if (fetchGuardDashboard.fulfilled.match(resultAction)) {
+      const data = resultAction.payload;
 
       // SYNC SESSION: If we have an active shift from API but no local session, save it.
-      const apiJobs = result.data.today_jobs ?? [];
+      const apiJobs = data.today_jobs ?? [];
       const apiActiveShift = apiJobs
         .map(mapApiJobToShift)
         .find(shift => shift?.status === 'active');
@@ -153,8 +158,7 @@ export default function GuardDashboard() {
     }
 
     setActiveSession(finalSession);
-    setDashboardLoading(false);
-  }, [guardId]);
+  }, [guardId, dispatch]);
 
   const refreshDashboard = useCallback(() => {
     loadDashboard();
@@ -314,7 +318,9 @@ export default function GuardDashboard() {
         );
         break;
       case 'sop':
-        navigation.navigate(GUARD_ROUTES.SOPS);
+        requireActiveShift(() =>
+          navigation.navigate(GUARD_ROUTES.SOPS),
+        );
         break;
       case 'nfc':
         requireCheckedInShift(() =>
@@ -362,7 +368,7 @@ export default function GuardDashboard() {
         barStyle="light-content"
         backgroundColor={Colors.headerStart}
       />
-      <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
+      <SafeAreaView style={styles.safe} edges={['top']}>
         <View style={styles.header}>
           <View style={styles.headerDecor} />
           <View style={styles.topRow}>
@@ -534,17 +540,6 @@ export default function GuardDashboard() {
             )}
           </View>
         </View>
-
-        <NavBar
-          items={[
-            { icon: Home, label: 'Home', active: true },
-            { icon: Route, label: 'Patrol' },
-            { icon: AlertTriangle, label: 'Incidents' },
-            { icon: ClipboardList, label: 'Shifts' },
-            { icon: User, label: 'Profile' },
-          ]}
-          onPress={i => navigateGuardBottomTab(navigation, i)}
-        />
       </SafeAreaView>
     </View>
   );

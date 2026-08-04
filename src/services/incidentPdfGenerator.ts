@@ -304,30 +304,40 @@ async function drawPhotos(l: L, incident: MappedIncident) {
 
   section(l, 7, `Photos (${n})`);
 
-  const PHOTO_GAP = 8;
-  const LABEL_H = 10;
-  // Calculate size to fit all photos in a single row
-  const PHOTO_SIZE = Math.min(110, (l.cw - PHOTO_GAP * (n - 1)) / n);
-  const rowHeight = LABEL_H + PHOTO_SIZE + PHOTO_GAP;
-
-  space(l, rowHeight + 16);
-  const startY = l.y;
+  const PHOTOS_PER_ROW = 3;
+  const PHOTO_GAP = 12;
+  const PHOTO_SIZE = (l.cw - PHOTO_GAP * (PHOTOS_PER_ROW - 1)) / PHOTOS_PER_ROW;
+  const LABEL_H = 14;
+  const ROW_HEIGHT = PHOTO_SIZE + LABEL_H + PHOTO_GAP;
 
   for (let i = 0; i < n; i++) {
     const photo = photos[i];
     const source = photo.uri || photo.imgPath;
     if (!source) continue;
 
-    const x = MARGIN + i * (PHOTO_SIZE + PHOTO_GAP);
-    const y = startY;
+    const col = i % PHOTOS_PER_ROW;
+    const row = Math.floor(i / PHOTOS_PER_ROW);
+
+    if (col === 0) {
+      space(l, ROW_HEIGHT);
+    }
+
+    const x = MARGIN + col * (PHOTO_SIZE + PHOTO_GAP);
+    const y = l.y - ROW_HEIGHT + (col === 0 ? 0 : 0); // l.y already moved by space()
+
+    // Since space(l) might have added a page, we need to track local y for current row
+    // Actually, space(l) moves l.y. If it's the start of a row, we moved it.
+    // Let's simplify:
+    const currentY = l.y - ROW_HEIGHT;
 
     l.doc.setFont('helvetica', 'bold');
     l.doc.setFontSize(8);
     l.doc.setTextColor(...C.label);
-    l.doc.text(`Photo ${i + 1}`, x, y + 8);
+    l.doc.text(`Photo ${i + 1}`, x, currentY + 8);
 
-    const imageY = y + LABEL_H;
+    const imageY = currentY + LABEL_H;
     const dataUri = await loadImage(source);
+
     l.doc.setDrawColor(...C.line);
     l.doc.setFillColor(...C.panel);
     l.doc.roundedRect(x, imageY, PHOTO_SIZE, PHOTO_SIZE, 2, 2, 'FD');
@@ -342,35 +352,36 @@ async function drawPhotos(l: L, incident: MappedIncident) {
           PHOTO_SIZE - 4,
           PHOTO_SIZE - 4,
         );
-      } catch {
+      } catch (err) {
+        console.warn('PDF: Failed to add image to document', err);
         l.doc.setFont('helvetica', 'normal');
         l.doc.setFontSize(8);
-        l.doc.setTextColor(...C.label);
-        l.doc.text('Unavailable', x + PHOTO_SIZE / 2, imageY + PHOTO_SIZE / 2, { align: 'center' });
+        l.doc.text('Error loading', x + PHOTO_SIZE / 2, imageY + PHOTO_SIZE / 2, { align: 'center' });
       }
     } else {
       l.doc.setFont('helvetica', 'normal');
       l.doc.setFontSize(8);
-      l.doc.setTextColor(...C.label);
       l.doc.text('Unavailable', x + PHOTO_SIZE / 2, imageY + PHOTO_SIZE / 2, { align: 'center' });
     }
   }
 
-  l.y = startY + rowHeight + 8;
+  l.y += 10;
 }
 
 async function drawSignature(l: L, incident: MappedIncident) {
-  if (!incident.signatureUri && !incident.signature) return;
+  const hasSig = !!(incident.signatureUri || incident.signature);
+  if (!hasSig) return;
 
   section(l, 8, 'Signature');
-  space(l, 90);
 
-  if (incident.signatureUri) {
-    const dataUri = await loadImage(incident.signatureUri);
+  if (incident.signatureUri || (incident.signature && incident.signature.startsWith('data:'))) {
+    const sigSource = incident.signatureUri || incident.signature!;
+    const dataUri = await loadImage(sigSource);
     if (dataUri) {
       try {
-        const w = Math.min(l.cw * 0.55, 280);
-        const h = 70;
+        space(l, 100);
+        const w = Math.min(l.cw * 0.6, 300);
+        const h = 80;
         l.doc.setDrawColor(...C.line);
         l.doc.setFillColor(...C.white);
         l.doc.roundedRect(MARGIN, l.y, w, h, 2, 2, 'FD');
@@ -382,15 +393,21 @@ async function drawSignature(l: L, incident: MappedIncident) {
           w - 8,
           h - 8,
         );
-        l.y += h + 12;
+        l.y += h + 15;
         return;
-      } catch {
-        /* fall through */
+      } catch (err) {
+        console.warn('PDF: Failed to add signature image', err);
       }
     }
   }
 
-  drawParagraph(l, incident.signature ?? '—');
+  // Fallback to text only if NOT a data URI
+  const sigText = incident.signature || '';
+  if (sigText && !sigText.startsWith('data:')) {
+     drawParagraph(l, sigText);
+  } else {
+     emptyNote(l, 'No signature provided.');
+  }
 }
 
 function footers(l: L, reportId: number) {

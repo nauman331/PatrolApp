@@ -15,7 +15,7 @@ function mapManagerIncidentToMapped(data: ManagerIncidentDetailData): MappedInci
     incidentTime: data.incident_time || data.time,
     injuryType: data.injury_type || data.title,
     injuryDetail: data.injury_detail || data.summary_text,
-    severity: (data.severity.toUpperCase() as any) || 'MEDIUM',
+    severity: (data.severity?.toUpperCase() as any) || 'MEDIUM',
     peopleInvolved: (data.people_involved || []) as Record<string, unknown>[],
     vehicles: (data.vehicle || []) as Record<string, unknown>[],
     emergencyServices: (data.emergency_services || {}) as Record<string, unknown>,

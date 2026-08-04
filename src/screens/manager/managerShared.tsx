@@ -73,9 +73,8 @@ export function ManagerTabShell({ activeIndex, children }: ManagerTabShellProps)
   return (
     <View style={sharedStyles.container}>
       <StatusBar barStyle="light-content" backgroundColor={Colors.headerStart} />
-      <SafeAreaView style={sharedStyles.safe} edges={['top', 'bottom']}>
+      <SafeAreaView style={sharedStyles.safe} edges={['top']}>
         {children}
-        <ManagerNavBar activeIndex={activeIndex} />
       </SafeAreaView>
     </View>
   );
@@ -132,10 +131,9 @@ export function ManagerCompactTabShell({
           right={headerRight}
         />
       </SafeAreaView>
-      <SafeAreaView style={sharedStyles.safeBody} edges={['bottom']}>
+      <View style={sharedStyles.safeBody}>
         <View style={sharedStyles.tabBody}>{children}</View>
-        <ManagerNavBar activeIndex={activeIndex} />
-      </SafeAreaView>
+      </View>
     </View>
   );
 }
