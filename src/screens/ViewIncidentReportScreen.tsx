@@ -69,8 +69,8 @@ import {
 } from '../services/incidentsMapper';
 
 import { downloadIncidentPdf } from '../services/incidentPdfDownload';
-
 import ImageViewerModal from '../components/ImageViewerModal';
+import { DownloadButton } from '../components/DownloadButton';
 
 type ViewIncidentRoute = GuardStackScreenProps<'ViewIncidentReport'>['route'];
 
@@ -621,33 +621,16 @@ export default function ViewIncidentReportScreen() {
 
           ) : null}
 
-{/*
-
           {incident.id ? (
-
-            <TouchableOpacity
-
-              style={[styles.pdfBtn, isGenerating && styles.pdfBtnDisabled]}
-
-              onPress={handleDownloadPdf}
-
-              disabled={isGenerating}
-
-            >
-
-              {isGenerating ? (
-                <View style={styles.loaderWrap}>
-                  <ActivityIndicator size="small" color={Colors.white} />
-                  <Text style={styles.pdfBtnText}>PDF Generating...</Text>
-                </View>
-              ) : (
-                <Text style={styles.pdfBtnText}>Download PDF</Text>
-              )}
-
-            </TouchableOpacity>
-
+            <DownloadButton
+              label="Download PDF"
+              variant="full"
+              style={{ marginTop: 12 }}
+              onDownload={async (onProgress) => {
+                if (incident) return await downloadIncidentPdf(incident, onProgress);
+              }}
+            />
           ) : null}
-       */}
 
         </ScrollView>
 

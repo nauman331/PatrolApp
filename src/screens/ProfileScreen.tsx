@@ -299,10 +299,10 @@ export default function ProfileScreen({ onLogout }: Props) {
 
   const handleViewReports = () => {
     if (userRole === 'manager') {
-      navigation.navigate(MANAGER_ROUTES.REPORTS);
+      navigateManagerBottomTab(navigation, 2);
       return;
     }
-    navigation.navigate(GUARD_ROUTES.INCIDENTS);
+    navigateGuardBottomTab(navigation, 2);
   };
 
   return (
@@ -553,11 +553,12 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   box: {
-    height: 35,
-    width: 35,
+    height: 36,
+    width: 36,
     borderRadius: 10,
-    padding: 9,
-    backgroundColor: Colors.accentAlpha30,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: Colors.accentAlpha12,
   },
   avatarContainer: {
     alignItems: 'center',

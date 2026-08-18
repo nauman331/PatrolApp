@@ -145,12 +145,23 @@ export default function GuardDashboard() {
               : String(apiActiveShift.id),
             siteId: apiActiveShift.siteId,
             siteInfo,
+            endTimestamp: apiActiveShift.endTimestamp,
+            endTime: apiActiveShift.time,
           };
           await saveActiveShiftSession(newSession);
           finalSession = newSession;
-        } else if (!session.siteInfo || JSON.stringify(session.siteInfo) !== JSON.stringify(siteInfo)) {
-          // Update existing session with latest site info
-          const updatedSession = { ...session, siteInfo };
+        } else if (
+          !session.siteInfo ||
+          JSON.stringify(session.siteInfo) !== JSON.stringify(siteInfo) ||
+          (apiActiveShift.endTimestamp && session.endTimestamp !== apiActiveShift.endTimestamp)
+        ) {
+          // Update existing session with latest site info & endTimestamp
+          const updatedSession = {
+            ...session,
+            siteInfo,
+            endTimestamp: apiActiveShift.endTimestamp ?? session.endTimestamp,
+            endTime: apiActiveShift.time ?? session.endTime,
+          };
           await saveActiveShiftSession(updatedSession);
           finalSession = updatedSession;
         }
@@ -211,13 +222,19 @@ export default function GuardDashboard() {
     }
     const start = normalizeDate(activeSignInTime).getTime();
     const tick = () => {
-      const diff = Date.now() - start;
+      const now = Date.now();
+      const diff = now - start;
       setElapsed(formatElapsed(diff));
+
+      const activeEndTs = activeShift?.endTimestamp ?? activeSession?.endTimestamp;
+      if (activeEndTs && now >= activeEndTs) {
+        refreshDashboard();
+      }
     };
     tick();
     const id = setInterval(tick, 1000);
     return () => clearInterval(id);
-  }, [activeSignInTime]);
+  }, [activeSignInTime, activeShift?.endTimestamp, activeSession?.endTimestamp, refreshDashboard]);
 
   const hasOngoingShift =
     activeSession != null || activeShift?.status === 'active';
@@ -226,7 +243,7 @@ export default function GuardDashboard() {
   const greetingName = firstName(guardName);
 
   const shiftSite =
-    activeSession?.site ?? activeShift?.site ?? 'Active shift site';
+    activeSession?.site ?? activeShift?.site ?? 'Active Shift Site';
   const shiftTime = activeShift?.time ?? '—';
 
   const openOngoingShift = async () => {
@@ -244,6 +261,8 @@ export default function GuardDashboard() {
         signInTime: finalSignInTime,
         shiftId: activeShift?.id ?? session?.shiftId,
         siteId: activeShift?.siteId ?? session?.siteId,
+        endTimestamp: activeShift?.endTimestamp ?? session?.endTimestamp,
+        time: activeShift?.time ?? session?.endTime,
       });
     }
   };
@@ -260,7 +279,7 @@ export default function GuardDashboard() {
         { text: 'Cancel', style: 'cancel' },
         {
           text: 'Go to Shifts',
-          onPress: () => navigation.navigate(GUARD_ROUTES.SHIFTS),
+          onPress: () => navigateGuardBottomTab(navigation, 3),
         },
       ],
     );
@@ -290,7 +309,7 @@ export default function GuardDashboard() {
       return;
     }
 
-    promptCheckInRequired(() => navigation.navigate(GUARD_ROUTES.SHIFTS));
+    promptCheckInRequired(() => navigateGuardBottomTab(navigation, 3));
   };
 
   const patrolContext = useMemo(
@@ -302,11 +321,19 @@ export default function GuardDashboard() {
     [activeSession, activeShift],
   );
 
+  const lastQuickActionRef = useRef(0);
+
   const handleQuickAction = (key: string) => {
+    const now = Date.now();
+    if (now - lastQuickActionRef.current < 750) {
+      return;
+    }
+    lastQuickActionRef.current = now;
+
     switch (key) {
       case 'patrol':
         requireCheckedInShift(() =>
-          navigation.navigate(GUARD_ROUTES.PATROL_TIMELINE),
+          navigateGuardBottomTab(navigation, 1),
         );
         break;
       case 'incident':
@@ -374,7 +401,7 @@ export default function GuardDashboard() {
           <View style={styles.topRow}>
             <View style={styles.guardInfo}>
               <TouchableOpacity
-                onPress={() => navigation.navigate(GUARD_ROUTES.PROFILE)}
+                onPress={() => navigateGuardBottomTab(navigation, 4)}
               >
                 <View style={styles.avatar}>
                   <User size={18} color="white" />
@@ -432,20 +459,20 @@ export default function GuardDashboard() {
                 </View>
                 <View style={styles.shiftRight}>
                   <View style={styles.onBadge}>
-                    <Text style={styles.onBadgeText}>● ON DUTY</Text>
+                    <Text style={styles.onBadgeText}>● On Duty</Text>
                   </View>
                   <TouchableOpacity
                     style={styles.continueBtn}
                     onPress={openOngoingShift}
                   >
-                    <Text style={styles.continueText}>CONTINUE</Text>
+                    <Text style={styles.continueText}>Continue</Text>
                   </TouchableOpacity>
                 </View>
               </TouchableOpacity>
             ) : (
               <View style={[styles.shiftCard, Shadows.card]}>
                 <View style={styles.shiftLeft}>
-                  <Text style={styles.shiftLbl}>ACTIVE SHIFT</Text>
+                  <Text style={styles.shiftLbl}>Active Shift</Text>
                   <Text style={styles.shiftEmptyTitle}>No active shift</Text>
                   <Text style={styles.shiftEmptySub}>
                     Check in from the Shifts list to start your duty.
@@ -454,9 +481,9 @@ export default function GuardDashboard() {
                 <View style={styles.shiftRight}>
                   <TouchableOpacity
                     style={styles.viewShiftsBtn}
-                    onPress={() => navigation.navigate(GUARD_ROUTES.SHIFTS)}
+                    onPress={() => navigateGuardBottomTab(navigation, 3)}
                   >
-                    <Text style={styles.viewShiftsText}>VIEW SHIFTS</Text>
+                    <Text style={styles.viewShiftsText}>View Shifts</Text>
                   </TouchableOpacity>
                 </View>
               </View>
@@ -513,7 +540,7 @@ export default function GuardDashboard() {
             <SectionHeader
               title="Today's Shifts"
               action="See All"
-              onActionPress={() => navigation.navigate(GUARD_ROUTES.SHIFTS)}
+              onActionPress={() => navigateGuardBottomTab(navigation, 3)}
             />
 
             {showPatrolShimmer ? (

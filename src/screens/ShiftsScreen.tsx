@@ -233,6 +233,8 @@ export default function ShiftsScreen() {
       signInTime: signInTime,
       shiftId: shift.id,
       siteId: shift.siteId,
+      endTimestamp: shift.endTimestamp,
+      time: shift.time,
     });
   };
 
@@ -256,6 +258,7 @@ export default function ShiftsScreen() {
       time: shift.time,
       zones: shift.zones,
       status: 'ready',
+      endTimestamp: shift.endTimestamp,
     });
   };
 

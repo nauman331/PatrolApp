@@ -16,12 +16,12 @@ const SECTIONS = [
   {
     title: 'Acceptance of Terms',
     body:
-      'By accessing and using PatrolApp, you agree to comply with these Terms and Conditions. If you do not agree, please discontinue use of the application.',
+      'By accessing and using Report Pro, you agree to comply with these Terms and Conditions. If you do not agree, please discontinue use of the application.',
   },
   {
     title: 'Authorized Use',
     body:
-      'PatrolApp is intended for licensed security personnel and authorized managers. You must use the app only for legitimate patrol, incident reporting, and shift management activities.',
+      'Report Pro is intended for licensed security personnel and authorized managers. You must use the app only for legitimate patrol, incident reporting, and shift management activities.',
   },
   {
     title: 'Account Responsibilities',
@@ -41,7 +41,7 @@ const SECTIONS = [
   {
     title: 'Limitation of Liability',
     body:
-      'PatrolApp is provided as an operational tool. ReportPro is not liable for losses arising from network outages, device failures, or decisions made based on incomplete data entry.',
+      'Report Pro is provided as an operational tool. Report Pro is not liable for losses arising from network outages, device failures, or decisions made based on incomplete data entry.',
   },
   {
     title: 'Changes to Terms',
@@ -55,7 +55,7 @@ export default function TermsConditionsScreen() {
 
   return (
     <View style={styles.container}>
-      <StatusBar barStyle="dark-content" backgroundColor={Colors.bg} />
+      <StatusBar barStyle="dark-content" backgroundColor={Colors.bgAlt} />
       <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
         <View style={styles.header}>
           <TouchableOpacity onPress={() => navigation.goBack()}>
@@ -93,14 +93,15 @@ export default function TermsConditionsScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.bg },
-  safe: { flex: 1 },
+  container: { flex: 1, backgroundColor: Colors.bgAlt },
+  safe: { flex: 1, backgroundColor: Colors.bgAlt },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     padding: 15,
     paddingBottom: 12,
+    backgroundColor: Colors.bgAlt,
   },
   back: { fontSize: 24, fontWeight: 'bold', color: Colors.textPrimary },
   title: { fontSize: 18, fontWeight: '800', color: Colors.textPrimary },
@@ -108,12 +109,12 @@ const styles = StyleSheet.create({
   body: { flex: 1 },
   bodyContent: { padding: 16, paddingBottom: 28 },
   heroCard: {
-    backgroundColor: Colors.accentLight,
+    backgroundColor: Colors.bgCard,
     borderRadius: Radii.lg,
     padding: 16,
     marginBottom: 14,
     borderWidth: 1,
-    borderColor: Colors.accentAlpha25,
+    borderColor: Colors.border,
     alignItems: 'center',
     ...Shadows.card,
   },
@@ -121,7 +122,7 @@ const styles = StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: 12,
-    backgroundColor: Colors.accentAlpha30,
+    backgroundColor: Colors.accentAlpha12,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 10,
@@ -138,7 +139,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   sectionCard: {
-    backgroundColor: Colors.bgAlt,
+    backgroundColor: Colors.bgCard,
     borderRadius: Radii.lg,
     padding: 14,
     marginBottom: 12,

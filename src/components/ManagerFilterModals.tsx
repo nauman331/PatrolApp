@@ -340,7 +340,7 @@ const modalStyles = StyleSheet.create({
   searchBox: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: Colors.bgPage,
+    backgroundColor: Colors.bgAlt,
     marginHorizontal: 20,
     marginTop: 16,
     paddingHorizontal: 12,
@@ -387,7 +387,7 @@ const modalStyles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 10,
     borderRadius: Radii.md,
-    backgroundColor: Colors.bgPage,
+    backgroundColor: Colors.bgAlt,
     borderWidth: 1,
     borderColor: Colors.border,
   },

@@ -10,8 +10,8 @@ const BOTTOM = 36;
 const GAP = 18;
 
 const C = {
-  navy: [26, 26, 46] as [number, number, number],
-  accent: [121, 31, 61] as [number, number, number],
+  navy: [56, 73, 89] as [number, number, number],
+  accent: [106, 137, 167] as [number, number, number],
   text: [33, 33, 33] as [number, number, number],
   label: [90, 90, 90] as [number, number, number],
   line: [220, 220, 228] as [number, number, number],
@@ -78,7 +78,12 @@ function afterTable(l: L) {
   l.y = (l.doc.lastAutoTable?.finalY ?? l.y) + GAP;
 }
 
-async function loadImage(uri: string): Promise<string | null> {
+export type DownloadProgressCallback = (progress: { received: number; total: number } | null) => void;
+
+async function loadImage(
+  uri: string,
+  onProgress?: DownloadProgressCallback,
+): Promise<string | null> {
   if (uri.startsWith('data:')) {
     return uri;
   }
@@ -87,11 +92,23 @@ async function loadImage(uri: string): Promise<string | null> {
   const headers: Record<string, string> = {};
   if (token) headers.Authorization = `Bearer ${token}`;
   try {
-    const res = await ReactNativeBlobUtil.config({ fileCache: true }).fetch(
+    const fetchTask = ReactNativeBlobUtil.config({ fileCache: true }).fetch(
       'GET',
       uri,
       headers,
     );
+
+    if (onProgress) {
+      fetchTask.progress((received, total) => {
+        const rec = Number(received);
+        const tot = Number(total);
+        if (tot > 0) {
+          onProgress({ received: rec, total: tot });
+        }
+      });
+    }
+
+    const res = await fetchTask;
     if (res.info().status < 200 || res.info().status >= 300) return null;
     const base64 = await ReactNativeBlobUtil.fs.readFile(res.path(), 'base64');
     const mime = uri.toLowerCase().includes('.png') ? 'image/png' : 'image/jpeg';
@@ -118,7 +135,7 @@ function drawBanner(l: L, incident: MappedIncident) {
   l.doc.text(`#${incident.id}`, MARGIN, 42);
 
   l.doc.setFontSize(9);
-  l.doc.text('Patrol App', l.pw - MARGIN, 28, { align: 'right' });
+  l.doc.text('Report Pro', l.pw - MARGIN, 28, { align: 'right' });
   l.doc.text(
     formatAppDateTime(new Date().toISOString()),
     l.pw - MARGIN,
@@ -297,7 +314,11 @@ function drawParagraph(l: L, text: string) {
   l.y += 6;
 }
 
-async function drawPhotos(l: L, incident: MappedIncident) {
+async function drawPhotos(
+  l: L,
+  incident: MappedIncident,
+  onImageProgress?: (imgIndex: number, progress: { received: number; total: number } | null) => void,
+) {
   const photos = incident.photos.filter(p => p.uri || p.imgPath);
   const n = photos.length;
   if (!n) return;
@@ -323,11 +344,6 @@ async function drawPhotos(l: L, incident: MappedIncident) {
     }
 
     const x = MARGIN + col * (PHOTO_SIZE + PHOTO_GAP);
-    const y = l.y - ROW_HEIGHT + (col === 0 ? 0 : 0); // l.y already moved by space()
-
-    // Since space(l) might have added a page, we need to track local y for current row
-    // Actually, space(l) moves l.y. If it's the start of a row, we moved it.
-    // Let's simplify:
     const currentY = l.y - ROW_HEIGHT;
 
     l.doc.setFont('helvetica', 'bold');
@@ -336,7 +352,7 @@ async function drawPhotos(l: L, incident: MappedIncident) {
     l.doc.text(`Photo ${i + 1}`, x, currentY + 8);
 
     const imageY = currentY + LABEL_H;
-    const dataUri = await loadImage(source);
+    const dataUri = await loadImage(source, (pData) => onImageProgress?.(i, pData));
 
     l.doc.setDrawColor(...C.line);
     l.doc.setFillColor(...C.panel);
@@ -368,7 +384,11 @@ async function drawPhotos(l: L, incident: MappedIncident) {
   l.y += 10;
 }
 
-async function drawSignature(l: L, incident: MappedIncident) {
+async function drawSignature(
+  l: L,
+  incident: MappedIncident,
+  onImageProgress?: (imgIndex: number, progress: { received: number; total: number } | null) => void,
+) {
   const hasSig = !!(incident.signatureUri || incident.signature);
   if (!hasSig) return;
 
@@ -376,7 +396,7 @@ async function drawSignature(l: L, incident: MappedIncident) {
 
   if (incident.signatureUri || (incident.signature && incident.signature.startsWith('data:'))) {
     const sigSource = incident.signatureUri || incident.signature!;
-    const dataUri = await loadImage(sigSource);
+    const dataUri = await loadImage(sigSource, (pData) => onImageProgress?.(0, pData));
     if (dataUri) {
       try {
         space(l, 100);
@@ -421,7 +441,7 @@ function footers(l: L, reportId: number) {
     l.doc.setFontSize(8);
     l.doc.setTextColor(...C.label);
     l.doc.text(
-      `Patrol App · Report #${reportId} · ${stamp}`,
+      `Report Pro · Report #${reportId} · ${stamp}`,
       l.pw / 2,
       l.ph - 16,
       { align: 'center' },
@@ -434,7 +454,28 @@ function footers(l: L, reportId: number) {
 
 export async function buildIncidentReportPdf(
   incident: MappedIncident,
+  onProgress?: DownloadProgressCallback,
 ): Promise<{ filePath: string; cachePath: string; base64: string }> {
+  if (onProgress) onProgress({ received: 5, total: 100 });
+
+  const photos = incident.photos.filter(p => p.uri || p.imgPath);
+  const sigSource = incident.signatureUri || incident.signature;
+  const isRemoteSig = sigSource && !sigSource.startsWith('data:');
+  const remotePhotoCount = photos.filter(p => !((p.uri || p.imgPath)?.startsWith('data:'))).length;
+  const totalRemoteImages = remotePhotoCount + (isRemoteSig ? 1 : 0);
+
+  const handleImageProgress = (imgIndex: number, pData: { received: number; total: number } | null) => {
+    if (!onProgress) return;
+    if (totalRemoteImages <= 0) return;
+    let fraction = 0;
+    if (pData && pData.total > 0) {
+      fraction = Math.min(1, Math.max(0, pData.received / pData.total));
+    }
+    const overallFraction = (imgIndex + fraction) / totalRemoteImages;
+    const pct = Math.round(5 + overallFraction * 80);
+    onProgress({ received: Math.min(85, Math.max(5, pct)), total: 100 });
+  };
+
   const doc = new jsPDF({ unit: 'pt', format: 'a4' });
   const l = layout(doc);
   const emergency = incident.emergencyServices as Record<string, unknown>;
@@ -501,13 +542,17 @@ export async function buildIncidentReportPdf(
     emptyNote(l, 'No emergency services were called.');
   }
 
-  await drawPhotos(l, incident);
-  await drawSignature(l, incident);
+  await drawPhotos(l, incident, (imgIdx, pData) => handleImageProgress(imgIdx, pData));
+  await drawSignature(l, incident, (imgIdx, pData) => handleImageProgress(photos.length + imgIdx, pData));
   footers(l, incident.id);
+
+  if (onProgress) onProgress({ received: 85, total: 100 });
 
   const fileName = `incident-report-${incident.id}.pdf`;
   const pdfBase64 = doc.output('datauristring').split(',')[1];
   const cachePath = `${ReactNativeBlobUtil.fs.dirs.CacheDir}/${fileName}`;
+
+  if (onProgress) onProgress({ received: 92, total: 100 });
 
   await ReactNativeBlobUtil.fs.writeFile(cachePath, pdfBase64, 'base64');
 
@@ -518,7 +563,7 @@ export async function buildIncidentReportPdf(
         await ReactNativeBlobUtil.MediaCollection.copyToMediaStore(
           {
             name: fileName,
-            parentFolder: 'PatrolApp',
+            parentFolder: 'Report Pro',
             mimeType: 'application/pdf',
           },
           'Download',
@@ -539,6 +584,8 @@ export async function buildIncidentReportPdf(
     savedPath = `${ReactNativeBlobUtil.fs.dirs.DocumentDir}/${fileName}`;
     await ReactNativeBlobUtil.fs.writeFile(savedPath, pdfBase64, 'base64');
   }
+
+  if (onProgress) onProgress({ received: 100, total: 100 });
 
   return { filePath: savedPath, cachePath, base64: pdfBase64 };
 }

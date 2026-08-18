@@ -13,7 +13,7 @@ import { Colors } from '../theme';
 
 export type { SelfieWatermarkJob };
 
-const appLogo = require('../../assets/opg-logo.png');
+const appLogo = require('../../assets/logo.png');
 const CAPTURE_WIDTH = 720;
 
 type Props = {

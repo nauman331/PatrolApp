@@ -609,7 +609,7 @@ const styles = StyleSheet.create({
   filterBtn: {
     padding: 8,
     borderRadius: Radii.sm,
-    backgroundColor: Colors.bgPage,
+    backgroundColor: Colors.bgAlt,
     position: 'relative',
   },
   filterBtnActive: {

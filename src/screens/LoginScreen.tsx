@@ -160,7 +160,7 @@ export default function LoginScreen({ }: LoginScreenProps) {
   };
 
   const handleManagerSubmit = async () => {
-    const email = managerEmail.trim();
+    const email = managerEmail.trim().toLowerCase();
     const password = managerPassword.trim();
 
     if (!email) {
@@ -213,11 +213,12 @@ export default function LoginScreen({ }: LoginScreenProps) {
         barStyle="light-content"
         backgroundColor={Colors.headerStart}
       />
-      <SafeAreaView style={styles.safe} edges={['top']}>
+      <SafeAreaView style={styles.safeTop} edges={['top']} />
+      <SafeAreaView style={styles.safeBody} edges={['bottom']}>
         <AuthKeyboardScroll ref={keyboardScrollRef} wrapFullScreen={false}>
           <View style={styles.header}>
             <View style={styles.logoWrap}>
-              <AppLogo variant="splash" centered={false} />
+              <AppLogo variant="header" centered={false} />
             </View>
             <Text style={styles.headerTitle}>Welcome Back</Text>
             <Text style={styles.headerSub}>
@@ -288,7 +289,7 @@ export default function LoginScreen({ }: LoginScreenProps) {
               <>
                 {guardError ? <AuthErrorBanner message={guardError} /> : null}
 
-                <Text style={styles.label}>PHONE NUMBER</Text>
+                <Text style={styles.label}>Phone Number</Text>
 
                 <View
                   ref={phoneFieldRef}
@@ -310,6 +311,8 @@ export default function LoginScreen({ }: LoginScreenProps) {
                     placeholder="+923350964001"
                     placeholderTextColor="#888"
                     keyboardType="phone-pad"
+                    autoCapitalize="none"
+                    autoCorrect={false}
                     editable={!loading}
                     underlineColorAndroid="transparent"
                   />
@@ -323,7 +326,7 @@ export default function LoginScreen({ }: LoginScreenProps) {
                         OTP: {devOtp}
                       </Text>
                     )}
-                    <Text style={styles.label}>ENTER OTP</Text>
+                    <Text style={styles.label}>Enter OTP</Text>
                     <View
                       ref={otpFieldRef}
                       collapsable={false}
@@ -344,6 +347,8 @@ export default function LoginScreen({ }: LoginScreenProps) {
                         placeholderTextColor="#888"
                         keyboardType="number-pad"
                         maxLength={6}
+                        autoCapitalize="none"
+                        autoCorrect={false}
                         editable={!loading}
                         underlineColorAndroid="transparent"
                       />
@@ -352,7 +357,7 @@ export default function LoginScreen({ }: LoginScreenProps) {
                   </>
                 )}
 
-                  <TouchableOpacity
+                <TouchableOpacity
                   style={styles.loginBtn}
                   onPress={handleGuardSubmit}
                   disabled={loading}
@@ -364,8 +369,8 @@ export default function LoginScreen({ }: LoginScreenProps) {
                         ? 'Verifying...'
                         : 'Sending OTP...'
                       : otpSent
-                        ? 'VERIFY'
-                        : 'SEND OTP'}
+                        ? 'Verify'
+                        : 'Send OTP'}
                   </Text>
                 </TouchableOpacity>
 
@@ -385,7 +390,7 @@ export default function LoginScreen({ }: LoginScreenProps) {
               <>
                 {managerError ? <AuthErrorBanner message={managerError} /> : null}
 
-                <Text style={styles.label}>EMAIL ADDRESS</Text>
+                <Text style={styles.label}>Email Address</Text>
                 <View
                   ref={managerEmailFieldRef}
                   collapsable={false}
@@ -413,7 +418,7 @@ export default function LoginScreen({ }: LoginScreenProps) {
                   <Mail size={18} color={Colors.textSecondary} />
                 </View>
 
-                <Text style={styles.label}>PASSWORD</Text>
+                <Text style={styles.label}>Password</Text>
                 <View
                   ref={managerPasswordFieldRef}
                   collapsable={false}
@@ -433,6 +438,8 @@ export default function LoginScreen({ }: LoginScreenProps) {
                     placeholder="••••••••"
                     placeholderTextColor="#888"
                     secureTextEntry={!showManagerPass}
+                    autoCapitalize="none"
+                    autoCorrect={false}
                     editable={!loading}
                     underlineColorAndroid="transparent"
                   />
@@ -476,7 +483,7 @@ export default function LoginScreen({ }: LoginScreenProps) {
                   <View style={styles.managerBtnInner}>
                     <Lock size={16} color={Colors.white} />
                     <Text style={styles.loginBtnText}>
-                      {loading ? 'Signing in...' : 'SIGN IN'}
+                      {loading ? 'Signing in...' : 'Sign In'}
                     </Text>
                   </View>
                 </TouchableOpacity>
@@ -491,8 +498,9 @@ export default function LoginScreen({ }: LoginScreenProps) {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.bg },
-  safe: { flex: 1, backgroundColor: Colors.bg },
+  container: { flex: 1, backgroundColor: Colors.headerStart },
+  safeTop: { backgroundColor: Colors.headerStart },
+  safeBody: { flex: 1, backgroundColor: Colors.white },
   header: {
     backgroundColor: Colors.headerStart,
     paddingHorizontal: 24,
@@ -515,7 +523,7 @@ const styles = StyleSheet.create({
 
   body: {
     flexGrow: 1,
-    backgroundColor: Colors.bg,
+    backgroundColor: Colors.white,
     padding: Spacing.lg,
     paddingTop: 30,
   },
@@ -536,10 +544,9 @@ const styles = StyleSheet.create({
   label: {
     fontSize: FontSizes.xs,
     color: '#666',
-    letterSpacing: 1.5,
+    letterSpacing: 0.5,
     fontWeight: '700',
     marginBottom: 14,
-    textTransform: 'uppercase',
   },
   inputWrap: {
     flexDirection: 'row',

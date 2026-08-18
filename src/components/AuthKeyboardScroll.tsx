@@ -171,20 +171,20 @@ export default AuthKeyboardScroll;
 const styles = StyleSheet.create({
   safe: {
     flex: 1,
-    backgroundColor: Colors.bg,
+    backgroundColor: 'transparent',
   },
   formScroll: {
     flex: 1,
-    backgroundColor: Colors.bg,
+    backgroundColor: 'transparent',
   },
   flex: { flex: 1 },
   scroll: {
     flex: 1,
-    backgroundColor: Colors.bg,
+    backgroundColor: 'transparent',
   },
   content: {
     flexGrow: 1,
-    backgroundColor: Colors.bg,
+    backgroundColor: 'transparent',
     paddingBottom: 16,
   },
 });

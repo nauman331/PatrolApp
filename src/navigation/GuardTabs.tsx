@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { View, StyleSheet, StatusBar } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { useSafeAreaInsets, initialWindowMetrics } from 'react-native-safe-area-context';
 import { Colors } from '../theme';
 import { NavBar } from '../components';
 import { Home, Route, AlertTriangle, ClipboardList, User } from 'lucide-react-native';
@@ -13,7 +13,7 @@ import ShiftsScreen from '../screens/ShiftsScreen';
 import ProfileScreen from '../screens/ProfileScreen';
 
 import { GUARD_BOTTOM_TAB_ROUTES } from './constants';
-import { useRoute } from '@react-navigation/native';
+import { useRoute, useNavigation } from '@react-navigation/native';
 
 /**
  * GuardTabs - Shared Layout for the main Guard application tabs
@@ -24,20 +24,36 @@ import { useRoute } from '@react-navigation/native';
  */
 export default function GuardTabs() {
   const route = useRoute<any>();
+  const navigation = useNavigation<any>();
+  const insets = useSafeAreaInsets();
+  const bottomInset = insets.bottom || initialWindowMetrics?.insets?.bottom || 0;
+
+  const getInitialIndex = () => {
+    const targetScreen = route.params?.screen || route.name;
+    if (targetScreen) {
+      const idx = GUARD_BOTTOM_TAB_ROUTES.indexOf(targetScreen as any);
+      if (idx !== -1) return idx;
+    }
+    return 0;
+  };
 
   // Use local state to manage the active tab
-  const [activeIndex, setActiveIndex] = useState(0);
+  const [activeIndex, setActiveIndex] = useState(getInitialIndex);
 
-  // Sync state if navigation happens via params (e.g. from navigateGuardBottomTab)
+  // Sync state if navigation happens via params or direct route name (e.g. GUARD_ROUTES.PATROL_TIMELINE)
   useEffect(() => {
-    const targetScreen = route.params?.screen;
+    const targetScreen = route.params?.screen || route.name;
     if (targetScreen) {
-        const idx = GUARD_BOTTOM_TAB_ROUTES.indexOf(targetScreen as any);
-        if (idx !== -1 && idx !== activeIndex) {
-            setActiveIndex(idx);
+      const idx = GUARD_BOTTOM_TAB_ROUTES.indexOf(targetScreen as any);
+      if (idx !== -1 && idx !== activeIndex) {
+        setActiveIndex(idx);
+        if (route.params?.screen) {
+          // Clear the param to prevent "sticky" navigation issues
+          navigation.setParams({ screen: undefined });
         }
+      }
     }
-  }, [route.params?.screen, activeIndex]);
+  }, [route.params?.screen, route.name, navigation, activeIndex]);
 
   const handleTabPress = (index: number) => {
     setActiveIndex(index);
@@ -81,12 +97,12 @@ export default function GuardTabs() {
         {GUARD_BOTTOM_TAB_ROUTES.map((_, i) => renderScreen(i))}
       </View>
 
-      <SafeAreaView edges={['bottom']} style={styles.navWrapper}>
+      <View style={[styles.navWrapper, { paddingBottom: bottomInset }]}>
         <NavBar
           items={navItems}
           onPress={handleTabPress}
         />
-      </SafeAreaView>
+      </View>
     </View>
   );
 }

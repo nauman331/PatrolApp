@@ -147,11 +147,10 @@ export default function ManagerReportsScreen() {
           : {}),
       };
 
-      const result = await dispatch(
+      const result =
         tab === 'patrol'
-          ? fetchManagerPatrolReports(params)
-          : fetchManagerIncidentReports(params)
-      );
+          ? await dispatch(fetchManagerPatrolReports(params))
+          : await dispatch(fetchManagerIncidentReports(params));
 
       if (fetchManagerPatrolReports.fulfilled.match(result) || fetchManagerIncidentReports.fulfilled.match(result)) {
         const data = result.payload as any;
@@ -593,7 +592,7 @@ const styles = StyleSheet.create({
   filterBtn: {
     padding: 8,
     borderRadius: Radii.sm,
-    backgroundColor: Colors.bgPage,
+    backgroundColor: Colors.bgAlt,
     position: 'relative',
   },
   filterBtnActive: {

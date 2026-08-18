@@ -11,8 +11,8 @@ const BOTTOM = 36;
 const GAP = 18;
 
 const C = {
-  navy: [26, 26, 46] as [number, number, number],
-  accent: [121, 31, 61] as [number, number, number],
+  navy: [56, 73, 89] as [number, number, number],
+  accent: [106, 137, 167] as [number, number, number],
   text: [33, 33, 33] as [number, number, number],
   label: [90, 90, 90] as [number, number, number],
   line: [220, 220, 228] as [number, number, number],
@@ -69,7 +69,7 @@ function drawBanner(l: L, data: ManagerPatrolReportDetailData) {
   l.doc.text(data.date_label, MARGIN, 42);
 
   l.doc.setFontSize(9);
-  l.doc.text('Patrol App', l.pw - MARGIN, 28, { align: 'right' });
+  l.doc.text('Report Pro', l.pw - MARGIN, 28, { align: 'right' });
   l.doc.text(
     formatAppDateTime(new Date().toISOString()),
     l.pw - MARGIN,
@@ -158,7 +158,7 @@ function footers(l: L, reportTitle: string) {
     l.doc.setFontSize(8);
     l.doc.setTextColor(...C.label);
     l.doc.text(
-      `Patrol App · ${reportTitle} · ${stamp}`,
+      `Report Pro · ${reportTitle} · ${stamp}`,
       l.pw / 2,
       l.ph - 16,
       { align: 'center' },
@@ -169,9 +169,13 @@ function footers(l: L, reportTitle: string) {
   }
 }
 
+export type DownloadProgressCallback = (progress: { received: number; total: number } | null) => void;
+
 export async function buildPatrolReportPdf(
   data: ManagerPatrolReportDetailData,
+  onProgress?: DownloadProgressCallback,
 ): Promise<{ filePath: string; cachePath: string; base64: string }> {
+  if (onProgress) onProgress({ received: 10, total: 100 });
   const doc = new jsPDF({ unit: 'pt', format: 'a4' });
   const l = layout(doc);
 
@@ -237,11 +241,17 @@ export async function buildPatrolReportPdf(
 
   footers(l, `Patrol Report - ${data.guard.name}`);
 
+  if (onProgress) onProgress({ received: 60, total: 100 });
+
   const fileName = `patrol-report-${data.guard.id}-${data.date}.pdf`;
   const pdfBase64 = doc.output('datauristring').split(',')[1];
   const cachePath = `${ReactNativeBlobUtil.fs.dirs.CacheDir}/${fileName}`;
 
+  if (onProgress) onProgress({ received: 85, total: 100 });
+
   await ReactNativeBlobUtil.fs.writeFile(cachePath, pdfBase64, 'base64');
+
+  if (onProgress) onProgress({ received: 92, total: 100 });
 
   let savedPath = cachePath;
   if (Platform.OS === 'android') {
@@ -250,7 +260,7 @@ export async function buildPatrolReportPdf(
         await ReactNativeBlobUtil.MediaCollection.copyToMediaStore(
           {
             name: fileName,
-            parentFolder: 'PatrolApp',
+            parentFolder: 'Report Pro',
             mimeType: 'application/pdf',
           },
           'Download',
@@ -271,6 +281,8 @@ export async function buildPatrolReportPdf(
     savedPath = `${ReactNativeBlobUtil.fs.dirs.DocumentDir}/${fileName}`;
     await ReactNativeBlobUtil.fs.writeFile(savedPath, pdfBase64, 'base64');
   }
+
+  if (onProgress) onProgress({ received: 100, total: 100 });
 
   return { filePath: savedPath, cachePath, base64: pdfBase64 };
 }

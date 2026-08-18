@@ -3,16 +3,14 @@ import ReactNativeBlobUtil from 'react-native-blob-util';
 import type { MappedIncident } from './incidentsMapper';
 import { buildIncidentReportPdf } from './incidentPdfGenerator';
 
-/** Generate a PDF on-device from the full incident report and save to Downloads. */
-export async function downloadIncidentPdf(incident: MappedIncident): Promise<void> {
-  try {
-    const savedRef = await buildIncidentReportPdf(incident);
-    const fileName = `incident-report-${incident.id}.pdf`;
+export type DownloadProgressCallback = (progress: { received: number; total: number } | null) => void;
 
+export async function openPdfFile(filePath: string): Promise<boolean> {
+  try {
     if (Platform.OS === 'android') {
-      const openTarget = savedRef.startsWith('content://')
-        ? savedRef
-        : `file://${savedRef}`;
+      const openTarget = filePath.startsWith('content://') || filePath.startsWith('file://')
+        ? filePath
+        : `file://${filePath}`;
       try {
         await ReactNativeBlobUtil.android.actionViewIntent(
           openTarget,
@@ -21,21 +19,32 @@ export async function downloadIncidentPdf(incident: MappedIncident): Promise<voi
       } catch {
         // Opening is optional; file is already in Downloads.
       }
-      Alert.alert(
-        'Report Downloaded',
-        `Incident Report #${incident.id} has been saved successfully to your Downloads folder.`,
-      );
-      return;
+      return true;
     }
 
-    await ReactNativeBlobUtil.ios.openDocument(savedRef);
-    Alert.alert(
-      'Report Generated',
-      `Incident Report #${incident.id} is ready to view or share.`,
-    );
+    await ReactNativeBlobUtil.ios.openDocument(filePath);
+    return true;
+  } catch (err) {
+    console.error('openPdfFile failed:', err);
+    return false;
+  }
+}
+
+/** Generate a PDF on-device from the full incident report and save to Downloads. */
+export async function downloadIncidentPdf(
+  incident: MappedIncident,
+  onProgress?: DownloadProgressCallback,
+): Promise<string | boolean> {
+  try {
+    const res = await buildIncidentReportPdf(incident, onProgress);
+    const savedRef = res.filePath;
+
+    await openPdfFile(savedRef);
+    return savedRef;
   } catch (err: unknown) {
     const message =
       err instanceof Error ? err.message : 'Unknown error while saving PDF';
-    Alert.alert('Could not create PDF', message);
+    console.error('downloadIncidentPdf failed:', message);
+    return false;
   }
 }
