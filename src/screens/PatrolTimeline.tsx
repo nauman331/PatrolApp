@@ -12,13 +12,13 @@ import {
   Platform,
   PermissionsAndroid,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { useSafeAreaInsets, initialWindowMetrics } from 'react-native-safe-area-context';
 import locationService from '../services/LocationService';
 import { useFocusEffect } from '@react-navigation/native';
 import { useSelector } from 'react-redux';
 import { Colors, FontSizes, Radii, Shadows } from '../theme';
 import { NavBar } from '../components';
-import { PatrolTimelineShimmer } from '../components/Shimmer';
+import { PatrolTimelineShimmer, ShimmerBox } from '../components/Shimmer';
 import {
   AlertTriangle,
   ClipboardList,
@@ -58,6 +58,7 @@ import { usePatrolNfcScan } from '../hooks/usePatrolNfcScan';
 import { stopNfc } from '../services/nfcReader';
 import {
   getActiveShiftSession,
+  getActiveShiftSessionSync,
   patchActiveShiftSession,
   saveActiveShiftSession,
   type ActiveShiftSession,
@@ -105,7 +106,7 @@ export default function PatrolTimeline() {
   const [patrolDate, setPatrolDate] = useState<string | null>(null);
   const [lastScannedGate, setLastScannedGate] = useState<string | null>(null);
   const [activeSession, setActiveSession] = useState<ActiveShiftSession | null>(
-    null,
+    () => getActiveShiftSessionSync(),
   );
   const isMountedRef = useRef(true);
   const locationRef = useRef('');
@@ -121,6 +122,8 @@ export default function PatrolTimeline() {
   }, []);
 
   useEffect(() => {
+    const sync = getActiveShiftSessionSync();
+    if (sync) setActiveSession(sync);
     getActiveShiftSession().then(session => {
       if (!isMountedRef.current) return;
       setActiveSession(session);
@@ -134,7 +137,7 @@ export default function PatrolTimeline() {
         setLoadError(null);
       }
       try {
-        let session = await getActiveShiftSession();
+        let session = getActiveShiftSessionSync() ?? (await getActiveShiftSession());
 
         // Auto-discover active shift if session is missing but guard is checked in on server
         if (!session && guardId) {
@@ -267,7 +270,7 @@ export default function PatrolTimeline() {
     try {
       const session = await getActiveShiftSession();
       if (!session) {
-        promptCheckInRequired(() => navigation.navigate(GUARD_ROUTES.SHIFTS));
+        promptCheckInRequired(() => navigateGuardBottomTab(navigation, 3));
         return false;
       }
 
@@ -403,9 +406,23 @@ export default function PatrolTimeline() {
     },
   });
 
+  const reportsRef = useRef(reports);
+  reportsRef.current = reports;
+  const activeSessionRef = useRef(activeSession);
+  activeSessionRef.current = activeSession;
+
   useFocusEffect(
     useCallback(() => {
-      void loadPatrolsRef.current();
+      const syncSession = getActiveShiftSessionSync();
+      if (syncSession) {
+        setActiveSession(syncSession);
+      }
+      const hasExistingData =
+        reportsRef.current.length > 0 ||
+        activeReportRef.current != null ||
+        activeSessionRef.current != null ||
+        syncSession != null;
+      void loadPatrolsRef.current({ silent: hasExistingData });
     }, []),
   );
 
@@ -430,7 +447,7 @@ export default function PatrolTimeline() {
       return;
     }
     if (!hasCheckedInShift) {
-      promptCheckInRequired(() => navigation.navigate(GUARD_ROUTES.SHIFTS));
+      promptCheckInRequired(() => navigateGuardBottomTab(navigation, 3));
       return;
     }
     if (hasRunningPatrol) {
@@ -461,15 +478,18 @@ export default function PatrolTimeline() {
   ]
     .filter(Boolean)
     .join(' · ');
-  const screenTitle = activeReport ? 'Patrolling' : 'Patrol';
+  const screenTitle = 'Patrolling';
 
-  const showShimmer = loading || starting;
+  const showShimmer = starting;
+
+  const insets = useSafeAreaInsets();
+  const topInset = insets.top || initialWindowMetrics?.insets?.top || 0;
 
   return (
     <View style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor={Colors.headerStart} />
 
-      <SafeAreaView style={styles.safeTop} edges={['top']}>
+      <View style={[styles.headerWrapper, { paddingTop: topInset }]}>
         <View style={styles.header}>
           <View style={styles.hdrRow}>
             <View style={styles.hdrTitleWrap}>
@@ -492,7 +512,7 @@ export default function PatrolTimeline() {
                 <Text style={styles.countBadgeText}>
                   {loading
                     ? '...'
-                    : `${completedRounds.length} done · ${runningRounds.length} running`}
+                    : `${completedRounds.length} Done · ${runningRounds.length} Running`}
                 </Text>
               </View>
 
@@ -513,19 +533,37 @@ export default function PatrolTimeline() {
            */}
             </View>
           </View>
-          <Text style={styles.hdrSub}>{patrolHeaderSub}</Text>
+          {loading && !patrolHeaderSub ? (
+            <ShimmerBox
+              width={150}
+              height={11}
+              tone="dark"
+              borderRadius={5}
+              style={{ marginTop: 2 }}
+            />
+          ) : (
+            <Text style={styles.hdrSub}>{patrolHeaderSub}</Text>
+          )}
         </View>
-      </SafeAreaView>
+      </View>
 
       <View style={styles.safeBody}>
         <View style={styles.body}>
         {showShimmer ? (
-          <PatrolTimelineShimmer />
+          <ScrollView
+            style={styles.scroll}
+            contentContainerStyle={styles.scrollContent}
+            showsVerticalScrollIndicator={false}
+            scrollEnabled={false}
+          >
+            <PatrolTimelineShimmer />
+          </ScrollView>
         ) : (
           <ScrollView
             style={styles.scroll}
             contentContainerStyle={styles.scrollContent}
             showsVerticalScrollIndicator={false}
+            scrollEnabled={!loading}
             refreshControl={
               <RefreshControl
                 refreshing={refreshing}
@@ -546,7 +584,9 @@ export default function PatrolTimeline() {
               </View>
             ) : null}
 
-            {activeReport ? (
+            {loading && !activeReport && reports.length === 0 ? (
+              <PatrolTimelineShimmer />
+            ) : activeReport ? (
               <View style={[styles.summaryCard, Shadows.card]}>
                 <View style={styles.summaryTop}>
                   <View style={{ flex: 1 }}>
@@ -568,7 +608,7 @@ export default function PatrolTimeline() {
                   </View>
                   <View style={styles.progressRing}>
                     <Text style={styles.progressRingVal}>{progressPct}%</Text>
-                    <Text style={styles.progressRingLbl}>done</Text>
+                    <Text style={styles.progressRingLbl}>Done</Text>
                   </View>
                 </View>
                 <View style={styles.progressBar}>
@@ -721,7 +761,7 @@ export default function PatrolTimeline() {
             {historyReports.length > 0 ? (
               <View style={styles.section}>
                 <Text style={styles.sectionTitle}>
-                  Today&apos;s patrol rounds ({historyReports.length})
+                  Today&apos;s Patrol Rounds ({historyReports.length})
                 </Text>
                 {historyReports.map(report => {
                   const done = getCompletedCount(report);
@@ -784,7 +824,7 @@ export default function PatrolTimeline() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.headerStart },
-  safeTop: { backgroundColor: Colors.headerStart },
+  headerWrapper: { backgroundColor: Colors.headerStart },
   safeBody: { flex: 1, backgroundColor: Colors.bgAlt },
   header: {
     backgroundColor: Colors.headerStart,
@@ -847,7 +887,7 @@ const styles = StyleSheet.create({
   addBtnText: { fontSize: 11, fontWeight: '700', color: Colors.white },
   body: { flex: 1 },
   scroll: { flex: 1 },
-  scrollContent: { paddingTop: 14, paddingBottom: 24, paddingHorizontal: 14 },
+  scrollContent: { paddingTop: 14, paddingBottom: 80, paddingHorizontal: 14 },
   summaryCard: {
     marginBottom: 10,
     backgroundColor: Colors.bgCard,
@@ -865,7 +905,6 @@ const styles = StyleSheet.create({
     fontSize: FontSizes.xs,
     fontWeight: '700',
     color: Colors.textMuted,
-    textTransform: 'uppercase',
     letterSpacing: 0.5,
   },
   summaryTime: {
@@ -904,7 +943,6 @@ const styles = StyleSheet.create({
     fontSize: 9,
     fontWeight: '600',
     color: Colors.accent,
-    textTransform: 'uppercase',
   },
   progressBar: {
     height: 6,
@@ -1027,8 +1065,7 @@ const styles = StyleSheet.create({
     fontSize: FontSizes.xs,
     fontWeight: '700',
     color: Colors.textMuted,
-    letterSpacing: 1,
-    textTransform: 'uppercase',
+    letterSpacing: 0.5,
     marginBottom: 10,
   },
   timeline: { position: 'relative' },

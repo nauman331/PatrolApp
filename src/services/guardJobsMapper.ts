@@ -17,6 +17,7 @@ export interface MappedShift {
   status: ShiftStatus;
   signInTime?: string;
   sortTimestamp: number;
+  endTimestamp?: number;
   progress?: number;
   progressLabel?: string;
   // SOP / Docs
@@ -166,19 +167,41 @@ function parseFlexibleDate(value: unknown): number | null {
   return null;
 }
 
-function combineDateAndTime(dateStr: string, timeStr: string): number | null {
+export function combineDateAndTime(dateStr: string, timeStr: string): number | null {
   const dateOnly = dateStr.trim().slice(0, 10);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(dateOnly)) return null;
 
   const trimmedTime = timeStr.trim();
-  const clockMatch = trimmedTime.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?/);
-  if (clockMatch) {
-    const iso = `${dateOnly}T${clockMatch[1].padStart(2, '0')}:${clockMatch[2]}:${clockMatch[3] ?? '00'}`;
+
+  // If timeStr is a range like "08:00 – 15:50" or "08:00 AM - 03:50 PM", extract the end time part
+  let targetTime = trimmedTime;
+  if (trimmedTime.includes('–') || trimmedTime.includes('-')) {
+    const parts = trimmedTime.split(/–|-/);
+    if (parts.length >= 2) {
+      targetTime = parts[parts.length - 1].trim();
+    }
+  }
+
+  const match = targetTime.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(AM|PM|am|pm)?/i);
+  if (match) {
+    let hours = parseInt(match[1], 10);
+    const minutes = parseInt(match[2], 10);
+    const seconds = match[3] ? parseInt(match[3], 10) : 0;
+    const ampm = match[4]?.toUpperCase();
+
+    if (ampm === 'PM' && hours < 12) hours += 12;
+    if (ampm === 'AM' && hours === 12) hours = 0;
+
+    const hh = String(hours).padStart(2, '0');
+    const mm = String(minutes).padStart(2, '0');
+    const ss = String(seconds).padStart(2, '0');
+
+    const iso = `${dateOnly}T${hh}:${mm}:${ss}`;
     const parsed = new Date(iso);
     if (!Number.isNaN(parsed.getTime())) return parsed.getTime();
   }
 
-  const embedded = parseFlexibleDate(trimmedTime);
+  const embedded = parseFlexibleDate(targetTime);
   if (embedded != null) return embedded;
 
   return parseFlexibleDate(`${dateOnly}T23:59:59`);
@@ -218,7 +241,7 @@ function getShiftStartTimestamp(row: Record<string, unknown>): number | null {
   return null;
 }
 
-function getShiftEndTimestamp(row: Record<string, unknown>): number | null {
+export function getShiftEndTimestamp(row: Record<string, unknown>): number | null {
   const endDatetime = parseFlexibleDate(
     row.end_datetime ?? row.end_at ?? row.shift_end_datetime,
   );
@@ -230,6 +253,7 @@ function getShiftEndTimestamp(row: Record<string, unknown>): number | null {
     row.shift_end,
     row.to_time,
     row.endTime,
+    row.time,
   );
 
   if (shiftDate && endTime) {
@@ -269,6 +293,27 @@ function resolveShiftStatus(
     return 'done';
   }
 
+  const now = Date.now();
+  const endTs = getShiftEndTimestamp(row);
+
+  // If shift scheduled end time has passed (endTs <= now):
+  if (endTs != null && endTs <= now) {
+    // If guard checked in earlier today, shift auto-completed ('done')
+    if (
+      hasTruthyCheckField(row, [
+        'checked_in_at',
+        'checkin_time',
+        'check_in_time',
+        'sign_in_time',
+        'checked_in',
+        'is_checked_in',
+      ])
+    ) {
+      return 'done';
+    }
+    return 'missed';
+  }
+
   if (
     hasTruthyCheckField(row, [
       'checked_in_at',
@@ -296,9 +341,7 @@ function resolveShiftStatus(
     return 'done';
   }
 
-  const now = Date.now();
   const startTs = getShiftStartTimestamp(row);
-  const endTs = getShiftEndTimestamp(row);
 
   if (apiStatus === 'missed') {
     return 'missed';
@@ -306,10 +349,6 @@ function resolveShiftStatus(
 
   if (apiStatus === 'active') {
     return 'active';
-  }
-
-  if (endTs != null && endTs < now) {
-    return 'missed';
   }
 
   const shiftDate = getShiftDateRaw(row);
@@ -502,6 +541,8 @@ export function mapApiJobToShift(job: unknown): MappedShift | null {
         ? row.completion_percent
         : undefined;
 
+  const endTimestamp = getShiftEndTimestamp(row) ?? undefined;
+
   return {
     site,
     id: pickString(row.reference, row.shift_code, row.code) || `#${rosterId}`,
@@ -514,6 +555,7 @@ export function mapApiJobToShift(job: unknown): MappedShift | null {
     status,
     signInTime: signInTime || undefined,
     sortTimestamp: parseSortTimestamp(row),
+    endTimestamp,
     progress,
     progressLabel:
       typeof row.progress_label === 'string'
@@ -632,6 +674,8 @@ export interface ActiveShiftRef {
   rosterId: string | number;
   shiftId?: string;
   site?: string;
+  endTimestamp?: number;
+  endTime?: string;
 }
 
 export function shiftMatchesActiveRef(
@@ -649,7 +693,13 @@ export function isThisShiftOngoing(
   shift: MappedShift,
   session: ActiveShiftRef | null,
 ): boolean {
+  if (shift.endTimestamp && Date.now() >= shift.endTimestamp) {
+    return false;
+  }
   if (session) {
+    if (session.endTimestamp && Date.now() >= session.endTimestamp) {
+      return false;
+    }
     return shiftMatchesActiveRef(shift, session);
   }
   return shift.status === 'active';
@@ -661,6 +711,9 @@ export function findBlockingActiveShift(
   session: ActiveShiftRef | null,
 ): MappedShift | ActiveShiftRef | null {
   if (session && !shiftMatchesActiveRef(forShift, session)) {
+    if (session.endTimestamp && Date.now() >= session.endTimestamp) {
+      return null;
+    }
     return session;
   }
 
@@ -671,7 +724,9 @@ export function findBlockingActiveShift(
   return (
     mapped.find(
       s =>
-        s.status === 'active' && !shiftMatchesActiveRef(forShift, s),
+        s.status === 'active' &&
+        (!s.endTimestamp || Date.now() < s.endTimestamp) &&
+        !shiftMatchesActiveRef(forShift, s),
     ) ?? null
   );
 }

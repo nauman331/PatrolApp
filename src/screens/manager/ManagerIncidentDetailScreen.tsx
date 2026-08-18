@@ -35,6 +35,7 @@ import {
 } from '../../services/managerApi';
 import { formatAppDateTime } from '../../services/incidentsMapper';
 import { shareReport } from '../../services/managerReportActions';
+import { DownloadButton } from '../../components/DownloadButton';
 
 type Props = ManagerStackScreenProps<'ManagerIncidentDetail'>;
 
@@ -128,13 +129,13 @@ export default function ManagerIncidentDetailScreen({ route }: Props) {
 
             {data ? (
               <View style={styles.actionRow}>
-                <TouchableOpacity
-                  style={[styles.actionBtn, Shadows.card]}
-                  onPress={() => shareReport('incident', data, 'download')}
-                >
-                  <Download size={16} color={Colors.accent} />
-                  <Text style={styles.actionBtnText}>Download</Text>
-                </TouchableOpacity>
+                <DownloadButton
+                  label="Download"
+                  style={{ flex: 1 }}
+                  onDownload={async (onProgress) => {
+                    return await shareReport('incident', data, 'download', onProgress);
+                  }}
+                />
                 <TouchableOpacity
                   style={[styles.actionBtn, Shadows.card]}
                   onPress={() => shareReport('incident', data, 'share')}

@@ -4,33 +4,33 @@
 
 export const Colors = {
   // ── Brand / Accent ──────────────────────────────────────
-  accent: '#791f3d', // primary CTA, badges, highlights
-  accentLight: '#f5e8ec', // soft tint backgrounds
-  accentDark: '#5a1630', // pressed states
-  accentAlpha12: 'rgba(121,31,61,0.12)',
-  accentAlpha25: 'rgba(121,31,61,0.25)',
-  accentAlpha30: 'rgba(121,31,61,0.30)',
+  accent: '#6A89A7', // primary CTA, badges, highlights
+  accentLight: '#BDDDFC', // soft tint backgrounds
+  accentDark: '#384959', // pressed states
+  accentAlpha12: 'rgba(106, 137, 167, 0.12)',
+  accentAlpha25: 'rgba(106, 137, 167, 0.25)',
+  accentAlpha30: 'rgba(106, 137, 167, 0.30)',
 
   // ── Neutral / Background ─────────────────────────────────
-  bg: '#FFFFFF', // main screen background
-  bgAlt: '#e9e5e5', // secondary/alt background
+  bg: '#BDDDFC', // main screen background
+  bgAlt: '#f4f7f9', // secondary/alt background
   bgCard: '#FFFFFF', // card surfaces
-  bgInput: '#fefefe', // input fields
+  bgInput: '#FFFFFF', // input fields
 
   // ── Dark surfaces (patrol timeline / report) ─────────────
-  darkBg: '#FFFFFF',
-  darkCard: '#F7F8FC',
+  darkBg: '#384959',
+  darkCard: '#FFFFFF',
   darkBorder: '#E8E8F0',
 
   // ── Header gradients ─────────────────────────────────────
-  headerStart: '#1a1a2e',
-  headerEnd: '#0f3460',
-  mgrHeaderStart: '#1a1a2e',
-  mgrHeaderEnd: '#0f3460',
+  headerStart: '#384959',
+  headerEnd: '#6A89A7',
+  mgrHeaderStart: '#384959',
+  mgrHeaderEnd: '#6A89A7',
 
   // ── Text ─────────────────────────────────────────────────
-  textPrimary: '#1a1a2e',
-  textSecondary: '#888888',
+  textPrimary: '#384959',
+  textSecondary: '#6A89A7',
   textMuted: '#BBBBBB',
   textOnDark: '#FFFFFF',
   textOnDarkMuted: 'rgba(255,255,255,0.45)',
@@ -42,18 +42,18 @@ export const Colors = {
   warningLight: '#fff7ed',
   danger: '#e53e3e',
   dangerLight: '#fde8e8',
-  info: '#3b82f6',
-  infoLight: '#e8f0fe',
+  info: '#88BDF2',
+  infoLight: '#BDDDFC',
 
   // ── Borders & dividers ───────────────────────────────────
   border: '#E8E8F0',
-  borderDark: '#2a2a35',
+  borderDark: '#384959',
 
   // ── Navigation ───────────────────────────────────────────
   navBg: '#FFFFFF',
   navBgDark: '#FFFFFF',
   navBgMgr: '#FFFFFF',
-  navActive: '#791f3d',
+  navActive: '#6A89A7',
   navInactive: '#BBBBBB',
 
   // ── Misc ─────────────────────────────────────────────────

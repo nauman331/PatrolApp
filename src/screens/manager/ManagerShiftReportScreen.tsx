@@ -27,6 +27,7 @@ import {
 } from '../../services/managerApi';
 import { formatFullDisplayDate } from '../../services/guardJobsMapper';
 import { shareReport } from '../../services/managerReportActions';
+import { DownloadButton } from '../../components/DownloadButton';
 
 type Props = ManagerStackScreenProps<'ManagerShiftReport'>;
 
@@ -151,13 +152,13 @@ export default function ManagerShiftReportScreen({ route }: Props) {
 
                 {data ? (
                   <View style={styles.actionRow}>
-                    <TouchableOpacity
-                      style={[styles.actionBtn, Shadows.card]}
-                      onPress={() => shareReport('patrol', data, 'download')}
-                    >
-                      <Download size={16} color={Colors.accent} />
-                      <Text style={styles.actionBtnText}>Download</Text>
-                    </TouchableOpacity>
+                    <DownloadButton
+                      label="Download"
+                      style={{ flex: 1 }}
+                      onDownload={async (onProgress) => {
+                        return await shareReport('patrol', data, 'download', onProgress);
+                      }}
+                    />
                     <TouchableOpacity
                       style={[styles.actionBtn, Shadows.card]}
                       onPress={() => shareReport('patrol', data, 'share')}

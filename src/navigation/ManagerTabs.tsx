@@ -1,10 +1,10 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { View, StyleSheet, StatusBar } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { useSafeAreaInsets, initialWindowMetrics } from 'react-native-safe-area-context';
 import { Colors } from '../theme';
 import { NavBar } from '../components';
 import { Home, Users, ClipboardList, Calendar, User } from 'lucide-react-native';
-import { useRoute } from '@react-navigation/native';
+import { useRoute, useNavigation } from '@react-navigation/native';
 
 // Import the manager tab screens
 import {
@@ -22,17 +22,23 @@ import { MANAGER_BOTTOM_TAB_ROUTES } from './constants';
  */
 export default function ManagerTabs() {
   const route = useRoute<any>();
+  const navigation = useNavigation<any>();
+  const insets = useSafeAreaInsets();
+  const bottomInset = insets.bottom || initialWindowMetrics?.insets?.bottom || 0;
   const [activeIndex, setActiveIndex] = useState(0);
 
   useEffect(() => {
-    const targetScreen = route.params?.screen;
+    const targetScreen = route.params?.screen || route.name;
     if (targetScreen) {
-        const idx = MANAGER_BOTTOM_TAB_ROUTES.indexOf(targetScreen as any);
-        if (idx !== -1 && idx !== activeIndex) {
-            setActiveIndex(idx);
+      const idx = MANAGER_BOTTOM_TAB_ROUTES.indexOf(targetScreen as any);
+      if (idx !== -1) {
+        setActiveIndex(idx);
+        if (route.params?.screen) {
+          navigation.setParams({ screen: undefined });
         }
+      }
     }
-  }, [route.params?.screen, activeIndex]);
+  }, [route.params?.screen, route.name, navigation]);
 
   const handleTabPress = (index: number) => {
     setActiveIndex(index);
@@ -71,13 +77,13 @@ export default function ManagerTabs() {
         {MANAGER_BOTTOM_TAB_ROUTES.map((_, i) => renderScreen(i))}
       </View>
 
-      <SafeAreaView edges={['bottom']} style={styles.navWrapper}>
+      <View style={[styles.navWrapper, { paddingBottom: bottomInset }]}>
         <NavBar
           variant="mgr"
           items={navItems}
           onPress={handleTabPress}
         />
-      </SafeAreaView>
+      </View>
     </View>
   );
 }

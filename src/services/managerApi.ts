@@ -58,7 +58,7 @@ async function managerGet<T>(
 
   try {
     if (__DEV__) {
-      console.log('[PatrolApp] GET', path, params ?? '');
+      console.log('[Report Pro] GET', path, params ?? '');
     }
 
     const response = await apiClient.get(path, { params });
@@ -78,7 +78,7 @@ async function managerGet<T>(
     };
   } catch (error: unknown) {
     if (__DEV__) {
-      console.warn('[PatrolApp] GET failed:', path, error);
+      console.warn('[Report Pro] GET failed:', path, error);
     }
     return {
       success: false,
@@ -96,7 +96,7 @@ async function managerPost<T>(
 
   try {
     if (__DEV__) {
-      console.log('[PatrolApp] POST', path, data ?? '');
+      console.log('[Report Pro] POST', path, data ?? '');
     }
 
     const response = await apiClient.post(path, data);
@@ -116,7 +116,7 @@ async function managerPost<T>(
     };
   } catch (error: unknown) {
     if (__DEV__) {
-      console.warn('[PatrolApp] POST failed:', path, error);
+      console.warn('[Report Pro] POST failed:', path, error);
     }
     return {
       success: false,
@@ -704,6 +704,13 @@ export type ManagerRosterShiftsData = {
   start_date: string;
   end_date: string;
   assignments: ManagerShiftAssignment[];
+  pagination?: {
+    total?: number;
+    per_page?: number;
+    current_page?: number;
+    last_page?: number;
+    has_more?: boolean;
+  };
 };
 
 export type GetManagerRosterShiftsParams = {
@@ -760,6 +767,13 @@ export type ManagerRosterSitesData = {
   total_sites: number;
   sites_label: string;
   sites: ManagerSiteAssignment[];
+  pagination?: {
+    total?: number;
+    per_page?: number;
+    current_page?: number;
+    last_page?: number;
+    has_more?: boolean;
+  };
 };
 
 export type GetManagerRosterSitesParams = {

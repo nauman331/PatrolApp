@@ -35,7 +35,7 @@ const apiClient: AxiosInstance = axios.create({
 });
 
 if (__DEV__) {
-    console.log('[PatrolApp] API client baseURL:', API_URL);
+    console.log('[Report Pro] API client baseURL:', API_URL);
 }
 
 /**
@@ -51,7 +51,7 @@ apiClient.interceptors.request.use(
             if (token) {
                 config.headers.Authorization = `Bearer ${token}`;
             } else if (__DEV__) {
-                console.warn('[PatrolApp] API request without auth token:', config.url);
+                console.warn('[Report Pro] API request without auth token:', config.url);
             }
         } catch (error) {
             console.error('Error getting auth token:', error);

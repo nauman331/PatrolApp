@@ -25,7 +25,7 @@ import {
   PenLine,
 } from 'lucide-react-native';
 import { useGuardNavigation } from '../navigation/utils';
-import { GUARD_ROUTES } from '../navigation/constants';
+import { GUARD_ROUTES, navigateGuardBottomTab } from '../navigation/constants';
 
 export default function AddPatrolReport() {
   const navigation = useGuardNavigation();
@@ -178,7 +178,7 @@ export default function AddPatrolReport() {
 
           <TouchableOpacity
             style={styles.submitBtn}
-            onPress={() => navigation.navigate(GUARD_ROUTES.PATROL_TIMELINE)}
+            onPress={() => navigateGuardBottomTab(navigation, 1)}
           >
             <Text style={styles.submitText}>Submit Report</Text>
           </TouchableOpacity>

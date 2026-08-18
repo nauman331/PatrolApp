@@ -3,7 +3,7 @@ import { StatusBar, StyleSheet, View } from 'react-native';
 import { initNfc } from './src/services/nfcReader';
 import locationService from './src/services/LocationService';
 import { NavigationContainer } from '@react-navigation/native';
-import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { SafeAreaProvider, initialWindowMetrics } from 'react-native-safe-area-context';
 import { RootNavigator } from './src/navigation';
 import { Provider, useSelector } from 'react-redux';
 import { PersistGate } from 'redux-persist/integration/react';
@@ -74,7 +74,7 @@ export default function App() {
   }, []);
 
   return (
-    <SafeAreaProvider>
+    <SafeAreaProvider initialMetrics={initialWindowMetrics}>
       <Provider store={store}>
         <PersistGate
           loading={null}

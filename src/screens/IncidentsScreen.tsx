@@ -45,6 +45,7 @@ import {
   type MappedIncident,
 } from '../services/incidentsMapper';
 import { downloadIncidentPdf } from '../services/incidentPdfDownload';
+import { DownloadButton } from '../components/DownloadButton';
 
 const sevConfig: Record<
   IncidentSeverity,
@@ -124,7 +125,7 @@ export default function IncidentsScreen() {
             <Text style={styles.hdrTitle}>Incidents</Text>
             <View style={styles.openBadge}>
               <Text style={styles.openBadgeText}>
-                {loading ? '...' : `${meta.count} REPORTS`}
+                {loading ? '...' : `${meta.count} ${meta.count === 1 ? 'Report' : 'Reports'}`}
               </Text>
             </View>
           </View>
@@ -198,7 +199,7 @@ export default function IncidentsScreen() {
                         style={[styles.sevBadge, { backgroundColor: sev.bg }]}
                       >
                         <Text style={[styles.sevText, { color: sev.color }]}>
-                          {inc.severity}
+                          {inc.severity.charAt(0).toUpperCase() + inc.severity.slice(1).toLowerCase()}
                         </Text>
                       </View>
                     </View>
@@ -251,27 +252,17 @@ export default function IncidentsScreen() {
                       onPress={() => openReport(inc)}
                       activeOpacity={0.85}
                     >
-                      <Text style={styles.viewReportText}>View report</Text>
+                      <Text style={styles.viewReportText}>View Report</Text>
                       <ChevronRight size={16} color={Colors.accent} />
                     </TouchableOpacity>
 
-{/*
-                    <TouchableOpacity
-                      style={styles.actionPdf}
-                      onPress={() => handleDownloadPdf(inc)}
-                      disabled={isDownloading}
-                      activeOpacity={0.85}
-                    >
-                      {isDownloading ? (
-                        <ActivityIndicator size="small" color={Colors.white} />
-                      ) : (
-                        <Download size={14} color={Colors.white} />
-                      )}
-                      <Text style={styles.actionPdfText}>
-                        {isDownloading ? 'Creating PDF…' : 'Download PDF'}
-                      </Text>
-                    </TouchableOpacity>
-                     */}
+                    <DownloadButton
+                      label="Download PDF"
+                      style={{ flex: 1 }}
+                      onDownload={async (onProgress) => {
+                        return await downloadIncidentPdf(inc, onProgress);
+                      }}
+                    />
                   </View>
                 </View>
               );

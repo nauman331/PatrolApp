@@ -30,6 +30,8 @@ export type GuardStackParamList = {
               time?: string;
               zones?: string;
               status?: 'active' | 'upcoming' | 'ready';
+              signInTime?: string;
+              endTimestamp?: number;
           }
         | undefined;
     OngoingShift:
@@ -40,6 +42,8 @@ export type GuardStackParamList = {
               signInTime?: string;
               shiftId?: string;
               siteId?: string | number;
+              endTimestamp?: number;
+              time?: string;
           }
         | undefined;
     PatrolTimeline:
