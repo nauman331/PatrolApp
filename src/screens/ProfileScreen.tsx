@@ -32,6 +32,7 @@ import { useAppDispatch, useAppSelector } from '../store/hooks';
 import { fetchGuardIncidents, selectIncidents } from '../store/slices/incidentsSlice';
 import { logout } from '../services/authApi';
 import { useNavigation } from '@react-navigation/native';
+import { useSafeAreaTopInset } from '../navigation/utils';
 import { GUARD_ROUTES, MANAGER_ROUTES, navigateGuardBottomTab, navigateManagerBottomTab } from '../navigation/constants';
 import { buildManagerNavItems } from '../screens/manager/managerShared';
 import {
@@ -117,6 +118,7 @@ function ProfileField({
 
 export default function ProfileScreen({ onLogout }: Props) {
   const navigation = useNavigation<any>();
+  const topInset = useSafeAreaTopInset();
   const dispatch = useAppDispatch();
   const userRole = useAppSelector(state => state.auth?.userRole ?? 'guard');
   const guardId = useAppSelector(state => state.auth?.guardId ?? null);
@@ -309,7 +311,7 @@ export default function ProfileScreen({ onLogout }: Props) {
     <View style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor={Colors.headerStart} />
 
-      <SafeAreaView style={styles.safeTop} edges={['top']}>
+      <View style={[styles.safeTop, { paddingTop: topInset }]}>
         <View style={styles.header}>
           <View style={styles.hdrRow}>
             <Text style={styles.hdrTitle}>Profile</Text>
@@ -327,7 +329,7 @@ export default function ProfileScreen({ onLogout }: Props) {
             )}
           </View>
         </View>
-      </SafeAreaView>
+      </View>
 
       <View style={styles.safeBody}>
         <KeyboardAvoidingView

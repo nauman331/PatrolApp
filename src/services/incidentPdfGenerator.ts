@@ -49,7 +49,7 @@ function fmtLabel(key: string): string {
 
 function txt(value: unknown): string {
   if (value == null) return '—';
-  const s = String(value).replace(/\s+/g, ' ').trim();
+  const s = String(value).replace(/[ \t\r]+/g, ' ').trim();
   return s || '—';
 }
 
@@ -161,64 +161,80 @@ function section(l: L, number: number, title: string) {
   l.doc.setTextColor(...C.text);
 }
 
-/** Two-column facts table — easy to scan. */
-function factsGrid(l: L, rows: [string, string][]) {
-  if (!rows.length) return;
-  space(l, 30);
-  const rowCount = Math.ceil(rows.length / 2);
-  const left = rows.slice(0, rowCount);
-  const right = rows.slice(rowCount);
-  const body: string[][] = [];
-  for (let i = 0; i < rowCount; i++) {
-    const Lr = left[i];
-    const Rr = right[i];
-    body.push([
-      Lr ? `${Lr[0]}: ${Lr[1]}` : '',
-      Rr ? `${Rr[0]}: ${Rr[1]}` : '',
-    ]);
-  }
+const ALWAYS_LONG_LABELS = new Set([
+  'description',
+  'details',
+  'notes',
+  'action taken',
+  'comments',
+  'location details',
+  'witness information',
+  'other details',
+  'address',
+  'address details',
+  'emergency detail',
+  'statement',
+  'damage details',
+  'injury detail',
+  'summary',
+  'instructions',
+  'remarks',
+]);
 
-  const colHalf = l.cw / 2;
-  autoTable(l.doc, {
-    startY: l.y,
-    margin: { left: MARGIN, right: MARGIN },
-    tableWidth: l.cw,
-    theme: 'grid',
-    styles: {
-      fontSize: 9,
-      textColor: C.text,
-      cellPadding: { top: 6, bottom: 6, left: 8, right: 8 },
-      lineColor: C.line,
-      lineWidth: 0.4,
-      overflow: 'linebreak',
-    },
-    body,
-    columnStyles: {
-      0: { cellWidth: colHalf, fillColor: C.panel },
-      1: { cellWidth: colHalf },
-    },
-  });
-  afterTable(l);
+function isLongField(label: string, value: string): boolean {
+  const normLabel = label.toLowerCase().trim();
+  if (Array.from(ALWAYS_LONG_LABELS).some(l => normLabel.includes(l))) {
+    return true;
+  }
+  const strVal = txt(value);
+  if (strVal.length > 30 || strVal.includes('\n')) {
+    return true;
+  }
+  return false;
 }
 
-/** Full-width table: two field pairs per row (4 columns). */
-function detailTable(l: L, rows: [string, string][]) {
+/** Smart responsive table — pairs short fields into 2 columns (4 table cols), spans long fields full width (colSpan 3). */
+function renderSmartGridTable(l: L, rows: [string, string][]) {
   if (!rows.length) return;
   space(l, 24);
 
-  const body: string[][] = [];
-  for (let i = 0; i < rows.length; i += 2) {
-    const left = rows[i];
-    const right = rows[i + 1];
-    body.push([
-      left[0],
-      left[1],
-      right?.[0] ?? '',
-      right?.[1] ?? '',
-    ]);
+  const body: any[] = [];
+  let i = 0;
+  while (i < rows.length) {
+    const current = rows[i];
+    const isCurrentLong = isLongField(current[0], current[1]);
+
+    if (isCurrentLong) {
+      body.push([
+        current[0],
+        { content: current[1], colSpan: 3 },
+      ]);
+      i++;
+    } else {
+      const next = rows[i + 1];
+      const isNextLong = next ? isLongField(next[0], next[1]) : true;
+
+      if (next && !isNextLong) {
+        body.push([
+          current[0],
+          current[1],
+          next[0],
+          next[1],
+        ]);
+        i += 2;
+      } else {
+        body.push([
+          current[0],
+          { content: current[1], colSpan: 3 },
+        ]);
+        i++;
+      }
+    }
   }
 
-  const quarter = l.cw / 4;
+  const colLabelWidth = Math.round(l.cw * 0.22);
+  const colValWidth = Math.round((l.cw - colLabelWidth * 2) / 2);
+
   autoTable(l.doc, {
     startY: l.y,
     margin: { left: MARGIN, right: MARGIN },
@@ -231,24 +247,24 @@ function detailTable(l: L, rows: [string, string][]) {
       lineColor: C.line,
       lineWidth: 0.4,
       overflow: 'linebreak',
-      valign: 'middle',
+      valign: 'top',
     },
     body,
     columnStyles: {
       0: {
-        cellWidth: quarter,
+        cellWidth: colLabelWidth,
         fontStyle: 'bold',
         textColor: C.label,
         fillColor: C.panel,
       },
-      1: { cellWidth: quarter },
+      1: { cellWidth: colValWidth },
       2: {
-        cellWidth: quarter,
+        cellWidth: colLabelWidth,
         fontStyle: 'bold',
         textColor: C.label,
         fillColor: C.panel,
       },
-      3: { cellWidth: quarter },
+      3: { cellWidth: colValWidth },
     },
   });
   afterTable(l);
@@ -291,7 +307,7 @@ function drawRecordsSection(
       l.doc.setTextColor(...C.text);
     }
 
-    detailTable(l, rows);
+    renderSmartGridTable(l, rows);
     if (idx < records.length - 1) {
       l.y += 4;
     }
@@ -337,21 +353,20 @@ async function drawPhotos(
     if (!source) continue;
 
     const col = i % PHOTOS_PER_ROW;
-    const row = Math.floor(i / PHOTOS_PER_ROW);
 
     if (col === 0) {
       space(l, ROW_HEIGHT);
     }
 
     const x = MARGIN + col * (PHOTO_SIZE + PHOTO_GAP);
-    const currentY = l.y - ROW_HEIGHT;
+    const rowY = l.y;
+    const imageY = rowY + LABEL_H;
 
     l.doc.setFont('helvetica', 'bold');
     l.doc.setFontSize(8);
     l.doc.setTextColor(...C.label);
-    l.doc.text(`Photo ${i + 1}`, x, currentY + 8);
+    l.doc.text(`Photo ${i + 1}`, x, rowY + 8);
 
-    const imageY = currentY + LABEL_H;
     const dataUri = await loadImage(source, (pData) => onImageProgress?.(i, pData));
 
     l.doc.setDrawColor(...C.line);
@@ -378,6 +393,10 @@ async function drawPhotos(
       l.doc.setFont('helvetica', 'normal');
       l.doc.setFontSize(8);
       l.doc.text('Unavailable', x + PHOTO_SIZE / 2, imageY + PHOTO_SIZE / 2, { align: 'center' });
+    }
+
+    if (col === PHOTOS_PER_ROW - 1 || i === n - 1) {
+      l.y += ROW_HEIGHT;
     }
   }
 
@@ -487,7 +506,7 @@ export async function buildIncidentReportPdf(
   drawBanner(l, incident);
 
   section(l, 1, 'Overview');
-  factsGrid(l, [
+  renderSmartGridTable(l, [
     ['Site', txt(incident.siteName)],
     ['Injury type', txt(incident.injuryType)],
     ['Severity', incident.severity],
@@ -537,7 +556,7 @@ export async function buildIncidentReportPdf(
   section(l, 6, 'Emergency services');
   const emergRows = recordRows(emergency);
   if (emergRows.length) {
-    detailTable(l, emergRows);
+    renderSmartGridTable(l, emergRows);
   } else {
     emptyNote(l, 'No emergency services were called.');
   }

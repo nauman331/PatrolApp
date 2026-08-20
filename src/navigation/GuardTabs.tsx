@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { View, StyleSheet, StatusBar } from 'react-native';
-import { useSafeAreaInsets, initialWindowMetrics } from 'react-native-safe-area-context';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Colors } from '../theme';
 import { NavBar } from '../components';
 import { Home, Route, AlertTriangle, ClipboardList, User } from 'lucide-react-native';
@@ -26,7 +26,7 @@ export default function GuardTabs() {
   const route = useRoute<any>();
   const navigation = useNavigation<any>();
   const insets = useSafeAreaInsets();
-  const bottomInset = insets.bottom || initialWindowMetrics?.insets?.bottom || 0;
+  const bottomInset = insets.bottom;
 
   const getInitialIndex = () => {
     const targetScreen = route.params?.screen || route.name;

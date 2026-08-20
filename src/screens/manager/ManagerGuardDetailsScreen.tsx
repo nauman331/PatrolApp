@@ -5,6 +5,7 @@ import {
   TouchableOpacity,
   StyleSheet,
   Image,
+  Linking,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { Colors, FontSizes, Radii, Shadows } from '../../theme';
@@ -18,12 +19,16 @@ import {
   ChevronRight,
   Shield,
   AlertTriangle,
+  LogIn,
+  LogOut,
+  Camera,
 } from 'lucide-react-native';
 import { useManagerNavigation } from '../../navigation/utils';
 import { MANAGER_ROUTES } from '../../navigation/constants';
 import type { ManagerStackScreenProps } from '../../navigation/types';
 import { ManagerStackHeader, ManagerStackListLayout, ManagerStackShell, sharedStyles } from './managerShared';
 import AuthErrorBanner from '../../components/AuthErrorBanner';
+import ImageViewerModal from '../../components/ImageViewerModal';
 import {
   ManagerGuardDetailFixedShimmer,
   ManagerGuardDetailListShimmer,
@@ -51,6 +56,9 @@ export default function ManagerGuardDetailsScreen({ route }: Props) {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const [viewerVisible, setViewerVisible] = useState(false);
+  const [viewerUri, setViewerUri] = useState<string | null>(null);
+
   const fetchDetail = useCallback(async () => {
     if (!guardId) {
       setError('Guard not found');
@@ -74,7 +82,6 @@ export default function ManagerGuardDetailsScreen({ route }: Props) {
 
   useFocusEffect(
     useCallback(() => {
-      setLoading(true);
       fetchDetail();
     }, [fetchDetail]),
   );
@@ -128,27 +135,34 @@ export default function ManagerGuardDetailsScreen({ route }: Props) {
           <>
             <View style={{ paddingBottom: 8 }}>
               {error ? <AuthErrorBanner message={error} /> : null}
+
+              {/* Profile Card */}
               <View style={[styles.profileCard, Shadows.card]}>
-                <View style={styles.avatar}>
-                  <Text style={styles.avatarText}>
-                    {guard?.initials ??
-                      name
-                        .split(' ')
-                        .map(p => p[0])
-                        .join('')
-                        .slice(0, 2)
-                        .toUpperCase()}
-                  </Text>
+                <View style={styles.avatarWrap}>
+                  <View style={styles.avatar}>
+                    <Text style={styles.avatarText}>
+                      {guard?.initials ??
+                        name
+                          .split(' ')
+                          .map(p => p[0])
+                          .join('')
+                          .slice(0, 2)
+                          .toUpperCase()}
+                    </Text>
+                  </View>
                 </View>
+
                 <Text style={styles.profileName}>{name}</Text>
-                <Text style={styles.profileRole}>
-                  Security Guard · ID #{guard?.id ?? guardId ?? '—'}
-                </Text>
+                <Text style={styles.profileRole}>Security Guard</Text>
+
                 {shift || isOnDuty ? (
                   <View
                     style={[
                       styles.statusPill,
-                      { backgroundColor: `${statusColor}18` },
+                      {
+                        backgroundColor: `${statusColor}14`,
+                        borderColor: `${statusColor}33`,
+                      },
                     ]}
                   >
                     <View
@@ -161,54 +175,81 @@ export default function ManagerGuardDetailsScreen({ route }: Props) {
                 ) : null}
               </View>
 
-              <View style={[styles.infoGrid, Shadows.card]}>
-                <View style={styles.infoItem}>
-                  <MapPin size={16} color={Colors.accent} />
-                  <Text style={styles.infoLabel}>Site</Text>
-                  <Text style={styles.infoValue}>
-                    {shift?.site_name ?? routeSiteName ?? 'No shift today'}
-                  </Text>
+              {/* Info Grid Tiles */}
+              <View style={[styles.infoGridCard, Shadows.card]}>
+                <View style={styles.infoTile}>
+                  <View style={styles.infoIconBox}>
+                    <MapPin size={15} color={Colors.accent} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.infoLabel}>Site</Text>
+                    <Text style={styles.infoValue} numberOfLines={1}>
+                      {shift?.site_name ?? routeSiteName ?? 'No shift today'}
+                    </Text>
+                  </View>
                 </View>
-                <View style={styles.infoItem}>
-                  <Clock size={16} color={Colors.accent} />
-                  <Text style={styles.infoLabel}>Shift</Text>
-                  <Text style={styles.infoValue}>
-                    {shift?.shift_time && shift.shift_time !== 'Off Duty'
-                      ? shift.shift_time
-                      : isOnDuty
-                      ? statusLabel
-                      : '—'}
-                  </Text>
+
+                <View style={styles.infoTile}>
+                  <View style={styles.infoIconBox}>
+                    <Clock size={15} color={Colors.accent} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.infoLabel}>Shift</Text>
+                    <Text style={styles.infoValue} numberOfLines={1}>
+                      {shift?.shift_time && shift.shift_time !== 'Off Duty'
+                        ? shift.shift_time
+                        : isOnDuty
+                        ? statusLabel
+                        : '—'}
+                    </Text>
+                  </View>
                 </View>
-                <View style={styles.infoItem}>
-                  <Footprints size={16} color={Colors.accent} />
-                  <Text style={styles.infoLabel}>Patrols</Text>
-                  <Text style={styles.infoValue}>
-                    {stats
-                      ? `${stats.patrols_completed}/${stats.patrols_total} completed`
-                      : '—'}
-                  </Text>
+
+                <View style={styles.infoTile}>
+                  <View style={styles.infoIconBox}>
+                    <Footprints size={15} color={Colors.accent} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.infoLabel}>Patrols</Text>
+                    <Text style={styles.infoValue} numberOfLines={1}>
+                      {stats
+                        ? `${stats.patrols_completed}/${stats.patrols_total} done`
+                        : '—'}
+                    </Text>
+                  </View>
                 </View>
-                <View style={styles.infoItem}>
-                  <Shield size={16} color={Colors.accent} />
-                  <Text style={styles.infoLabel}>License</Text>
-                  <Text style={styles.infoValue}>
-                    {guard?.security_license_no ?? '—'}
-                  </Text>
+
+                <View style={styles.infoTile}>
+                  <View style={styles.infoIconBox}>
+                    <Shield size={15} color={Colors.accent} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.infoLabel}>License</Text>
+                    <Text style={styles.infoValue} numberOfLines={1}>
+                      {guard?.security_license_no ?? '—'}
+                    </Text>
+                  </View>
                 </View>
               </View>
 
+              {/* Stats Row Bar */}
               {stats ? (
-                <View style={[styles.statsRow, Shadows.card]}>
-                  <View style={styles.statItem}>
+                <View style={[styles.statsRowCard, Shadows.card]}>
+                  <View style={styles.statCell}>
                     <Text style={styles.statNum}>{stats.nfc_scans_completed}</Text>
                     <Text style={styles.statLabel}>NFC Scans</Text>
                   </View>
-                  <View style={styles.statItem}>
+
+                  <View style={styles.statDivider} />
+
+                  <View style={styles.statCell}>
                     <Text style={styles.statNum}>{stats.incidents_today}</Text>
                     <Text style={styles.statLabel}>Incidents</Text>
                   </View>
-                  <View style={styles.statItem}>
+
+                  <View style={styles.statDivider} />
+
+                  <View style={styles.statCell}>
                     <Text style={styles.statNum}>
                       {stats.nfc_scans_total > 0
                         ? `${Math.round((stats.nfc_scans_completed / stats.nfc_scans_total) * 100)}%`
@@ -219,58 +260,148 @@ export default function ManagerGuardDetailsScreen({ route }: Props) {
                 </View>
               ) : null}
 
-              <SectionHeader title="Contact" />
-              <View style={[styles.contactRow, Shadows.card]}>
-                <Phone size={16} color={Colors.textSecondary} />
-                <Text style={styles.contactText}>{guard?.phone ?? '—'}</Text>
-              </View>
-              <View style={[styles.contactRow, Shadows.card]}>
-                <Mail size={16} color={Colors.textSecondary} />
-                <Text style={styles.contactText}>{guard?.email ?? '—'}</Text>
+              {/* Contact Card */}
+              <SectionHeader title="Contact Information" />
+              <View style={[styles.contactCard, Shadows.card]}>
+                <TouchableOpacity
+                  style={styles.contactRow}
+                  activeOpacity={guard?.phone ? 0.7 : 1}
+                  onPress={() => guard?.phone && Linking.openURL(`tel:${guard.phone}`)}
+                >
+                  <View style={styles.contactIconWrap}>
+                    <Phone size={14} color={Colors.accent} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.contactSubLabel}>Phone</Text>
+                    <Text style={styles.contactValueText}>{guard?.phone ?? '—'}</Text>
+                  </View>
+                  {guard?.phone ? <ChevronRight size={15} color={Colors.textMuted} /> : null}
+                </TouchableOpacity>
+
+                <View style={styles.contactDivider} />
+
+                <TouchableOpacity
+                  style={styles.contactRow}
+                  activeOpacity={guard?.email ? 0.7 : 1}
+                  onPress={() => guard?.email && Linking.openURL(`mailto:${guard.email}`)}
+                >
+                  <View style={styles.contactIconWrap}>
+                    <Mail size={14} color={Colors.accent} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.contactSubLabel}>Email</Text>
+                    <Text style={styles.contactValueText}>{guard?.email ?? '—'}</Text>
+                  </View>
+                  {guard?.email ? <ChevronRight size={15} color={Colors.textMuted} /> : null}
+                </TouchableOpacity>
               </View>
 
+              {/* Attendance Section */}
               {attendance ? (
                 <>
                   <SectionHeader title="Today's Attendance" />
                   <View style={[styles.attendanceCard, Shadows.card]}>
-                    <Text style={styles.attendanceLine}>
-                      Sign In: {attendance.signin_time ?? '—'}
-                    </Text>
-                    <Text style={styles.attendanceLine}>
-                      Sign Out: {attendance.signout_time ?? '—'}
-                    </Text>
+                    <View style={styles.attendanceTimeRow}>
+                      <View style={styles.attendanceTimeCell}>
+                        <View style={styles.timeBadgeHeader}>
+                          <LogIn size={13} color={Colors.success} />
+                          <Text style={styles.timeBadgeLabel}>Sign In</Text>
+                        </View>
+                        <Text style={styles.timeBadgeValue}>
+                          {attendance.signin_time ?? '—'}
+                        </Text>
+                      </View>
+
+                      <View style={styles.attendanceTimeCell}>
+                        <View style={styles.timeBadgeHeader}>
+                          <LogOut size={13} color={Colors.warning} />
+                          <Text style={styles.timeBadgeLabel}>Sign Out</Text>
+                        </View>
+                        <Text style={styles.timeBadgeValue}>
+                          {attendance.signout_time ?? '—'}
+                        </Text>
+                      </View>
+                    </View>
+
                     {attendance.last_location ? (
-                      <Text style={styles.attendanceSub}>
-                        Last location: {attendance.last_location}
-                        {attendance.last_location_time
-                          ? ` · ${attendance.last_location_time}`
-                          : ''}
-                      </Text>
+                      <View style={styles.locationSubBox}>
+                        <MapPin size={13} color={Colors.accent} />
+                        <Text style={styles.attendanceSubText} numberOfLines={1}>
+                          Last: {attendance.last_location}
+                          {attendance.last_location_time
+                            ? ` (${attendance.last_location_time})`
+                            : ''}
+                        </Text>
+                      </View>
                     ) : null}
-                    {attendance.signin_selfie ? (
-                      <Image
-                        source={{ uri: attendance.signin_selfie }}
-                        style={styles.selfie}
-                        resizeMode="cover"
-                      />
+
+                    {attendance.signin_selfie || attendance.signout_selfie ? (
+                      <View style={styles.selfiesContainer}>
+                        {attendance.signin_selfie ? (
+                          <View style={styles.selfieWrap}>
+                            <View style={styles.selfieCap}>
+                              <Camera size={11} color={Colors.accent} />
+                              <Text style={styles.selfieCapText}>Sign In Selfie</Text>
+                            </View>
+                            <TouchableOpacity
+                              activeOpacity={0.8}
+                              onPress={() => {
+                                setViewerUri(attendance.signin_selfie);
+                                setViewerVisible(true);
+                              }}
+                            >
+                              <Image
+                                source={{ uri: attendance.signin_selfie }}
+                                style={styles.selfieImg}
+                                resizeMode="cover"
+                              />
+                            </TouchableOpacity>
+                          </View>
+                        ) : null}
+
+                        {attendance.signout_selfie ? (
+                          <View style={styles.selfieWrap}>
+                            <View style={styles.selfieCap}>
+                              <Camera size={11} color={Colors.accent} />
+                              <Text style={styles.selfieCapText}>Sign Out Selfie</Text>
+                            </View>
+                            <TouchableOpacity
+                              activeOpacity={0.8}
+                              onPress={() => {
+                                setViewerUri(attendance.signout_selfie);
+                                setViewerVisible(true);
+                              }}
+                            >
+                              <Image
+                                source={{ uri: attendance.signout_selfie }}
+                                style={styles.selfieImg}
+                                resizeMode="cover"
+                              />
+                            </TouchableOpacity>
+                          </View>
+                        ) : null}
+                      </View>
                     ) : null}
                   </View>
                 </>
               ) : null}
             </View>
 
+            {/* Patrols Section */}
             <View style={sharedStyles.stickySectionHeader}>
               <SectionHeader title="Patrols Today" />
             </View>
 
             {patrols.length === 0 ? (
-              <Text style={styles.emptyText}>No patrols today.</Text>
+              <View style={[styles.emptyCard, Shadows.card]}>
+                <Text style={styles.emptyText}>No patrols today.</Text>
+              </View>
             ) : (
               patrols.map(patrol => (
                 <View key={patrol.id} style={[styles.logRow, Shadows.card]}>
                   <View
                     style={[
-                      styles.logDot,
+                      styles.logDotBar,
                       {
                         backgroundColor:
                           patrol.status === 'end'
@@ -281,23 +412,50 @@ export default function ManagerGuardDetailsScreen({ route }: Props) {
                   />
                   <View style={{ flex: 1 }}>
                     <Text style={styles.logEvent}>
-                      Patrol · {patrol.scanners_completed}/{patrol.scanners_total}{' '}
-                      scanners
+                      Patrol · {patrol.scanners_completed}/{patrol.scanners_total} scanners
                     </Text>
                     <Text style={styles.logTime}>
                       {patrol.started_at}
                       {patrol.completed_at ? ` – ${patrol.completed_at}` : ''}
                     </Text>
                   </View>
+                  <View
+                    style={[
+                      styles.statusTag,
+                      {
+                        backgroundColor:
+                          patrol.status === 'end'
+                            ? Colors.successLight
+                            : Colors.accentAlpha12,
+                      },
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.statusTagText,
+                        {
+                          color:
+                            patrol.status === 'end'
+                              ? Colors.success
+                              : Colors.accent,
+                        },
+                      ]}
+                    >
+                      {patrol.status === 'end' ? 'Completed' : 'In Progress'}
+                    </Text>
+                  </View>
                 </View>
               ))
             )}
 
+            {/* Incidents Section */}
             <View style={sharedStyles.stickySectionHeader}>
               <SectionHeader title="Incidents Today" />
             </View>
             {incidents.length === 0 ? (
-              <Text style={styles.emptyText}>No incidents today.</Text>
+              <View style={[styles.emptyCard, Shadows.card]}>
+                <Text style={styles.emptyText}>No incidents today.</Text>
+              </View>
             ) : (
               incidents.map(inc => (
                 <TouchableOpacity
@@ -309,10 +467,17 @@ export default function ManagerGuardDetailsScreen({ route }: Props) {
                     })
                   }
                 >
-                  <AlertTriangle
-                    size={14}
-                    color={mapSeverityColor(inc.severity)}
-                  />
+                  <View
+                    style={[
+                      styles.logIconBox,
+                      { backgroundColor: `${mapSeverityColor(inc.severity)}18` },
+                    ]}
+                  >
+                    <AlertTriangle
+                      size={14}
+                      color={mapSeverityColor(inc.severity)}
+                    />
+                  </View>
                   <View style={{ flex: 1 }}>
                     <Text style={styles.logEvent}>{inc.title}</Text>
                     <Text style={styles.logTime}>
@@ -324,8 +489,10 @@ export default function ManagerGuardDetailsScreen({ route }: Props) {
               ))
             )}
 
+            {/* View Activity History Button */}
             <TouchableOpacity
               style={[styles.actionBtn, Shadows.card]}
+              activeOpacity={0.8}
               onPress={() =>
                 navigation.navigate(MANAGER_ROUTES.GUARD_ATTENDANCE, {
                   guardId,
@@ -339,15 +506,29 @@ export default function ManagerGuardDetailsScreen({ route }: Props) {
           </>
         )}
       </ManagerStackListLayout>
+
+      <ImageViewerModal
+        visible={viewerVisible}
+        uri={viewerUri}
+        onClose={() => setViewerVisible(false)}
+      />
     </ManagerStackShell>
   );
 }
 
 const styles = StyleSheet.create({
+  emptyCard: {
+    backgroundColor: Colors.bgCard,
+    borderRadius: Radii.md,
+    padding: 14,
+    marginBottom: 12,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
   emptyText: {
     fontSize: FontSizes.sm,
     color: Colors.textMuted,
-    marginBottom: 12,
   },
   profileCard: {
     backgroundColor: Colors.bgCard,
@@ -356,101 +537,209 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 12,
     marginTop: 16,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  avatarWrap: {
+    marginBottom: 10,
   },
   avatar: {
-    width: 64,
-    height: 64,
-    borderRadius: 20,
+    width: 68,
+    height: 68,
+    borderRadius: 22,
     backgroundColor: Colors.accentLight,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 10,
+    borderWidth: 2,
+    borderColor: Colors.accentAlpha25,
   },
-  avatarText: { fontSize: 22, fontWeight: '800', color: Colors.accent },
-  profileName: { fontSize: 18, fontWeight: '800', color: Colors.textPrimary },
+  avatarText: { fontSize: 24, fontWeight: '800', color: Colors.accent },
+  profileName: { fontSize: 19, fontWeight: '800', color: Colors.textPrimary },
   profileRole: { fontSize: FontSizes.xs, color: Colors.textMuted, marginTop: 2 },
   statusPill: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 5,
-    marginTop: 10,
+    gap: 6,
+    marginTop: 12,
     paddingHorizontal: 12,
     paddingVertical: 5,
     borderRadius: Radii.pill,
+    borderWidth: 1,
   },
   statusDot: { width: 7, height: 7, borderRadius: 4 },
   statusText: { fontSize: FontSizes.xs, fontWeight: '700' },
-  infoGrid: {
+
+  infoGridCard: {
     backgroundColor: Colors.bgCard,
     borderRadius: Radii.lg,
-    padding: 14,
+    padding: 12,
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 12,
+    gap: 8,
     marginBottom: 12,
+    borderWidth: 1,
+    borderColor: Colors.border,
   },
-  infoItem: { width: '46%', gap: 3 },
-  infoLabel: { fontSize: FontSizes.xs, color: Colors.textMuted, marginTop: 2 },
-  infoValue: { fontSize: 12, fontWeight: '700', color: Colors.textPrimary },
-  statsRow: {
+  infoTile: {
+    width: '48.5%',
+    backgroundColor: Colors.bgAlt,
+    borderRadius: Radii.md,
+    padding: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  infoIconBox: {
+    width: 28,
+    height: 28,
+    borderRadius: Radii.sm,
+    backgroundColor: Colors.accentLight,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  infoLabel: { fontSize: 9, fontWeight: '600', color: Colors.textMuted },
+  infoValue: { fontSize: 12, fontWeight: '700', color: Colors.textPrimary, marginTop: 1 },
+
+  statsRowCard: {
     backgroundColor: Colors.bgCard,
     borderRadius: Radii.lg,
     padding: 14,
     flexDirection: 'row',
+    alignItems: 'center',
     marginBottom: 12,
+    borderWidth: 1,
+    borderColor: Colors.border,
   },
-  statItem: { flex: 1, alignItems: 'center' },
+  statCell: { flex: 1, alignItems: 'center' },
   statNum: { fontSize: 18, fontWeight: '800', color: Colors.accent },
-  statLabel: { fontSize: FontSizes.xs, color: Colors.textMuted, marginTop: 2 },
-  contactRow: {
+  statLabel: { fontSize: FontSizes.xs, color: Colors.textMuted, marginTop: 2, fontWeight: '500' },
+  statDivider: { width: 1, height: 28, backgroundColor: Colors.border },
+
+  contactCard: {
     backgroundColor: Colors.bgCard,
-    borderRadius: Radii.md,
+    borderRadius: Radii.lg,
     padding: 12,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  contactRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
-    marginBottom: 7,
+    paddingVertical: 4,
   },
-  contactText: { fontSize: 12, color: Colors.textPrimary },
+  contactIconWrap: {
+    width: 28,
+    height: 28,
+    borderRadius: Radii.sm,
+    backgroundColor: Colors.accentLight,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  contactSubLabel: { fontSize: 9, fontWeight: '600', color: Colors.textMuted },
+  contactValueText: { fontSize: 12, fontWeight: '600', color: Colors.textPrimary, marginTop: 1 },
+  contactDivider: { height: 1, backgroundColor: Colors.border, marginVertical: 8 },
+
   attendanceCard: {
     backgroundColor: Colors.bgCard,
-    borderRadius: Radii.md,
-    padding: 12,
+    borderRadius: Radii.lg,
+    padding: 14,
     marginBottom: 12,
+    borderWidth: 1,
+    borderColor: Colors.border,
   },
-  attendanceLine: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: Colors.textPrimary,
+  attendanceTimeRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginBottom: 10,
+  },
+  attendanceTimeCell: {
+    flex: 1,
+    backgroundColor: Colors.bgAlt,
+    borderRadius: Radii.md,
+    padding: 10,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  timeBadgeHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
     marginBottom: 4,
   },
-  attendanceSub: { fontSize: FontSizes.xs, color: Colors.textMuted },
-  selfie: {
-    width: '100%',
-    height: 120,
-    borderRadius: Radii.md,
+  timeBadgeLabel: { fontSize: 10, fontWeight: '700', color: Colors.textMuted },
+  timeBadgeValue: { fontSize: 12, fontWeight: '800', color: Colors.textPrimary },
+  locationSubBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: Colors.bgAlt,
+    borderRadius: Radii.sm,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  attendanceSubText: { fontSize: 11, color: Colors.textSecondary, flex: 1 },
+  selfiesContainer: {
+    flexDirection: 'row',
+    gap: 10,
     marginTop: 10,
   },
+  selfieWrap: { flex: 1 },
+  selfieCap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginBottom: 4,
+  },
+  selfieCapText: { fontSize: 10, fontWeight: '700', color: Colors.textMuted },
+  selfieImg: {
+    width: '100%',
+    height: 110,
+    borderRadius: Radii.md,
+  },
+
   logRow: {
     backgroundColor: Colors.bgCard,
-    borderRadius: Radii.md,
+    borderRadius: Radii.lg,
     padding: 12,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
-    marginBottom: 7,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: Colors.border,
   },
-  logDot: { width: 8, height: 8, borderRadius: 4 },
-  logEvent: { fontSize: 12, fontWeight: '600', color: Colors.textPrimary },
-  logTime: { fontSize: FontSizes.xs, color: Colors.textMuted, marginTop: 1 },
+  logDotBar: { width: 4, height: 28, borderRadius: 2 },
+  logIconBox: {
+    width: 28,
+    height: 28,
+    borderRadius: Radii.sm,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  logEvent: { fontSize: 12, fontWeight: '700', color: Colors.textPrimary },
+  logTime: { fontSize: FontSizes.xs, color: Colors.textMuted, marginTop: 2 },
+  statusTag: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: Radii.pill,
+  },
+  statusTagText: { fontSize: 10, fontWeight: '700' },
+
   actionBtn: {
     backgroundColor: Colors.bgCard,
-    borderRadius: Radii.md,
+    borderRadius: Radii.lg,
     padding: 14,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginTop: 6,
+    marginTop: 8,
+    marginBottom: 16,
     borderWidth: 1,
     borderColor: Colors.accentAlpha25,
   },

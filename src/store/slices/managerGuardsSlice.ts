@@ -1,9 +1,9 @@
 import { createAsyncThunk, createSlice, type PayloadAction } from '@reduxjs/toolkit';
-import { getManagerGuards, type ManagerGuardsResponse, type ManagerGuardStatusFilter } from '../../services/managerApi';
+import { getManagerGuards, type ManagerGuardsListData, type ManagerGuardStatusFilter } from '../../services/managerApi';
 import type { RootState } from '../store';
 
 export interface ManagerGuardsState {
-  data: ManagerGuardsResponse | null;
+  data: ManagerGuardsListData | null;
   loading: boolean;
   refreshing: boolean;
   error: string | null;
@@ -22,7 +22,7 @@ const initialState: ManagerGuardsState = {
 };
 
 export const fetchManagerGuards = createAsyncThunk<
-  ManagerGuardsResponse,
+  ManagerGuardsListData,
   any,
   { rejectValue: string }
 >('managerGuards/fetch', async (params, { rejectWithValue }) => {
@@ -76,6 +76,8 @@ export default managerGuardsSlice.reducer;
 
 export const selectManagerGuardsData = (state: RootState) => state.managerGuards.data;
 export const selectManagerGuardsLoading = (state: RootState) => state.managerGuards.loading;
+export const selectGuardsSearch = (state: RootState) => state.managerGuards.search;
+export const selectGuardsStatusFilter = (state: RootState) => state.managerGuards.statusFilter;
 export const selectGuardsFilters = (state: RootState) => ({
   search: state.managerGuards.search,
   statusFilter: state.managerGuards.statusFilter,

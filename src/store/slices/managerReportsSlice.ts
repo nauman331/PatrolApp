@@ -156,6 +156,13 @@ export const selectManagerPatrolReports = (state: RootState) => state.managerRep
 export const selectManagerIncidentReports = (state: RootState) => state.managerReports.incidentReports;
 export const selectLoadingPatrols = (state: RootState) => state.managerReports.loadingPatrols;
 export const selectLoadingIncidents = (state: RootState) => state.managerReports.loadingIncidents;
+export const selectReportsTab = (state: RootState) => state.managerReports.tab;
+export const selectReportsDateFilter = (state: RootState) => state.managerReports.dateFilter;
+export const selectReportsSearch = (state: RootState) => state.managerReports.search;
+export const selectReportsSelectedGuardIds = (state: RootState) => state.managerReports.selectedGuardIds;
+export const selectReportsSelectedSiteIds = (state: RootState) => state.managerReports.selectedSiteIds;
+export const selectReportsStartDate = (state: RootState) => state.managerReports.startDate;
+export const selectReportsEndDate = (state: RootState) => state.managerReports.endDate;
 export const selectReportsFilters = (state: RootState) => ({
   tab: state.managerReports.tab,
   dateFilter: state.managerReports.dateFilter,

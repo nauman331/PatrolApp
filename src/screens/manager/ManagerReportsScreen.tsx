@@ -50,7 +50,13 @@ import {
   selectManagerPatrolReports,
   selectLoadingIncidents,
   selectLoadingPatrols,
-  selectReportsFilters,
+  selectReportsTab,
+  selectReportsDateFilter,
+  selectReportsSearch,
+  selectReportsSelectedGuardIds,
+  selectReportsSelectedSiteIds,
+  selectReportsStartDate,
+  selectReportsEndDate,
   setTab,
   setDateFilter,
   setSearch,
@@ -75,15 +81,13 @@ export default function ManagerReportsScreen() {
   const navigation = useManagerNavigation();
   const dispatch = useAppDispatch();
 
-  const {
-    tab,
-    dateFilter,
-    search,
-    selectedGuardIds,
-    selectedSiteIds,
-    startDate: startDateStr,
-    endDate: endDateStr
-  } = useAppSelector(selectReportsFilters);
+  const tab = useAppSelector(selectReportsTab);
+  const dateFilter = useAppSelector(selectReportsDateFilter);
+  const search = useAppSelector(selectReportsSearch);
+  const selectedGuardIds = useAppSelector(selectReportsSelectedGuardIds);
+  const selectedSiteIds = useAppSelector(selectReportsSelectedSiteIds);
+  const startDateStr = useAppSelector(selectReportsStartDate);
+  const endDateStr = useAppSelector(selectReportsEndDate);
 
   const startDate = useMemo(() => new Date(startDateStr), [startDateStr]);
   const endDate = useMemo(() => new Date(endDateStr), [endDateStr]);
@@ -126,6 +130,9 @@ export default function ManagerReportsScreen() {
     }
     loadFilters();
   }, []);
+
+  const guardIdsKey = selectedGuardIds.join(',');
+  const siteIdsKey = selectedSiteIds.join(',');
 
   const fetchReportsData = useCallback(
     async (pageNum: number, append: boolean) => {
@@ -172,8 +179,8 @@ export default function ManagerReportsScreen() {
       tab,
       startDateStr,
       endDateStr,
-      selectedGuardIds,
-      selectedSiteIds,
+      guardIdsKey,
+      siteIdsKey,
       dispatch
     ],
   );

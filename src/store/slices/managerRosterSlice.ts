@@ -156,6 +156,13 @@ export const selectManagerShifts = (state: RootState) => state.managerRoster.shi
 export const selectManagerSites = (state: RootState) => state.managerRoster.sitesData;
 export const selectLoadingShifts = (state: RootState) => state.managerRoster.loadingShifts;
 export const selectLoadingSites = (state: RootState) => state.managerRoster.loadingSites;
+export const selectRosterTab = (state: RootState) => state.managerRoster.tab;
+export const selectRosterPeriodFilter = (state: RootState) => state.managerRoster.periodFilter;
+export const selectRosterSearch = (state: RootState) => state.managerRoster.search;
+export const selectRosterSelectedGuardIds = (state: RootState) => state.managerRoster.selectedGuardIds;
+export const selectRosterSelectedSiteIds = (state: RootState) => state.managerRoster.selectedSiteIds;
+export const selectRosterStartDate = (state: RootState) => state.managerRoster.startDate;
+export const selectRosterEndDate = (state: RootState) => state.managerRoster.endDate;
 export const selectRosterFilters = (state: RootState) => ({
   tab: state.managerRoster.tab,
   periodFilter: state.managerRoster.periodFilter,

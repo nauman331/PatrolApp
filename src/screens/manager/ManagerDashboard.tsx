@@ -25,7 +25,7 @@ import {
   User,
   type LucideIcon,
 } from 'lucide-react-native';
-import { useManagerNavigation } from '../../navigation/utils';
+import { useManagerNavigation, useSafeAreaTopInset } from '../../navigation/utils';
 import { MANAGER_ROUTES } from '../../navigation/constants';
 import { MANAGER_TAB_INDEX, sharedStyles } from './managerShared';
 import { ManagerCalendarModal } from './ManagerCalendarModal';
@@ -141,6 +141,7 @@ function statCount(stat: unknown): number {
 
 export default function ManagerDashboard() {
   const navigation = useManagerNavigation();
+  const topInset = useSafeAreaTopInset();
   const dispatch = useAppDispatch();
 
   const dashboard = useAppSelector(selectManagerDashboard);
@@ -231,7 +232,7 @@ export default function ManagerDashboard() {
   return (
     <View style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor={Colors.headerStart} />
-      <SafeAreaView style={styles.safe} edges={['top']}>
+      <View style={[styles.safe, { paddingTop: topInset }]}>
         <View style={styles.header}>
           <View style={styles.headerDecor} />
           <View style={styles.topRow}>
@@ -461,7 +462,7 @@ export default function ManagerDashboard() {
             onSelectDate={handleDateSelect}
           />
         )}
-      </SafeAreaView>
+      </View>
     </View>
   );
 }

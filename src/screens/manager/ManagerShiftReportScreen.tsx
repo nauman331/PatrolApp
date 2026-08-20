@@ -4,6 +4,7 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
+  ActivityIndicator,
 } from 'react-native';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { Colors, FontSizes, Radii, Shadows } from '../../theme';
@@ -45,6 +46,33 @@ export default function ManagerShiftReportScreen({ route }: Props) {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const [sharing, setSharing] = useState(false);
+  const [emailing, setEmailing] = useState(false);
+
+  const handleShare = useCallback(async () => {
+    if (sharing || emailing || !data) return;
+    setSharing(true);
+    try {
+      await shareReport('patrol', data, 'share', undefined, () => setSharing(false));
+    } catch (err) {
+      console.error('Share patrol report failed:', err);
+    } finally {
+      setSharing(false);
+    }
+  }, [data, sharing, emailing]);
+
+  const handleEmail = useCallback(async () => {
+    if (sharing || emailing || !data) return;
+    setEmailing(true);
+    try {
+      await shareReport('patrol', data, 'email', undefined, () => setEmailing(false));
+    } catch (err) {
+      console.error('Email patrol report failed:', err);
+    } finally {
+      setEmailing(false);
+    }
+  }, [data, sharing, emailing]);
 
   const displayDate = routeDate || new Date().toISOString().slice(0, 10);
 
@@ -160,18 +188,32 @@ export default function ManagerShiftReportScreen({ route }: Props) {
                       }}
                     />
                     <TouchableOpacity
-                      style={[styles.actionBtn, Shadows.card]}
-                      onPress={() => shareReport('patrol', data, 'share')}
+                      style={[styles.actionBtn, Shadows.card, (sharing || emailing) && styles.actionBtnDisabled]}
+                      onPress={handleShare}
+                      disabled={sharing || emailing}
                     >
-                      <Share2 size={16} color={Colors.accent} />
-                      <Text style={styles.actionBtnText}>Share</Text>
+                      {sharing ? (
+                        <ActivityIndicator size="small" color={Colors.accent} />
+                      ) : (
+                        <>
+                          <Share2 size={16} color={Colors.accent} />
+                          <Text style={styles.actionBtnText}>Share</Text>
+                        </>
+                      )}
                     </TouchableOpacity>
                     <TouchableOpacity
-                      style={[styles.actionBtn, Shadows.card]}
-                      onPress={() => shareReport('patrol', data, 'email')}
+                      style={[styles.actionBtn, Shadows.card, (sharing || emailing) && styles.actionBtnDisabled]}
+                      onPress={handleEmail}
+                      disabled={sharing || emailing}
                     >
-                      <Mail size={16} color={Colors.accent} />
-                      <Text style={styles.actionBtnText}>Email</Text>
+                      {emailing ? (
+                        <ActivityIndicator size="small" color={Colors.accent} />
+                      ) : (
+                        <>
+                          <Mail size={16} color={Colors.accent} />
+                          <Text style={styles.actionBtnText}>Email</Text>
+                        </>
+                      )}
                     </TouchableOpacity>
                   </View>
                 ) : null}
@@ -312,6 +354,9 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '700',
     color: Colors.textPrimary,
+  },
+  actionBtnDisabled: {
+    opacity: 0.7,
   },
   patrolCard: {
     backgroundColor: Colors.bgCard,

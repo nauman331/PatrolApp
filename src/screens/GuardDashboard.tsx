@@ -43,7 +43,7 @@ import {
   saveActiveShiftSession,
 } from '../services/activeShiftSession';
 import { useFocusEffect } from '@react-navigation/native';
-import { useGuardNavigation } from '../navigation/utils';
+import { useGuardNavigation, useSafeAreaTopInset } from '../navigation/utils';
 import { GUARD_ROUTES, navigateGuardBottomTab } from '../navigation/constants';
 import { useAppDispatch, useAppSelector } from '../store/hooks';
 import {
@@ -91,6 +91,7 @@ function normalizeDate(iso?: string) {
 
 export default function GuardDashboard() {
   const navigation = useGuardNavigation();
+  const topInset = useSafeAreaTopInset();
   const dispatch = useAppDispatch();
   const guardId = useAppSelector(state => state.auth?.guardId ?? null);
 
@@ -395,7 +396,7 @@ export default function GuardDashboard() {
         barStyle="light-content"
         backgroundColor={Colors.headerStart}
       />
-      <SafeAreaView style={styles.safe} edges={['top']}>
+      <View style={[styles.safe, { paddingTop: topInset }]}>
         <View style={styles.header}>
           <View style={styles.headerDecor} />
           <View style={styles.topRow}>
@@ -567,7 +568,7 @@ export default function GuardDashboard() {
             )}
           </View>
         </View>
-      </SafeAreaView>
+      </View>
     </View>
   );
 }
