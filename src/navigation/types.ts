@@ -19,6 +19,7 @@ export type AuthStackParamList = {
  * Routes for logged-in guards
  */
 export type GuardStackParamList = {
+    MainTabs: { screen?: string } | undefined;
     GuardDashboard: undefined;
     Shifts: undefined;
     ShiftSignIn:
@@ -30,6 +31,8 @@ export type GuardStackParamList = {
               time?: string;
               zones?: string;
               status?: 'active' | 'upcoming' | 'ready';
+              signInTime?: string;
+              endTimestamp?: number;
           }
         | undefined;
     OngoingShift:
@@ -40,7 +43,9 @@ export type GuardStackParamList = {
               signInTime?: string;
               shiftId?: string;
               siteId?: string | number;
-          }
+              endTimestamp?: number;
+              time?: string;
+           }
         | undefined;
     PatrolTimeline:
         | {
@@ -79,6 +84,7 @@ export type GuardStackParamList = {
  * Routes for logged-in managers
  */
 export type ManagerStackParamList = {
+    ManagerTabs: { screen?: string } | undefined;
     ManagerDashboard: undefined;
     ManagerGuards: undefined;
     ManagerGuardDetails: {

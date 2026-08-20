@@ -13,8 +13,8 @@ import {
   Platform,
   PermissionsAndroid,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import Geolocation from '@react-native-community/geolocation';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import locationService from '../services/LocationService';
 import {
   type Asset,
 } from 'react-native-image-picker';
@@ -46,16 +46,17 @@ import { GUARD_ROUTES, navigateGuardBottomTab } from '../navigation/constants';
 import type { GuardStackScreenProps } from '../navigation/types';
 import type { RootState } from '../store/store';
 import { getGuardMyJobs, guardJobCheckin } from '../services/guardApi';
-import { findIncidentContextByRoster } from '../services/guardJobsMapper';
+import { findIncidentContextByRoster, combineDateAndTime } from '../services/guardJobsMapper';
 import { saveActiveShiftSession } from '../services/activeShiftSession';
 import {
   fetchLocationFix,
   formatCaptureTimestamp,
+  resolveLocationDisplayName,
 } from '../services/locationUtils';
 import { captureFaceSelfieFromCamera } from '../services/captureSelfie';
 import { normalizeDisplayImageUri } from '../utils/imageUri';
 
-const appLogo = require('../../assets/opg-logo.png');
+const appLogo = require('../../assets/logo.png');
 
 type ShiftSignInRoute = GuardStackScreenProps<'ShiftSignIn'>['route'];
 
@@ -70,17 +71,8 @@ function resolveCaptureUri(asset: Asset): string {
 }
 
 async function requestLocationPermission(): Promise<boolean> {
-  if (Platform.OS !== 'android') return true;
-  const granted = await PermissionsAndroid.requestMultiple([
-    PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
-    PermissionsAndroid.PERMISSIONS.ACCESS_COARSE_LOCATION,
-  ]);
-  return (
-    granted[PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION] ===
-      PermissionsAndroid.RESULTS.GRANTED ||
-    granted[PermissionsAndroid.PERMISSIONS.ACCESS_COARSE_LOCATION] ===
-      PermissionsAndroid.RESULTS.GRANTED
-  );
+  const status = await locationService.checkPermission();
+  return status === 'granted';
 }
 
 export default function ShiftSignInScreen() {
@@ -120,19 +112,7 @@ export default function ShiftSignInScreen() {
   }, [params?.rosterId, params?.siteId]);
 
   useEffect(() => {
-    Geolocation.setRNConfiguration({
-      skipPermissionRequests: false,
-      authorizationLevel: 'whenInUse',
-      locationProvider: 'auto',
-    });
-    Geolocation.requestAuthorization(
-      () => {
-        // no-op
-      },
-      () => {
-        // no-op
-      },
-    );
+    // No-op, managed by locationService
   }, []);
 
   const shift = {
@@ -143,6 +123,7 @@ export default function ShiftSignInScreen() {
     zones: params?.zones,
     status: params?.status,
     rosterId: params?.rosterId,
+    signInTime: params?.signInTime,
   };
   const isActiveShift = shift?.status === 'active';
 
@@ -150,11 +131,6 @@ export default function ShiftSignInScreen() {
 
   const refreshLocation = useCallback(
     async (showPermissionAlert = false) => {
-      if (locationFetched || isFetchingLocation.current) {
-        return;
-      }
-
-      isFetchingLocation.current = true;
       setLocationLoading(true);
       try {
         const allowed = await requestLocationPermission();
@@ -165,27 +141,33 @@ export default function ShiftSignInScreen() {
               'Location permission is needed to check in.',
             );
           }
+          setLocationLoading(false);
           return;
         }
 
-        let fix;
-        try {
-          fix = await fetchLocationFix(true, locationFallback);
-        } catch {
-          fix = await fetchLocationFix(false, locationFallback);
-        }
+        const coords = await locationService.getFormattedLocation();
+        if (coords) {
+          setLocationCoords(coords);
+          setLocationFetched(true);
 
-        setLocationCoords(fix.coordinates);
-        setLocationLabel(fix.displayName);
-        setLocationFetched(true);
+          try {
+            const [lat, lon] = coords.split(',').map(Number);
+            const displayName = await resolveLocationDisplayName(lat, lon, locationFallback);
+            setLocationLabel(displayName);
+          } catch {
+            setLocationLabel(coords);
+          }
+        } else {
+          // If still no coords, at least set a label if we have one
+          if (!locationLabel) setLocationLabel(locationFallback);
+        }
       } catch (error: any) {
-        // Fail silently, retry logic in useEffect will handle auto-fetches
+        // Fail silently
       } finally {
         setLocationLoading(false);
-        isFetchingLocation.current = false;
       }
     },
-    [locationFetched, locationFallback],
+    [locationFallback, locationLabel],
   );
 
   useEffect(() => {
@@ -222,11 +204,19 @@ export default function ShiftSignInScreen() {
       Alert.alert('Error', 'Missing roster for this shift.');
       return;
     }
-    if (!locationCoords.trim()) {
+
+    let currentCoords = locationCoords.trim();
+    if (!currentCoords) {
+      // Try to get from service if local state is empty
+      currentCoords = await locationService.getFormattedLocation();
+    }
+
+    if (!currentCoords) {
       Alert.alert('Error', 'Location required');
       refreshLocation(true);
       return;
     }
+
     if (!selfie?.uri) {
       Alert.alert('Error', 'Please capture a selfie before signing in.');
       return;
@@ -236,7 +226,7 @@ export default function ShiftSignInScreen() {
       setCheckingIn(true);
       const result = await guardJobCheckin({
         roster_id: shift.rosterId,
-        location: locationCoords.trim(),
+        location: currentCoords,
         signin_notes: signinNotes.trim(),
         guard_id: guardId ?? undefined,
         selfie: {
@@ -261,6 +251,12 @@ export default function ShiftSignInScreen() {
             shift.rosterId,
           )?.siteId;
         }
+
+        let endTsToSave = params?.endTimestamp;
+        if (!endTsToSave && shift.time) {
+          endTsToSave = combineDateAndTime(signInTime.slice(0, 10), shift.time) ?? undefined;
+        }
+
         await saveActiveShiftSession({
           rosterId: shift.rosterId,
           site: shift.site,
@@ -269,6 +265,8 @@ export default function ShiftSignInScreen() {
           shiftId: shift.id,
           siteId: siteIdToSave,
           siteInfo: serverData?.site_info || serverData,
+          endTimestamp: endTsToSave,
+          endTime: shift.time,
         });
         navigation.replace(GUARD_ROUTES.ONGOING_SHIFT, {
           rosterId: shift.rosterId,
@@ -277,6 +275,8 @@ export default function ShiftSignInScreen() {
           signInTime,
           shiftId: shift.id,
           siteId: siteIdToSave,
+          endTimestamp: endTsToSave,
+          time: shift.time,
         });
       } else {
         Alert.alert('Check-in failed', result.message || 'Please try again.');
@@ -287,6 +287,8 @@ export default function ShiftSignInScreen() {
       setCheckingIn(false);
     }
   };
+
+  const insets = useSafeAreaInsets();
 
   return (
     <View style={styles.container}>
@@ -301,154 +303,139 @@ export default function ShiftSignInScreen() {
           setWatermarkJob(null);
           setWatermarking(false);
         }}
-        onError={error => {
-          Alert.alert(
-            'Error',
-            error?.message?.trim() || 'Could not apply watermark to selfie.',
-          );
+        onError={() => {
+          Alert.alert('Error', 'Could not apply watermark to selfie.');
           pendingSelfieRef.current = null;
           setWatermarkJob(null);
           setWatermarking(false);
         }}
       />
       <StatusBar barStyle="light-content" backgroundColor={Colors.headerStart} />
-      <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
-        <ScrollView
-          showsVerticalScrollIndicator={false}
-          keyboardShouldPersistTaps="handled"
-        >
-          <View style={styles.header}>
-            <View style={styles.decorCircle} />
-            <View style={styles.hdrTopRow}>
-              <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
-                <ArrowLeft size={18} color="rgba(255,255,255,0.8)" />
-              </TouchableOpacity>
-              <Text style={styles.hdrTitle}>Shift Check-In</Text>
-            </View>
-
-            <View style={styles.siteBox}>
-              <Text style={styles.siteBoxLbl}>Current Site</Text>
-              <Text style={styles.siteBoxName} numberOfLines={2}>
-                {truncateSiteName(shift.site)}
-              </Text>
-              <View style={styles.siteTimeRow}>
-                <Clock size={14} color="rgba(255,255,255,0.6)" />
-                <Text style={styles.siteBoxTime}>
-                  {shift.time || '—'} · {shift.zones || 'All Zones'}
-                </Text>
-              </View>
-              {shift.id ? (
-                <Text style={styles.rosterIdText}>Roster #{shift.rosterId}</Text>
-              ) : null}
-            </View>
+      <View style={[styles.headerWrapper, { paddingTop: insets.top }]}>
+        <View style={styles.header}>
+          <View style={styles.decorCircle} />
+          <View style={styles.hdrTopRow}>
+            <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
+              <ArrowLeft size={18} color="rgba(255,255,255,0.8)" />
+            </TouchableOpacity>
+            <Text style={styles.hdrTitle}>Shift Check-In</Text>
           </View>
 
-          <View style={styles.body}>
-            {/* Location */}
-
-            {/* Sign-in notes */}
-            <View style={[styles.card, Shadows.card]}>
-              <View style={styles.cardTitleRow}>
-                <FileText size={16} color={Colors.accent} />
-                <Text style={styles.cardTitle}>Sign-in notes</Text>
-              </View>
-              <TextInput
-                style={styles.notesInput}
-                value={signinNotes}
-                onChangeText={setSigninNotes}
-                placeholder="Starting my shift"
-                placeholderTextColor={Colors.textMuted}
-                multiline
-                textAlignVertical="top"
-              />
+          <View style={styles.siteBox}>
+            <Text style={styles.siteBoxLbl}>Current Site</Text>
+            <Text style={styles.siteBoxName} numberOfLines={2}>
+              {truncateSiteName(shift.site)}
+            </Text>
+            <View style={styles.siteTimeRow}>
+              <Clock size={14} color="rgba(255,255,255,0.6)" />
+              <Text style={styles.siteBoxTime}>
+                {shift.time || '—'} · {shift.zones || 'All Zones'}
+              </Text>
             </View>
+            {shift.id ? (
+              <Text style={styles.rosterIdText}>Roster #{shift.rosterId}</Text>
+            ) : null}
+          </View>
+        </View>
+      </View>
 
-            {/* Selfie */}
-            <View style={[styles.card, Shadows.card]}>
-              <View style={styles.cardTitleRow}>
-                <Camera size={16} color={Colors.accent} />
-                <Text style={styles.cardTitle}>Selfie (required)</Text>
-              </View>
+      <ScrollView
+        style={{ flex: 1 }}
+        contentContainerStyle={{ paddingBottom: insets.bottom + 20 }}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+      >
+        <View style={styles.body}>
+          {/* Sign-in notes */}
+          <View style={[styles.card, Shadows.card]}>
+            <View style={styles.cardTitleRow}>
+              <FileText size={16} color={Colors.accent} />
+              <Text style={styles.cardTitle}>Sign-in notes</Text>
+            </View>
+            <TextInput
+              style={styles.notesInput}
+              value={signinNotes}
+              onChangeText={setSigninNotes}
+              placeholder="Starting my shift"
+              placeholderTextColor={Colors.textMuted}
+              multiline
+              textAlignVertical="top"
+            />
+          </View>
 
-              <TouchableOpacity
-                style={[
-                  styles.camArea,
-                  (selfie?.uri || watermarking) && styles.camAreaFilled,
-                  (!selfie?.uri || watermarking) && styles.camAreaCentered,
-                ]}
-                onPress={
-                  selfie?.uri && !watermarking
-                    ? () => setViewerUri(selfie.uri ?? null)
-                    : handleCaptureSelfie
-                }
-                activeOpacity={0.9}
-                disabled={watermarking}
-              >
-                {watermarking ? (
-                  <View style={styles.camAreaLoading}>
-                    <ActivityIndicator size="large" color={Colors.accent} />
-                    <Text style={styles.camHint}>Applying watermark...</Text>
-                  </View>
-                ) : selfie?.uri ? (
-                  <SelfiePreviewImage
-                    uri={selfie.uri}
-                    imageWidth={selfie.width}
-                    imageHeight={selfie.height}
-                  />
-                ) : (
-                  <>
-                    <Image source={appLogo} style={styles.selfiePlaceholderLogo} resizeMode="contain" />
-                    <Text style={styles.camHint}>Tap to capture selfie</Text>
-                  </>
-                )}
-              </TouchableOpacity>
-
-              {selfie?.uri && !watermarking ? (
-                <>
-                  <Text style={styles.viewHint}>Tap image to view full size</Text>
-                  <TouchableOpacity style={styles.retakeBtn} onPress={handleCaptureSelfie}>
-                    <Text style={styles.retakeBtnText}>Retake selfie</Text>
-                  </TouchableOpacity>
-                </>
-              ) : null}
+          {/* Selfie */}
+          <View style={[styles.card, Shadows.card]}>
+            <View style={styles.cardTitleRow}>
+              <Camera size={16} color={Colors.accent} />
+              <Text style={styles.cardTitle}>Selfie (required)</Text>
             </View>
 
             <TouchableOpacity
-              style={[styles.signInBtn, checkingIn && styles.signInBtnDisabled]}
-              onPress={handleCheckIn}
-              activeOpacity={0.85}
-              disabled={checkingIn}
+              style={[
+                styles.camArea,
+                (selfie?.uri || watermarking) && styles.camAreaFilled,
+                (!selfie?.uri || watermarking) && styles.camAreaCentered,
+              ]}
+              onPress={
+                selfie?.uri && !watermarking
+                  ? () => setViewerUri(selfie.uri ?? null)
+                  : handleCaptureSelfie
+              }
+              activeOpacity={0.9}
+              disabled={watermarking}
             >
-              <View style={styles.signInBtnInner}>
-                {checkingIn ? (
-                  <ActivityIndicator color="#fff" />
-                ) : (
-                  <CheckCircle size={20} color="#fff" />
-                )}
-                <Text style={styles.signInBtnText}>
-                  {checkingIn
-                    ? 'Signing in...'
-                    : isActiveShift
-                      ? 'Continue Shift'
-                      : 'Sign In to Shift'}
-                </Text>
-              </View>
+              {watermarking ? (
+                <View style={styles.camAreaLoading}>
+                  <ActivityIndicator size="large" color={Colors.accent} />
+                  <Text style={styles.camHint}>Applying watermark...</Text>
+                </View>
+              ) : selfie?.uri ? (
+                <SelfiePreviewImage
+                  uri={selfie.uri}
+                  imageWidth={selfie.width}
+                  imageHeight={selfie.height}
+                />
+              ) : (
+                <>
+                  <Image source={appLogo} style={styles.selfiePlaceholderLogo} resizeMode="contain" />
+                  <Text style={styles.camHint}>Tap to capture selfie</Text>
+                </>
+              )}
             </TouchableOpacity>
-          </View>
-        </ScrollView>
 
-        <NavBar
-          variant="light"
-          items={[
-            { icon: Home, label: 'Home' },
-            { icon: Route, label: 'Patrol' },
-            { icon: AlertTriangle, label: 'Incidents' },
-            { icon: ClipboardList, label: 'Shifts', active: true },
-            { icon: User, label: 'Profile' },
-          ]}
-          onPress={i => navigateGuardBottomTab(navigation, i)}
-        />
-      </SafeAreaView>
+            {selfie?.uri && !watermarking ? (
+              <>
+                <Text style={styles.viewHint}>Tap image to view full size</Text>
+                <TouchableOpacity style={styles.retakeBtn} onPress={handleCaptureSelfie}>
+                  <Text style={styles.retakeBtnText}>Retake selfie</Text>
+                </TouchableOpacity>
+              </>
+            ) : null}
+          </View>
+
+          <TouchableOpacity
+            style={[styles.signInBtn, checkingIn && styles.signInBtnDisabled]}
+            onPress={handleCheckIn}
+            activeOpacity={0.85}
+            disabled={checkingIn}
+          >
+            <View style={styles.signInBtnInner}>
+              {checkingIn ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <CheckCircle size={20} color="#fff" />
+              )}
+              <Text style={styles.signInBtnText}>
+                {checkingIn
+                  ? 'Signing in...'
+                  : isActiveShift
+                    ? 'Continue Shift'
+                    : 'Sign In to Shift'}
+              </Text>
+            </View>
+          </TouchableOpacity>
+        </View>
+      </ScrollView>
 
       <ImageViewerModal
         visible={viewerUri != null}
@@ -461,6 +448,7 @@ export default function ShiftSignInScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.bgAlt },
+  headerWrapper: { backgroundColor: Colors.headerStart },
   safe: { flex: 1 },
 
   header: {
@@ -557,8 +545,31 @@ const styles = StyleSheet.create({
   locationValue: {
     fontSize: 13,
     color: Colors.textPrimary,
-    fontWeight: '600',
-    lineHeight: 18,
+    fontWeight: '800',
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+  },
+  locationLabel: {
+    fontSize: 11,
+    color: Colors.textMuted,
+    marginTop: 2,
+  },
+  locationBox: {
+    backgroundColor: Colors.bgAlt,
+    padding: 10,
+    borderRadius: Radii.sm,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  refreshLocBtn: {
+    alignSelf: 'flex-end',
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+  },
+  refreshLocText: {
+    fontSize: 12,
+    color: Colors.accent,
+    fontWeight: '700',
   },
   secondaryBtn: {
     flexDirection: 'row',

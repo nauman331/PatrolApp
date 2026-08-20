@@ -7,7 +7,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>en</string>
 	<key>CFBundleDisplayName</key>
-	<string>Patrolapp</string>
+	<string>Report Pro</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -38,7 +38,11 @@
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>Photo library access is required to attach images to incident reports.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>Location is required to verify your shift check-in.</string>
+	<string>Location is required to verify your shift check-in, patrol start, and checkpoint scans.</string>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>Location is required to track your patrolling rounds accurately in the background.</string>
+	<key>NSLocationAlwaysUsageDescription</key>
+	<string>Location is required to track your patrolling rounds accurately in the background.</string>
 	<key>NFCReaderUsageDescription</key>
 	<string>NFC is required to scan patrol checkpoint tags.</string>
 	<key>RCTNewArchEnabled</key>

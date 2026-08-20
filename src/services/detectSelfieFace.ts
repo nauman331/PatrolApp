@@ -97,7 +97,7 @@ export async function detectFaceInSelfie(asset: Asset): Promise<boolean> {
     // if ML Kit provides classifications, we can check them.
     // Real faces usually have some variation.
     // We also check if landmarks are present which is more common in real faces for ML Kit.
-    const hasLandmarks = face.landmarks && Object.keys(face.landmarks).length > 0;
+    const hasLandmarks = Boolean(face.landmarks && Object.keys(face.landmarks).length > 0);
 
     return hasLandmarks;
   } catch {

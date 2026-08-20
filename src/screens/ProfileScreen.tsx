@@ -32,6 +32,7 @@ import { useAppDispatch, useAppSelector } from '../store/hooks';
 import { fetchGuardIncidents, selectIncidents } from '../store/slices/incidentsSlice';
 import { logout } from '../services/authApi';
 import { useNavigation } from '@react-navigation/native';
+import { useSafeAreaTopInset } from '../navigation/utils';
 import { GUARD_ROUTES, MANAGER_ROUTES, navigateGuardBottomTab, navigateManagerBottomTab } from '../navigation/constants';
 import { buildManagerNavItems } from '../screens/manager/managerShared';
 import {
@@ -117,6 +118,7 @@ function ProfileField({
 
 export default function ProfileScreen({ onLogout }: Props) {
   const navigation = useNavigation<any>();
+  const topInset = useSafeAreaTopInset();
   const dispatch = useAppDispatch();
   const userRole = useAppSelector(state => state.auth?.userRole ?? 'guard');
   const guardId = useAppSelector(state => state.auth?.guardId ?? null);
@@ -255,11 +257,10 @@ export default function ProfileScreen({ onLogout }: Props) {
             setDeleting(false);
 
             if (result.success) {
+              await logout();
               if (onLogout) {
                 onLogout();
-                return;
               }
-              await logout();
             } else {
               Alert.alert('Error', result.message ?? 'Failed to delete account');
             }
@@ -276,11 +277,10 @@ export default function ProfileScreen({ onLogout }: Props) {
         text: 'Logout',
         style: 'destructive',
         onPress: async () => {
+          await logout();
           if (onLogout) {
             onLogout();
-            return;
           }
-          await logout();
         },
       },
     ]);
@@ -301,17 +301,17 @@ export default function ProfileScreen({ onLogout }: Props) {
 
   const handleViewReports = () => {
     if (userRole === 'manager') {
-      navigation.navigate(MANAGER_ROUTES.REPORTS);
+      navigateManagerBottomTab(navigation, 2);
       return;
     }
-    navigation.navigate(GUARD_ROUTES.INCIDENTS);
+    navigateGuardBottomTab(navigation, 2);
   };
 
   return (
     <View style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor={Colors.headerStart} />
 
-      <SafeAreaView style={styles.safeTop} edges={['top']}>
+      <View style={[styles.safeTop, { paddingTop: topInset }]}>
         <View style={styles.header}>
           <View style={styles.hdrRow}>
             <Text style={styles.hdrTitle}>Profile</Text>
@@ -329,9 +329,9 @@ export default function ProfileScreen({ onLogout }: Props) {
             )}
           </View>
         </View>
-      </SafeAreaView>
+      </View>
 
-      <SafeAreaView style={styles.safeBody} edges={['bottom']}>
+      <View style={styles.safeBody}>
         <KeyboardAvoidingView
           style={styles.keyboardAvoid}
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
@@ -511,30 +511,7 @@ export default function ProfileScreen({ onLogout }: Props) {
             )}
           </ScrollView>
         </KeyboardAvoidingView>
-
-        <NavBar
-          variant={userRole === 'manager' ? 'mgr' : 'light'}
-          items={
-            userRole === 'manager'
-              ? buildManagerNavItems(4)
-              : [
-                  { icon: Home, label: 'Home' },
-                  { icon: Route, label: 'Patrol' },
-                  { icon: AlertTriangle, label: 'Incidents' },
-                  { icon: ClipboardList, label: 'Shifts' },
-                  { icon: User, label: 'Profile', active: true },
-                ]
-          }
-          onPress={i => {
-            if (userRole === 'manager') {
-              navigateManagerBottomTab(navigation, i);
-              return;
-            }
-
-            navigateGuardBottomTab(navigation, i);
-          }}
-        />
-      </SafeAreaView>
+      </View>
     </View>
   );
 }
@@ -578,11 +555,12 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   box: {
-    height: 35,
-    width: 35,
+    height: 36,
+    width: 36,
     borderRadius: 10,
-    padding: 9,
-    backgroundColor: Colors.accentAlpha30,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: Colors.accentAlpha12,
   },
   avatarContainer: {
     alignItems: 'center',

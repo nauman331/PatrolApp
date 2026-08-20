@@ -1,4 +1,4 @@
-package com.patrolapp
+package com.reportpro
 
 import android.app.Application
 import com.facebook.react.PackageList

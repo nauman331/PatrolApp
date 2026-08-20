@@ -12,13 +12,17 @@ import type { RootState } from '../store';
 export interface ManagerDashboardState {
   data: ManagerDashboardData | null;
   loading: boolean;
+  refreshing: boolean;
   error: string | null;
+  selectedDate: string; // ISO string
 }
 
 const initialState: ManagerDashboardState = {
   data: null,
   loading: false,
+  refreshing: false,
   error: null,
+  selectedDate: new Date().toISOString(),
 };
 
 export const fetchManagerDashboard = createAsyncThunk<
@@ -44,12 +48,20 @@ const managerDashboardSlice = createSlice({
       state.data = null;
       state.error = null;
       state.loading = false;
+      state.refreshing = false;
     },
+    setSelectedDate(state, action: PayloadAction<string>) {
+      state.selectedDate = action.payload;
+    }
   },
   extraReducers: builder => {
     builder
       .addCase(fetchManagerDashboard.pending, (state: ManagerDashboardState) => {
-        state.loading = true;
+        if (!state.data) {
+          state.loading = true;
+        } else {
+          state.refreshing = true;
+        }
         state.error = null;
       })
       .addCase(
@@ -59,6 +71,7 @@ const managerDashboardSlice = createSlice({
           action: PayloadAction<ManagerDashboardData>,
         ) => {
           state.loading = false;
+          state.refreshing = false;
           state.data = action.payload;
         },
       )
@@ -66,6 +79,7 @@ const managerDashboardSlice = createSlice({
         fetchManagerDashboard.rejected,
         (state: ManagerDashboardState, action) => {
           state.loading = false;
+          state.refreshing = false;
           state.error =
             (action.payload as string) ??
             action.error.message ??
@@ -75,7 +89,7 @@ const managerDashboardSlice = createSlice({
   },
 });
 
-export const { clearManagerDashboardError, clearManagerDashboard } =
+export const { clearManagerDashboardError, clearManagerDashboard, setSelectedDate } =
   managerDashboardSlice.actions;
 export default managerDashboardSlice.reducer;
 
@@ -83,5 +97,9 @@ export const selectManagerDashboard = (state: RootState) =>
   state.managerDashboard.data;
 export const selectManagerDashboardLoading = (state: RootState) =>
   state.managerDashboard.loading;
+export const selectManagerDashboardRefreshing = (state: RootState) =>
+  state.managerDashboard.refreshing;
 export const selectManagerDashboardError = (state: RootState) =>
   state.managerDashboard.error;
+export const selectManagerDashboardDate = (state: RootState) =>
+  state.managerDashboard.selectedDate;

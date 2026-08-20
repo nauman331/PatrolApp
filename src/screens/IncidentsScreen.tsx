@@ -30,7 +30,7 @@ import {
   Camera,
   Download,
 } from 'lucide-react-native';
-import { useGuardNavigation } from '../navigation/utils';
+import { useGuardNavigation, useSafeAreaTopInset } from '../navigation/utils';
 import { GUARD_ROUTES, navigateGuardBottomTab } from '../navigation/constants';
 import { useAppDispatch, useAppSelector } from '../store/hooks';
 import {
@@ -45,6 +45,7 @@ import {
   type MappedIncident,
 } from '../services/incidentsMapper';
 import { downloadIncidentPdf } from '../services/incidentPdfDownload';
+import { DownloadButton } from '../components/DownloadButton';
 
 const sevConfig: Record<
   IncidentSeverity,
@@ -86,6 +87,7 @@ function MetaChip({
 
 export default function IncidentsScreen() {
   const navigation = useGuardNavigation();
+  const topInset = useSafeAreaTopInset();
   const dispatch = useAppDispatch();
   const incidents = useAppSelector(selectIncidents);
   const loading = useAppSelector(selectIncidentsLoading);
@@ -118,21 +120,21 @@ export default function IncidentsScreen() {
     <View style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor={Colors.headerStart} />
 
-      <SafeAreaView style={styles.safeTop} edges={['top']}>
+      <View style={[styles.safeTop, { paddingTop: topInset }]}>
         <View style={styles.header}>
           <View style={styles.hdrRow}>
             <Text style={styles.hdrTitle}>Incidents</Text>
             <View style={styles.openBadge}>
               <Text style={styles.openBadgeText}>
-                {loading ? '...' : `${meta.count} REPORTS`}
+                {loading ? '...' : `${meta.count} ${meta.count === 1 ? 'Report' : 'Reports'}`}
               </Text>
             </View>
           </View>
           <Text style={styles.hdrSub}>{meta.subtitle}</Text>
         </View>
-      </SafeAreaView>
+      </View>
 
-      <SafeAreaView style={styles.safeBody} edges={['bottom']}>
+      <View style={styles.safeBody}>
         <ScrollView
           style={styles.body}
           contentContainerStyle={styles.bodyContent}
@@ -198,7 +200,7 @@ export default function IncidentsScreen() {
                         style={[styles.sevBadge, { backgroundColor: sev.bg }]}
                       >
                         <Text style={[styles.sevText, { color: sev.color }]}>
-                          {inc.severity}
+                          {inc.severity.charAt(0).toUpperCase() + inc.severity.slice(1).toLowerCase()}
                         </Text>
                       </View>
                     </View>
@@ -251,53 +253,18 @@ export default function IncidentsScreen() {
                       onPress={() => openReport(inc)}
                       activeOpacity={0.85}
                     >
-                      <Text style={styles.viewReportText}>View report</Text>
+                      <Text style={styles.viewReportText}>View Report</Text>
                       <ChevronRight size={16} color={Colors.accent} />
                     </TouchableOpacity>
 
-{/*
-                    <TouchableOpacity
-                      style={styles.actionPdf}
-                      onPress={() => handleDownloadPdf(inc)}
-                      disabled={isDownloading}
-                      activeOpacity={0.85}
-                    >
-                      {isDownloading ? (
-                        <ActivityIndicator size="small" color={Colors.white} />
-                      ) : (
-                        <Download size={14} color={Colors.white} />
-                      )}
-                      <Text style={styles.actionPdfText}>
-                        {isDownloading ? 'Creating PDF…' : 'Download PDF'}
-                      </Text>
-                    </TouchableOpacity>
-                     */}
+
                   </View>
                 </View>
               );
             })
           )}
         </ScrollView>
-
-        {/* <TouchableOpacity
-          style={styles.fab}
-          onPress={() => navigation.navigate(GUARD_ROUTES.ADD_INCIDENT)}
-        >
-          <Plus size={22} color="white" />
-        </TouchableOpacity> */}
-
-        <NavBar
-          variant="light"
-          items={[
-            { icon: Home, label: 'Home' },
-            { icon: Route, label: 'Patrol' },
-            { icon: AlertTriangle, label: 'Incidents', active: true },
-            { icon: ClipboardList, label: 'Shifts' },
-            { icon: User, label: 'Profile' },
-          ]}
-          onPress={i => navigateGuardBottomTab(navigation, i)}
-        />
-      </SafeAreaView>
+      </View>
     </View>
   );
 }

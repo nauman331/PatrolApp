@@ -23,7 +23,7 @@ import { API_URL } from '../config/env';
 const SPLASH_DURATION_MS = 2000;
 const LOGO_FADE_IN_MS = 650;
 const EXIT_FADE_MS = 280;
-const SPLASH_BACKGROUND = '#16213e';
+const SPLASH_BACKGROUND = '#384959';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const PROGRESS_BAR_WIDTH = Math.min(SCREEN_WIDTH * 0.58, 240);

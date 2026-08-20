@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -12,6 +12,8 @@ import {
 } from 'react-native';
 
 import { Colors, FontSizes, Radii, Spacing, Shadows } from '../theme';
+import locationService from '../services/LocationService';
+import { resolveLocationDisplayName } from '../services/locationUtils';
 import DateTimePicker, {
   DateTimePickerEvent,
 } from '@react-native-community/datetimepicker';
@@ -23,7 +25,7 @@ import {
   PenLine,
 } from 'lucide-react-native';
 import { useGuardNavigation } from '../navigation/utils';
-import { GUARD_ROUTES } from '../navigation/constants';
+import { GUARD_ROUTES, navigateGuardBottomTab } from '../navigation/constants';
 
 export default function AddPatrolReport() {
   const navigation = useGuardNavigation();
@@ -36,6 +38,19 @@ export default function AddPatrolReport() {
     location: '',
     details: '',
   });
+
+  useEffect(() => {
+    async function fetchInitialLocation() {
+      try {
+        const loc = await locationService.getCurrentLocation();
+        const displayName = await resolveLocationDisplayName(loc.latitude, loc.longitude);
+        setForm(f => ({ ...f, location: displayName }));
+      } catch (err) {
+        console.warn('Failed to auto-fill location', err);
+      }
+    }
+    fetchInitialLocation();
+  }, []);
 
   const handleAddPhoto = () => {
     // 👉 later connect camera
@@ -55,21 +70,6 @@ export default function AddPatrolReport() {
         </View>
 
         <ScrollView style={styles.body} showsVerticalScrollIndicator={false}>
-          {/* Location Card */}
-          <View style={styles.card}>
-            <View
-              style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}
-            >
-              <MapPin size={12} color={Colors.accent} style={styles.icon} />
-              <Text style={styles.label}>Location</Text>
-            </View>
-            <TextInput
-              style={styles.input}
-              placeholder="Enter location"
-              value={form.location}
-              onChangeText={v => setForm({ ...form, location: v })}
-            />
-          </View>
           {/* Date & Time */}
           <View style={styles.card}>
             <View
@@ -178,7 +178,7 @@ export default function AddPatrolReport() {
 
           <TouchableOpacity
             style={styles.submitBtn}
-            onPress={() => navigation.navigate(GUARD_ROUTES.PATROL_TIMELINE)}
+            onPress={() => navigateGuardBottomTab(navigation, 1)}
           >
             <Text style={styles.submitText}>Submit Report</Text>
           </TouchableOpacity>

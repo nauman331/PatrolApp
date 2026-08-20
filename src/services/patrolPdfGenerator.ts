@@ -11,8 +11,8 @@ const BOTTOM = 36;
 const GAP = 18;
 
 const C = {
-  navy: [26, 26, 46] as [number, number, number],
-  accent: [121, 31, 61] as [number, number, number],
+  navy: [56, 73, 89] as [number, number, number],
+  accent: [106, 137, 167] as [number, number, number],
   text: [33, 33, 33] as [number, number, number],
   label: [90, 90, 90] as [number, number, number],
   line: [220, 220, 228] as [number, number, number],
@@ -32,7 +32,7 @@ type L = {
 
 function txt(value: unknown): string {
   if (value == null) return '—';
-  const s = String(value).replace(/\s+/g, ' ').trim();
+  const s = String(value).replace(/[ \t\r]+/g, ' ').trim();
   return s || '—';
 }
 
@@ -69,7 +69,7 @@ function drawBanner(l: L, data: ManagerPatrolReportDetailData) {
   l.doc.text(data.date_label, MARGIN, 42);
 
   l.doc.setFontSize(9);
-  l.doc.text('Patrol App', l.pw - MARGIN, 28, { align: 'right' });
+  l.doc.text('Report Pro', l.pw - MARGIN, 28, { align: 'right' });
   l.doc.text(
     formatAppDateTime(new Date().toISOString()),
     l.pw - MARGIN,
@@ -95,23 +95,81 @@ function section(l: L, number: number, title: string) {
   l.doc.setTextColor(...C.text);
 }
 
-function detailTable(l: L, rows: [string, string][]) {
+const ALWAYS_LONG_LABELS = new Set([
+  'description',
+  'details',
+  'notes',
+  'action taken',
+  'comments',
+  'location details',
+  'witness information',
+  'other details',
+  'address',
+  'address details',
+  'emergency detail',
+  'statement',
+  'damage details',
+  'injury detail',
+  'summary',
+  'instructions',
+  'remarks',
+  'site address',
+]);
+
+function isLongField(label: string, value: string): boolean {
+  const normLabel = label.toLowerCase().trim();
+  if (Array.from(ALWAYS_LONG_LABELS).some(l => normLabel.includes(l))) {
+    return true;
+  }
+  const strVal = txt(value);
+  if (strVal.length > 30 || strVal.includes('\n')) {
+    return true;
+  }
+  return false;
+}
+
+/** Smart responsive table — pairs short fields into 2 columns (4 table cols), spans long fields full width (colSpan 3). */
+function renderSmartGridTable(l: L, rows: [string, string][]) {
   if (!rows.length) return;
   space(l, 24);
 
-  const body: string[][] = [];
-  for (let i = 0; i < rows.length; i += 2) {
-    const left = rows[i];
-    const right = rows[i + 1];
-    body.push([
-      left[0],
-      left[1],
-      right?.[0] ?? '',
-      right?.[1] ?? '',
-    ]);
+  const body: any[] = [];
+  let i = 0;
+  while (i < rows.length) {
+    const current = rows[i];
+    const isCurrentLong = isLongField(current[0], current[1]);
+
+    if (isCurrentLong) {
+      body.push([
+        current[0],
+        { content: current[1], colSpan: 3 },
+      ]);
+      i++;
+    } else {
+      const next = rows[i + 1];
+      const isNextLong = next ? isLongField(next[0], next[1]) : true;
+
+      if (next && !isNextLong) {
+        body.push([
+          current[0],
+          current[1],
+          next[0],
+          next[1],
+        ]);
+        i += 2;
+      } else {
+        body.push([
+          current[0],
+          { content: current[1], colSpan: 3 },
+        ]);
+        i++;
+      }
+    }
   }
 
-  const quarter = l.cw / 4;
+  const colLabelWidth = Math.round(l.cw * 0.22);
+  const colValWidth = Math.round((l.cw - colLabelWidth * 2) / 2);
+
   autoTable(l.doc, {
     startY: l.y,
     margin: { left: MARGIN, right: MARGIN },
@@ -124,24 +182,24 @@ function detailTable(l: L, rows: [string, string][]) {
       lineColor: C.line,
       lineWidth: 0.4,
       overflow: 'linebreak',
-      valign: 'middle',
+      valign: 'top',
     },
     body,
     columnStyles: {
       0: {
-        cellWidth: quarter,
+        cellWidth: colLabelWidth,
         fontStyle: 'bold',
         textColor: C.label,
         fillColor: C.panel,
       },
-      1: { cellWidth: quarter },
+      1: { cellWidth: colValWidth },
       2: {
-        cellWidth: quarter,
+        cellWidth: colLabelWidth,
         fontStyle: 'bold',
         textColor: C.label,
         fillColor: C.panel,
       },
-      3: { cellWidth: quarter },
+      3: { cellWidth: colValWidth },
     },
   });
   afterTable(l);
@@ -158,7 +216,7 @@ function footers(l: L, reportTitle: string) {
     l.doc.setFontSize(8);
     l.doc.setTextColor(...C.label);
     l.doc.text(
-      `Patrol App · ${reportTitle} · ${stamp}`,
+      `Report Pro · ${reportTitle} · ${stamp}`,
       l.pw / 2,
       l.ph - 16,
       { align: 'center' },
@@ -169,16 +227,20 @@ function footers(l: L, reportTitle: string) {
   }
 }
 
+export type DownloadProgressCallback = (progress: { received: number; total: number } | null) => void;
+
 export async function buildPatrolReportPdf(
   data: ManagerPatrolReportDetailData,
+  onProgress?: DownloadProgressCallback,
 ): Promise<{ filePath: string; cachePath: string; base64: string }> {
+  if (onProgress) onProgress({ received: 10, total: 100 });
   const doc = new jsPDF({ unit: 'pt', format: 'a4' });
   const l = layout(doc);
 
   drawBanner(l, data);
 
   section(l, 1, 'Overview');
-  detailTable(l, [
+  renderSmartGridTable(l, [
     ['Guard', txt(data.guard.name)],
     ['Site', txt(data.site.name)],
     ['Date', txt(data.date_label)],
@@ -237,11 +299,17 @@ export async function buildPatrolReportPdf(
 
   footers(l, `Patrol Report - ${data.guard.name}`);
 
+  if (onProgress) onProgress({ received: 60, total: 100 });
+
   const fileName = `patrol-report-${data.guard.id}-${data.date}.pdf`;
   const pdfBase64 = doc.output('datauristring').split(',')[1];
   const cachePath = `${ReactNativeBlobUtil.fs.dirs.CacheDir}/${fileName}`;
 
+  if (onProgress) onProgress({ received: 85, total: 100 });
+
   await ReactNativeBlobUtil.fs.writeFile(cachePath, pdfBase64, 'base64');
+
+  if (onProgress) onProgress({ received: 92, total: 100 });
 
   let savedPath = cachePath;
   if (Platform.OS === 'android') {
@@ -250,7 +318,7 @@ export async function buildPatrolReportPdf(
         await ReactNativeBlobUtil.MediaCollection.copyToMediaStore(
           {
             name: fileName,
-            parentFolder: 'PatrolApp',
+            parentFolder: 'Report Pro',
             mimeType: 'application/pdf',
           },
           'Download',
@@ -271,6 +339,8 @@ export async function buildPatrolReportPdf(
     savedPath = `${ReactNativeBlobUtil.fs.dirs.DocumentDir}/${fileName}`;
     await ReactNativeBlobUtil.fs.writeFile(savedPath, pdfBase64, 'base64');
   }
+
+  if (onProgress) onProgress({ received: 100, total: 100 });
 
   return { filePath: savedPath, cachePath, base64: pdfBase64 };
 }

@@ -52,7 +52,7 @@ export const API_URL =
   `${API_BASE_URL}/api`;
 
 if (__DEV__) {
-  console.log('[PatrolApp] API_BASE_URL:', API_BASE_URL);
-  console.log('[PatrolApp] API_URL:', API_URL);
-  console.log('[PatrolApp] INCIDENT_ASSETS_BASE_URL:', INCIDENT_ASSETS_BASE_URL);
+  console.log('[Report Pro] API_BASE_URL:', API_BASE_URL);
+  console.log('[Report Pro] API_URL:', API_URL);
+  console.log('[Report Pro] INCIDENT_ASSETS_BASE_URL:', INCIDENT_ASSETS_BASE_URL);
 }

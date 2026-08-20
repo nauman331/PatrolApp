@@ -8,17 +8,17 @@ import {
   View,
 } from 'react-native';
 
-const logoSource = require('../../assets/opg-logo.png');
+const logoSource = require('../../assets/logo.png');
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
-const LOGO_ASPECT_RATIO = 1.5;
+const LOGO_ASPECT_RATIO = 1.0;
 
 export type AppLogoVariant = 'splash' | 'header' | 'compact';
 
 const VARIANT_WIDTH: Record<AppLogoVariant, number> = {
-  splash: Math.min(SCREEN_WIDTH * 0.78, 320) * 0.7,
-  header: Math.min(SCREEN_WIDTH * 0.68, 260),
-  compact: Math.min(SCREEN_WIDTH * 0.5, 180),
+  splash: Math.min(SCREEN_WIDTH * 0.385, 154),
+  header: Math.min(SCREEN_WIDTH * 0.336, 126),
+  compact: Math.min(SCREEN_WIDTH * 0.20, 75),
 };
 
 type AppLogoProps = {
@@ -44,7 +44,7 @@ export default function AppLogo({
       source={logoSource}
       style={[{ width: resolvedWidth, height: resolvedHeight }, style]}
       resizeMode="contain"
-      accessibilityLabel="OPG Security logo"
+      accessibilityLabel="Report Pro logo"
     />
   );
 

@@ -5,15 +5,15 @@ import {
   TouchableOpacity,
   StyleSheet,
   StatusBar,
-  SafeAreaView,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Colors, FontSizes, Radii } from '../theme';
 import AppLogo from '../components/AppLogo';
 import { useAuthNavigation } from '../navigation/utils';
 import { AUTH_ROUTES } from '../navigation/constants';
 import type { AuthStackScreenProps } from '../navigation/types';
 
-const ONBOARDING_BACKGROUND = '#16213e';
+const ONBOARDING_BACKGROUND = '#384959';
 
 type OnboardingScreenProps = AuthStackScreenProps<'Onboarding'>;
 
@@ -32,7 +32,7 @@ export default function OnboardingScreen({}: OnboardingScreenProps) {
 
         <View style={styles.content}>
           <View style={styles.badge}>
-            <Text style={styles.badgeText}>SHWANIX TECHNOLOGIES</Text>
+            <Text style={styles.badgeText}>Report Pro</Text>
           </View>
 
           <View style={styles.logoWrap}>
@@ -40,8 +40,8 @@ export default function OnboardingScreen({}: OnboardingScreenProps) {
           </View>
 
           <Text style={styles.title}>
-            Guard &amp;{'\n'}
-            <Text style={styles.titleAccent}>Manager</Text> Pro
+            Report{'\n'}
+            <Text style={styles.titleAccent}>Pro</Text>
           </Text>
 
           <Text style={styles.subtitle}>
@@ -57,6 +57,7 @@ export default function OnboardingScreen({}: OnboardingScreenProps) {
             <Text style={styles.primaryBtnText}>GET STARTED</Text>
           </TouchableOpacity>
 
+         {/*
           <TouchableOpacity
             style={styles.outlineBtn}
             onPress={() => navigation.navigate(AUTH_ROUTES.LOGIN)}
@@ -64,6 +65,7 @@ export default function OnboardingScreen({}: OnboardingScreenProps) {
           >
             <Text style={styles.outlineBtnText}>SIGN IN</Text>
           </TouchableOpacity>
+           */}
 
           {/* <View style={styles.dots}>
             <View style={[styles.dot, styles.dotActive]} />

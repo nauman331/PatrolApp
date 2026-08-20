@@ -13,8 +13,8 @@ import {
   PermissionsAndroid,
   ActivityIndicator,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import Geolocation from '@react-native-community/geolocation';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import locationService from '../services/LocationService';
 import { type Asset } from 'react-native-image-picker';
 import { useRoute } from '@react-navigation/native';
 import { useSelector } from 'react-redux';
@@ -30,7 +30,7 @@ import {
   ClipboardList,
 } from 'lucide-react-native';
 import { useGuardNavigation } from '../navigation/utils';
-import { GUARD_ROUTES } from '../navigation/constants';
+import { GUARD_ROUTES, navigateGuardBottomTab } from '../navigation/constants';
 import type { GuardStackScreenProps } from '../navigation/types';
 import type { RootState } from '../store/store';
 import { guardJobCheckout } from '../services/guardApi';
@@ -42,9 +42,11 @@ import {
   promptCheckInRequired,
   saveActiveShiftSession,
 } from '../services/activeShiftSession';
+import { combineDateAndTime } from '../services/guardJobsMapper';
 import {
   fetchLocationFix,
   formatCaptureTimestamp,
+  resolveLocationDisplayName,
 } from '../services/locationUtils';
 import { captureFaceSelfieFromCamera } from '../services/captureSelfie';
 import { normalizeDisplayImageUri } from '../utils/imageUri';
@@ -55,7 +57,7 @@ import {
 import ImageViewerModal from '../components/ImageViewerModal';
 import { SelfiePreviewImage } from '../components/SelfiePreviewImage';
 
-const appLogo = require('../../assets/opg-logo.png');
+const appLogo = require('../../assets/logo.png');
 
 type OngoingShiftRoute = GuardStackScreenProps<'OngoingShift'>['route'];
 
@@ -99,17 +101,8 @@ function resolveCaptureUri(asset: Asset): string {
 }
 
 async function requestLocationPermission(): Promise<boolean> {
-  if (Platform.OS !== 'android') return true;
-  const granted = await PermissionsAndroid.requestMultiple([
-    PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
-    PermissionsAndroid.PERMISSIONS.ACCESS_COARSE_LOCATION,
-  ]);
-  return (
-    granted[PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION] ===
-    PermissionsAndroid.RESULTS.GRANTED ||
-    granted[PermissionsAndroid.PERMISSIONS.ACCESS_COARSE_LOCATION] ===
-    PermissionsAndroid.RESULTS.GRANTED
-  );
+  const status = await locationService.checkPermission();
+  return status === 'granted';
 }
 
 export default function OngoingShiftScreen() {
@@ -128,6 +121,9 @@ export default function OngoingShiftScreen() {
   const [siteId, setSiteId] = useState<string | number | undefined>(
     route.params?.siteId,
   );
+  const [endTimestamp, setEndTimestamp] = useState<number | undefined>(
+    route.params?.endTimestamp,
+  );
 
   const [elapsed, setElapsed] = useState('00:00:00');
   const [signoutNotes, setSignoutNotes] = useState('');
@@ -136,6 +132,7 @@ export default function OngoingShiftScreen() {
   const [watermarkJob, setWatermarkJob] = useState<SelfieWatermarkJob | null>(null);
   const [watermarking, setWatermarking] = useState(false);
   const pendingSelfieRef = useRef<Asset | null>(null);
+  const autoEndingRef = useRef(false);
   const isFetchingLocation = useRef(false);
   const [locationCoords, setLocationCoords] = useState('');
   const [locationLabel, setLocationLabel] = useState('');
@@ -146,28 +143,8 @@ export default function OngoingShiftScreen() {
   const locationFallback = site || address || 'Current location';
 
   const getScanCoordinates = useCallback(async () => {
-    let coords = locationCoords.trim();
-    if (coords) return coords;
-
-    const allowed = await requestLocationPermission();
-    if (!allowed) return '';
-
-    try {
-      let fix;
-      try {
-        fix = await fetchLocationFix(true, locationFallback);
-      } catch {
-        fix = await fetchLocationFix(false, locationFallback);
-      }
-      coords = fix.coordinates;
-      setLocationCoords(fix.coordinates);
-      setLocationLabel(fix.displayName);
-      setLocationFetched(true);
-    } catch {
-      coords = '';
-    }
-    return coords;
-  }, [locationCoords, locationFallback]);
+    return await locationService.getFormattedLocation();
+  }, []);
 
   const { scanning: nfcScanning, handleScan: handleNfcScan, scanModal } =
     usePatrolNfcScan({
@@ -189,6 +166,18 @@ export default function OngoingShiftScreen() {
         setSite(session.site);
         setAddress(session.zones);
         setSiteId(session.siteId);
+        if (session.endTimestamp) {
+          setEndTimestamp(session.endTimestamp);
+        } else if (p?.endTimestamp) {
+          setEndTimestamp(p.endTimestamp);
+        } else if (session.endTime || p?.time) {
+          const timeStr = session.endTime || p?.time || '';
+          const computed = combineDateAndTime(
+            session.signInTime?.slice(0, 10) || new Date().toISOString().slice(0, 10),
+            timeStr,
+          );
+          if (computed != null) setEndTimestamp(computed);
+        }
 
         // Sync sign-in time from params (API) if it's provided
         if (p?.signInTime) {
@@ -213,6 +202,10 @@ export default function OngoingShiftScreen() {
         }
       } else if (p?.rosterId) {
         const st = p.signInTime ?? new Date().toISOString();
+        let computedEndTs = p.endTimestamp;
+        if (!computedEndTs && p.time) {
+          computedEndTs = combineDateAndTime(st.slice(0, 10), p.time) ?? undefined;
+        }
         await saveActiveShiftSession({
           rosterId: p.rosterId,
           site: p.site ?? 'Site',
@@ -220,31 +213,71 @@ export default function OngoingShiftScreen() {
           signInTime: st,
           shiftId: p.shiftId,
           siteId: p.siteId,
+          endTimestamp: computedEndTs,
+          endTime: p.time,
         });
         setSignInTime(st);
         setSiteId(p.siteId);
+        if (computedEndTs) setEndTimestamp(computedEndTs);
       }
     })();
   }, [route.params]);
 
+  const triggerAutoEndShift = useCallback(async () => {
+    if (autoEndingRef.current) return;
+    autoEndingRef.current = true;
+
+    await clearActiveShiftSession();
+
+    try {
+      let currentCoords = locationCoords.trim() || (await locationService.getCoordinatesString());
+      if (rosterId != null && currentCoords) {
+        await guardJobCheckout({
+          roster_id: rosterId,
+          signout_location: currentCoords,
+          signout_notes: 'Shift ended automatically (Shift time expired)',
+          guard_id: guardId ?? undefined,
+        });
+      }
+    } catch {
+      // Ignore background checkout error, active session is cleared locally
+    }
+
+    Alert.alert(
+      'Shift Ended Automatically',
+      'Your shift scheduled end time has been reached. The shift has been automatically ended.',
+      [
+        {
+          text: 'OK',
+          onPress: () =>
+            navigation.reset({
+              index: 0,
+              routes: [{ name: GUARD_ROUTES.DASHBOARD }],
+            }),
+        },
+      ],
+      { cancelable: false },
+    );
+  }, [locationCoords, rosterId, guardId, navigation]);
+
   useEffect(() => {
     const start = normalizeDate(signInTime).getTime();
     const tick = () => {
-      const diff = Date.now() - start;
+      const now = Date.now();
+      const diff = now - start;
       setElapsed(formatElapsed(diff));
+
+      if (endTimestamp && now >= endTimestamp && !autoEndingRef.current) {
+        triggerAutoEndShift();
+      }
     };
     tick();
     const id = setInterval(tick, 1000);
     return () => clearInterval(id);
-  }, [signInTime]);
+  }, [signInTime, endTimestamp, triggerAutoEndShift]);
 
   const refreshLocation = useCallback(
     async (showPermissionAlert = false) => {
-      if (locationFetched || isFetchingLocation.current) {
-        return;
-      }
-
-      isFetchingLocation.current = true;
       setLocationLoading(true);
       try {
         const allowed = await requestLocationPermission();
@@ -252,35 +285,36 @@ export default function OngoingShiftScreen() {
           if (showPermissionAlert) {
             Alert.alert('Permission required', 'Location permission is needed.');
           }
+          setLocationLoading(false);
           return;
         }
 
-        let fix;
-        try {
-          fix = await fetchLocationFix(true, locationFallback);
-        } catch {
-          fix = await fetchLocationFix(false, locationFallback);
-        }
+        const coords = await locationService.getFormattedLocation();
+        if (coords) {
+          setLocationCoords(coords);
+          setLocationFetched(true);
 
-        setLocationCoords(fix.coordinates);
-        setLocationLabel(fix.displayName);
-        setLocationFetched(true);
-      } catch {
-        // Fail silently, retry logic in useEffect will handle auto-fetches
+          try {
+            const [lat, lon] = coords.split(',').map(Number);
+            const displayName = await resolveLocationDisplayName(lat, lon, locationFallback);
+            setLocationLabel(displayName);
+          } catch {
+            setLocationLabel(coords);
+          }
+        } else {
+          // If still no coords, at least set a label if we have one
+          if (!locationLabel) setLocationLabel(locationFallback);
+        }
+      } catch (error: any) {
+        // Fail silently
       } finally {
         setLocationLoading(false);
-        isFetchingLocation.current = false;
       }
     },
-    [locationFetched, locationFallback],
+    [locationFallback, locationLabel],
   );
 
   useEffect(() => {
-    Geolocation.setRNConfiguration({
-      skipPermissionRequests: false,
-      authorizationLevel: 'whenInUse',
-      locationProvider: 'auto',
-    });
     refreshLocation(false);
   }, [refreshLocation]);
 
@@ -309,8 +343,26 @@ export default function OngoingShiftScreen() {
     }
   };
 
+  const lastPatrolNavRef = useRef(0);
+
   const handleStartPatrolling = () => {
-    navigation.navigate(GUARD_ROUTES.PATROL_TIMELINE);
+    const now = Date.now();
+    if (now - lastPatrolNavRef.current < 750) {
+      return;
+    }
+    lastPatrolNavRef.current = now;
+
+    if (rosterId != null) {
+      void saveActiveShiftSession({
+        rosterId,
+        site,
+        zones: address,
+        signInTime,
+        shiftId: route.params?.shiftId,
+        siteId,
+      });
+    }
+    navigateGuardBottomTab(navigation, 1);
   };
 
   const handleEndShift = async () => {
@@ -318,11 +370,18 @@ export default function OngoingShiftScreen() {
       Alert.alert('Error', 'Missing roster for this shift.');
       return;
     }
-    if (!locationCoords.trim()) {
+
+    let currentCoords = locationCoords.trim();
+    if (!currentCoords) {
+      currentCoords = await locationService.getCoordinatesString();
+    }
+
+    if (!currentCoords) {
       Alert.alert('Error', 'Location required');
       refreshLocation(true);
       return;
     }
+
     if (!signoutSelfie?.uri) {
       Alert.alert('Error', 'Please capture sign-out selfie.');
       return;
@@ -332,7 +391,7 @@ export default function OngoingShiftScreen() {
       setCheckingOut(true);
       const result = await guardJobCheckout({
         roster_id: rosterId,
-        signout_location: locationCoords.trim(),
+        signout_location: currentCoords,
         signout_notes: signoutNotes.trim(),
         guard_id: guardId ?? undefined,
         selfie: {
@@ -383,6 +442,8 @@ export default function OngoingShiftScreen() {
     setWatermarking(false);
   }, []);
 
+  const insets = useSafeAreaInsets();
+
   return (
     <View style={styles.container}>
       <SelfieWatermarkProcessor
@@ -391,7 +452,7 @@ export default function OngoingShiftScreen() {
         onError={handleWatermarkError}
       />
       <StatusBar barStyle="light-content" backgroundColor={Colors.headerStart} />
-      <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
+      <View style={[styles.headerWrapper, { paddingTop: insets.top }]}>
         <View style={styles.header}>
           <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
             <ArrowLeft size={20} color={Colors.white} />
@@ -399,7 +460,9 @@ export default function OngoingShiftScreen() {
           <Text style={styles.headerTitle}>Ongoing Shift</Text>
           <View style={styles.headerSpacer} />
         </View>
+      </View>
 
+      <View style={[styles.bodyWrapper, { paddingBottom: insets.bottom }]}>
         <ScrollView
           style={styles.scroll}
           contentContainerStyle={styles.scrollContent}
@@ -492,19 +555,6 @@ export default function OngoingShiftScreen() {
             </>
           ) : null}
 
-{/*
-<View style={[styles.card, Shadows.card]}>
-  <Text style={styles.locLbl}>Sign-out location</Text>
-  <Text style={styles.locValue} numberOfLines={2}>
-    {locationLoading
-      ? 'Fetching location...'
-      : locationLabel || 'Location not available'}
-  </Text>
-</View>
-*/}
-
-
-
           <TouchableOpacity
             style={[styles.actionRow, Shadows.card]}
             onPress={() =>
@@ -525,6 +575,7 @@ export default function OngoingShiftScreen() {
           <TouchableOpacity
             style={[styles.actionRow, Shadows.card]}
             onPress={handleStartPatrolling}
+            activeOpacity={0.7}
           >
             <View style={[styles.actionIcon, { backgroundColor: Colors.accentLight }]}>
               <Route size={20} color={Colors.accent} />
@@ -560,7 +611,7 @@ export default function OngoingShiftScreen() {
           </TouchableOpacity>
         </ScrollView>
         {scanModal}
-      </SafeAreaView>
+      </View>
 
       <ImageViewerModal
         visible={viewerUri != null}
@@ -573,7 +624,8 @@ export default function OngoingShiftScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.bgAlt },
-  safe: { flex: 1 },
+  headerWrapper: { backgroundColor: Colors.headerStart },
+  bodyWrapper: { flex: 1 },
   header: {
     backgroundColor: Colors.headerStart,
     flexDirection: 'row',
@@ -742,33 +794,34 @@ const styles = StyleSheet.create({
     color: Colors.textMuted,
     marginTop: 4,
   },
-  locLbl: {
-    fontSize: FontSizes.sm,
-    fontWeight: '700',
+  locationValue: {
+    fontSize: 13,
     color: Colors.textPrimary,
-    marginBottom: 6,
+    fontWeight: '800',
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
   },
-  locValue: {
-    fontSize: FontSizes.sm,
-    color: Colors.textPrimary,
-    fontWeight: '600',
-    marginBottom: 10,
-    lineHeight: 18,
+  locationLabel: {
+    fontSize: 11,
+    color: Colors.textMuted,
+    marginTop: 2,
+  },
+  locationBox: {
+    backgroundColor: Colors.bgAlt,
+    padding: 10,
+    borderRadius: Radii.sm,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: Colors.border,
   },
   refreshLocBtn: {
-    alignSelf: 'flex-start',
-    backgroundColor: Colors.accentLight,
-    borderRadius: Radii.sm,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-  },
-  refreshLocBtnDisabled: {
-    opacity: 0.55,
+    alignSelf: 'flex-end',
+    paddingVertical: 4,
+    paddingHorizontal: 8,
   },
   refreshLocText: {
-    fontSize: FontSizes.xs,
-    fontWeight: '700',
+    fontSize: 12,
     color: Colors.accent,
+    fontWeight: '700',
   },
   actionRow: {
     flexDirection: 'row',

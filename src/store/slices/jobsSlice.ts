@@ -9,12 +9,14 @@ import type { RootState } from '../store';
 export interface JobsState {
   items: unknown[];
   loading: boolean;
+  refreshing: boolean;
   error: string | null;
 }
 
 const initialState: JobsState = {
   items: [],
   loading: false,
+  refreshing: false,
   error: null,
 };
 
@@ -41,18 +43,24 @@ const jobsSlice = createSlice({
   extraReducers: builder => {
     builder
       .addCase(fetchGuardJobs.pending, (state: JobsState) => {
-        state.loading = true;
+        if (state.items.length === 0) {
+          state.loading = true;
+        } else {
+          state.refreshing = true;
+        }
         state.error = null;
       })
       .addCase(
         fetchGuardJobs.fulfilled,
         (state: JobsState, action: PayloadAction<unknown[]>) => {
           state.loading = false;
+          state.refreshing = false;
           state.items = action.payload;
         },
       )
       .addCase(fetchGuardJobs.rejected, (state: JobsState, action) => {
         state.loading = false;
+        state.refreshing = false;
         state.error =
           (action.payload as string) ??
           action.error.message ??
@@ -66,4 +74,5 @@ export default jobsSlice.reducer;
 
 export const selectJobsItems = (state: RootState) => state.jobs.items;
 export const selectJobsLoading = (state: RootState) => state.jobs.loading;
+export const selectJobsRefreshing = (state: RootState) => state.jobs.refreshing;
 export const selectJobsError = (state: RootState) => state.jobs.error;

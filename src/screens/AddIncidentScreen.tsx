@@ -27,6 +27,8 @@ import {
 } from '../components/SelfieWatermarkProcessor';
 import ImageViewerModal from '../components/ImageViewerModal';
 import { formatCaptureTimestamp } from '../services/locationUtils';
+import locationService from '../services/LocationService';
+import { resolveLocationDisplayName } from '../services/locationUtils';
 import {
   AlertTriangle,
   ArrowLeft,
@@ -44,8 +46,8 @@ import {
   Users,
   X,
 } from 'lucide-react-native';
-import { useGuardNavigation } from '../navigation/utils';
-import { GUARD_ROUTES } from '../navigation/constants';
+import { useGuardNavigation, useSafeAreaTopInset } from '../navigation/utils';
+import { GUARD_ROUTES, navigateGuardBottomTab } from '../navigation/constants';
 import type { GuardStackScreenProps } from '../navigation/types';
 import type { RootState } from '../store/store';
 import {
@@ -75,9 +77,36 @@ interface IncidentPhoto {
 }
 
 const SIGNATURE_PAD_STYLE = `
-  .m-signature-pad { box-shadow: none; border: none; margin: 0; background-color: #ffffff; }
-  .m-signature-pad--body { border: none; background-color: #ffffff; }
-  .m-signature-pad--footer { display: none; margin: 0; }
+  .m-signature-pad {
+    box-shadow: none;
+    border: none;
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100%;
+    background-color: #ffffff;
+  }
+  .m-signature-pad--body {
+    border: none;
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: #ffffff;
+  }
+  .m-signature-pad--body canvas {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    background-color: #ffffff;
+  }
+  .m-signature-pad--footer {
+    display: none;
+    margin: 0;
+  }
   body, html {
     width: 100%;
     height: 100%;
@@ -85,23 +114,6 @@ const SIGNATURE_PAD_STYLE = `
     padding: 0;
     overflow: hidden;
     background-color: #ffffff !important;
-    touch-action: none;
-    -ms-touch-action: none;
-    overscroll-behavior: none;
-    -webkit-overflow-scrolling: touch;
-  }
-  .m-signature-pad--body canvas {
-    touch-action: none;
-    -ms-touch-action: none;
-  }
-  * {
-    -webkit-touch-callout: none;
-    -webkit-user-select: none;
-    user-select: none;
-  }
-  canvas {
-    width: 100% !important;
-    height: 100% !important;
     background-color: #ffffff !important;
     touch-action: none;
   }
@@ -300,10 +312,12 @@ function Field({
 
 export default function AddIncidentScreen() {
   const navigation = useGuardNavigation();
+  const topInset = useSafeAreaTopInset();
   const route = useRoute<AddIncidentRoute>();
   const dispatch = useAppDispatch();
   const guardId = useSelector((state: RootState) => state.auth?.guardId ?? null);
   const signatureRef = useRef<any>(null);
+  const scrollViewRef = useRef<ScrollView>(null);
   const pendingPhotoRef = useRef<{ timestamp: string } | null>(null);
   const unlockTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -389,10 +403,18 @@ export default function AddIncidentScreen() {
 
       if (resolved) {
         setSelectedJob(resolved);
-        setForm(prev => ({
-          ...prev,
-          location: prev.location || resolved?.siteAddress || '',
-        }));
+        if (!form.location) {
+          locationService.getCurrentLocation().then(loc => {
+            resolveLocationDisplayName(loc.latitude, loc.longitude).then(name => {
+              if (mounted) {
+                setForm(prev => ({
+                  ...prev,
+                  location: name || resolved?.siteAddress || '',
+                }));
+              }
+            });
+          });
+        }
       }
 
       setJobsLoading(false);
@@ -400,6 +422,10 @@ export default function AddIncidentScreen() {
 
     return () => {
       mounted = false;
+      if (unlockTimeoutRef.current) {
+        clearTimeout(unlockTimeoutRef.current);
+        unlockTimeoutRef.current = null;
+      }
     };
   }, [route.params?.rosterId, route.params?.siteId]);
 
@@ -643,10 +669,6 @@ export default function AddIncidentScreen() {
       Alert.alert('Required', 'Please enter an incident title.');
       return;
     }
-    if (!form.location.trim()) {
-      Alert.alert('Required', 'Please enter the incident location.');
-      return;
-    }
     if (!form.incidentType) {
       Alert.alert('Required', 'Please select an incident type.');
       return;
@@ -761,7 +783,7 @@ export default function AddIncidentScreen() {
         Alert.alert('Success', 'Incident report submitted successfully!', [
           {
             text: 'OK',
-            onPress: () => navigation.navigate(GUARD_ROUTES.INCIDENTS),
+            onPress: () => navigateGuardBottomTab(navigation, 2),
           },
         ]);
       } else {
@@ -775,8 +797,9 @@ export default function AddIncidentScreen() {
   };
 
   const lockScrollForSignature = useCallback(() => {
+    // Natively lock scrollview without triggering React re-render which breaks touch tracking
+    scrollViewRef.current?.setNativeProps({ scrollEnabled: false });
     Keyboard.dismiss();
-    setSignaturePadActive(true);
     if (unlockTimeoutRef.current) {
       clearTimeout(unlockTimeoutRef.current);
       unlockTimeoutRef.current = null;
@@ -784,7 +807,7 @@ export default function AddIncidentScreen() {
   }, []);
 
   const unlockScrollForSignature = useCallback(() => {
-    setSignaturePadActive(false);
+    scrollViewRef.current?.setNativeProps({ scrollEnabled: true });
     if (unlockTimeoutRef.current) {
       clearTimeout(unlockTimeoutRef.current);
       unlockTimeoutRef.current = null;
@@ -792,27 +815,25 @@ export default function AddIncidentScreen() {
   }, []);
 
   const handleEndSigning = useCallback(() => {
-    // Keep scroll locked for a while after lift-up to allow multi-stroke
     if (unlockTimeoutRef.current) clearTimeout(unlockTimeoutRef.current);
     unlockTimeoutRef.current = setTimeout(() => {
-      setSignaturePadActive(false);
-      unlockTimeoutRef.current = null;
-    }, 500);
-  }, []);
+      unlockScrollForSignature();
+    }, 400);
+  }, [unlockScrollForSignature]);
 
-  const handleSaveSignature = () => {
+  const handleSaveSignature = useCallback(() => {
     signatureRef.current?.readSignature();
     unlockScrollForSignature();
-  };
+  }, [unlockScrollForSignature]);
 
-  const handleClearSignature = () => {
+  const handleClearSignature = useCallback(() => {
     signatureRef.current?.clearSignature();
     setSignatureUri('');
     setUploadedSignature(null);
     unlockScrollForSignature();
-  };
+  }, [unlockScrollForSignature]);
 
-  const handleSignatureOK = async (sig: string) => {
+  const handleSignatureOK = useCallback(async (sig: string) => {
     unlockScrollForSignature();
     if (sig?.trim()) {
       const dataUri = sig.startsWith('data:') ? sig : toDataUri(sig, 'image/png');
@@ -840,7 +861,7 @@ export default function AddIncidentScreen() {
         setUploadingSignature(false);
       }
     }
-  };
+  }, [unlockScrollForSignature]);
 
   const signatureSaved = Boolean(signatureUri.trim());
 
@@ -858,7 +879,7 @@ export default function AddIncidentScreen() {
       />
       <StatusBar barStyle="light-content" backgroundColor={Colors.headerStart} />
 
-      <SafeAreaView style={styles.safeTop} edges={['top']}>
+      <View style={[styles.safeTop, { paddingTop: topInset }]}>
         <View style={styles.header}>
           <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
             <ArrowLeft size={20} color={Colors.white} />
@@ -866,15 +887,16 @@ export default function AddIncidentScreen() {
           <Text style={styles.hdrTitle}>Incident Report</Text>
           <View style={styles.headerSpacer} />
         </View>
-      </SafeAreaView>
+      </View>
 
       <SafeAreaView style={styles.safeBody} edges={['bottom']}>
         <ScrollView
+          ref={scrollViewRef}
           style={styles.body}
           contentContainerStyle={styles.bodyContent}
           showsVerticalScrollIndicator={false}
-          scrollEnabled={!signaturePadActive}
           keyboardShouldPersistTaps="always"
+          scrollEventThrottle={16}
         >
           <View style={styles.card}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
@@ -888,21 +910,6 @@ export default function AddIncidentScreen() {
               placeholder="e.g., Car collision at Main Street"
               value={form.title}
               onChangeText={v => setForm({ ...form, title: v })}
-            />
-          </View>
-
-          <View style={styles.card}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-              <MapPin size={14} color={Colors.accent} style={styles.icon} />
-              <Text style={[styles.label, { color: Colors.textSecondary }]}>
-                Location <Text style={{ color: Colors.danger }}>*</Text>
-              </Text>
-            </View>
-            <TextInput
-              style={styles.input}
-              placeholder="Exact address or landmark"
-              value={form.location}
-              onChangeText={v => setForm({ ...form, location: v })}
             />
           </View>
 
@@ -1287,21 +1294,11 @@ export default function AddIncidentScreen() {
               </View>
             ) : (
               <>
-                <View
-                  style={styles.signatureBox}
-                  onStartShouldSetResponderCapture={() => {
-                    lockScrollForSignature();
-                    return false;
-                  }}
-                >
+                <View style={styles.signatureBox}>
                   <SignatureCanvas
                     ref={signatureRef}
                     onOK={handleSignatureOK}
-                    onEmpty={() => {
-                      setSignatureUri('');
-                      setUploadedSignature(null);
-                      unlockScrollForSignature();
-                    }}
+                    onEmpty={handleClearSignature}
                     onBegin={lockScrollForSignature}
                     onEnd={handleEndSigning}
                     descriptionText=""
@@ -1311,7 +1308,7 @@ export default function AddIncidentScreen() {
                     webStyle={SIGNATURE_PAD_STYLE}
                     backgroundColor="#FFFFFF"
                     penColor="#000000"
-                    containerStyle={{ flex: 1 }}
+                    style={{ flex: 1, width: '100%', height: '100%' }}
                   />
                 </View>
                 <View style={styles.signatureActions}>

@@ -6,8 +6,6 @@ import {
   StyleSheet,
   TextInput,
   ActivityIndicator,
-  Modal,
-  ScrollView,
 } from 'react-native';
 import { Colors, FontSizes, Radii, Shadows } from '../../theme';
 import {
@@ -17,8 +15,6 @@ import {
   Search,
   Calendar,
   Filter,
-  X,
-  Check,
 } from 'lucide-react-native';
 import { useManagerNavigation } from '../../navigation/utils';
 import { MANAGER_ROUTES } from '../../navigation/constants';
@@ -34,9 +30,11 @@ import { ManagerReportsShimmer } from '../../components/Shimmer';
 import { useDebouncedValue } from '../../hooks/useDebouncedValue';
 import { formatDate } from '../../utils';
 import {
+  ManagerMultiFilterModal,
+  ManagerSearchableFilterModal,
+} from '../../components/ManagerFilterModals';
+import {
   getManagerGuardsSites,
-  getManagerIncidentReports,
-  getManagerPatrolReports,
   mapSeverityColor,
   type ManagerFilterGuard,
   type ManagerFilterSite,
@@ -44,11 +42,32 @@ import {
   type ManagerPatrolReportItem,
   type ManagerPeriod,
 } from '../../services/managerApi';
-
-type ReportTab = 'patrol' | 'incident';
+import { useAppDispatch, useAppSelector } from '../../store/hooks';
+import {
+  fetchManagerIncidentReports,
+  fetchManagerPatrolReports,
+  selectManagerIncidentReports,
+  selectManagerPatrolReports,
+  selectLoadingIncidents,
+  selectLoadingPatrols,
+  selectReportsTab,
+  selectReportsDateFilter,
+  selectReportsSearch,
+  selectReportsSelectedGuardIds,
+  selectReportsSelectedSiteIds,
+  selectReportsStartDate,
+  selectReportsEndDate,
+  setTab,
+  setDateFilter,
+  setSearch,
+  setSelectedGuardIds,
+  setSelectedSiteIds,
+  setCustomDates,
+  resetFilters,
+  type DateFilter,
+} from '../../store/slices/managerReportsSlice';
 
 const DATE_FILTERS = ['Today', 'This Week', 'This Month', 'Custom'] as const;
-type DateFilter = (typeof DATE_FILTERS)[number];
 
 function apiPeriodForFilter(filter: DateFilter): ManagerPeriod {
   if (filter === 'Today') return 'today';
@@ -60,27 +79,35 @@ function apiPeriodForFilter(filter: DateFilter): ManagerPeriod {
 
 export default function ManagerReportsScreen() {
   const navigation = useManagerNavigation();
-  const [tab, setTab] = useState<ReportTab>('patrol');
-  const [dateFilter, setDateFilter] = useState<DateFilter>('Today');
-  const [search, setSearch] = useState('');
+  const dispatch = useAppDispatch();
+
+  const tab = useAppSelector(selectReportsTab);
+  const dateFilter = useAppSelector(selectReportsDateFilter);
+  const search = useAppSelector(selectReportsSearch);
+  const selectedGuardIds = useAppSelector(selectReportsSelectedGuardIds);
+  const selectedSiteIds = useAppSelector(selectReportsSelectedSiteIds);
+  const startDateStr = useAppSelector(selectReportsStartDate);
+  const endDateStr = useAppSelector(selectReportsEndDate);
+
+  const startDate = useMemo(() => new Date(startDateStr), [startDateStr]);
+  const endDate = useMemo(() => new Date(endDateStr), [endDateStr]);
+
   const debouncedSearch = useDebouncedValue(search, 400);
 
-  const [patrolReports, setPatrolReports] = useState<ManagerPatrolReportItem[]>(
-    [],
-  );
-  const [incidentReports, setIncidentReports] = useState<
-    ManagerIncidentReportItem[]
-  >([]);
+  const patrolReportsData = useAppSelector(selectManagerPatrolReports);
+  const incidentReportsData = useAppSelector(selectManagerIncidentReports);
+  const loadingPatrols = useAppSelector(selectLoadingPatrols);
+  const loadingIncidents = useAppSelector(selectLoadingIncidents);
+
+  const patrolReports = patrolReportsData?.reports ?? [];
+  const incidentReports = incidentReportsData?.reports ?? [];
 
   const [guards, setGuards] = useState<ManagerFilterGuard[]>([]);
   const [sites, setSites] = useState<ManagerFilterSite[]>([]);
-  const [selectedGuardIds, setSelectedGuardIds] = useState<number[]>([]);
-  const [selectedSiteIds, setSelectedSiteIds] = useState<number[]>([]);
   const [showGuardFilter, setShowGuardFilter] = useState(false);
   const [showSiteFilter, setShowSiteFilter] = useState(false);
   const [showAllFilters, setShowAllFilters] = useState(false);
 
-  const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [page, setPage] = useState(1);
@@ -88,8 +115,6 @@ export default function ManagerReportsScreen() {
   const [error, setError] = useState<string | null>(null);
   const [periodLabel, setPeriodLabel] = useState('');
 
-  const [startDate, setStartDate] = useState(new Date());
-  const [endDate, setEndDate] = useState(new Date());
   const [showStartPicker, setShowStartPicker] = useState(false);
   const [showEndPicker, setShowEndPicker] = useState(false);
 
@@ -106,15 +131,12 @@ export default function ManagerReportsScreen() {
     loadFilters();
   }, []);
 
-  const fetchReports = useCallback(
+  const guardIdsKey = selectedGuardIds.join(',');
+  const siteIdsKey = selectedSiteIds.join(',');
+
+  const fetchReportsData = useCallback(
     async (pageNum: number, append: boolean) => {
-      if (pageNum === 1 && !append) {
-        setLoading(true);
-        setPatrolReports([]);
-        setIncidentReports([]);
-      } else {
-        setLoadingMore(true);
-      }
+      if (pageNum !== 1) setLoadingMore(true);
       setError(null);
 
       const params = {
@@ -126,45 +148,28 @@ export default function ManagerReportsScreen() {
         site_ids: selectedSiteIds,
         ...(apiPeriod === 'custom'
           ? {
-              start_date: startDate.toISOString().slice(0, 10),
-              end_date: endDate.toISOString().slice(0, 10),
+              start_date: startDateStr.slice(0, 10),
+              end_date: endDateStr.slice(0, 10),
             }
           : {}),
       };
 
       const result =
         tab === 'patrol'
-          ? await getManagerPatrolReports(params)
-          : await getManagerIncidentReports(params);
+          ? await dispatch(fetchManagerPatrolReports(params))
+          : await dispatch(fetchManagerIncidentReports(params));
 
-      if (result.success && result.data) {
-        if (tab === 'patrol') {
-          const patrolData = result.data as { reports: ManagerPatrolReportItem[] };
-          setPatrolReports(prev =>
-            append ? [...prev, ...patrolData.reports] : patrolData.reports,
-          );
-        } else {
-          const incidentData = result.data as {
-            reports: ManagerIncidentReportItem[];
-          };
-          setIncidentReports(prev =>
-            append ? [...prev, ...incidentData.reports] : incidentData.reports,
-          );
-        }
+      if (fetchManagerPatrolReports.fulfilled.match(result) || fetchManagerIncidentReports.fulfilled.match(result)) {
+        const data = result.payload as any;
         setPeriodLabel(
-          `${formatDate(result.data.start_date)} – ${formatDate(result.data.end_date)}`,
+          `${formatDate(data?.start_date ?? '')} – ${formatDate(data?.end_date ?? '')}`,
         );
-        setHasMore(result.pagination?.has_more ?? false);
+        setHasMore(data?.pagination?.has_more ?? false);
         setPage(pageNum);
       } else {
-        if (!append) {
-          setPatrolReports([]);
-          setIncidentReports([]);
-        }
-        setError(result.message ?? 'Failed to load reports');
+        setError(result.payload as string ?? 'Failed to load reports');
       }
 
-      setLoading(false);
       setLoadingMore(false);
       setRefreshing(false);
     },
@@ -172,38 +177,41 @@ export default function ManagerReportsScreen() {
       apiPeriod,
       debouncedSearch,
       tab,
-      startDate,
-      endDate,
-      selectedGuardIds,
-      selectedSiteIds,
+      startDateStr,
+      endDateStr,
+      guardIdsKey,
+      siteIdsKey,
+      dispatch
     ],
   );
 
   useEffect(() => {
-    fetchReports(1, false);
-  }, [fetchReports]);
+    fetchReportsData(1, false);
+  }, [fetchReportsData]);
 
   const onRefresh = useCallback(() => {
     setRefreshing(true);
-    fetchReports(1, false);
-  }, [fetchReports]);
+    fetchReportsData(1, false);
+  }, [fetchReportsData]);
 
   const loadMore = useCallback(() => {
-    if (!loadingMore && hasMore && !loading) {
-      fetchReports(page + 1, true);
+    if (loadingMore || !hasMore) return;
+    if (tab === 'patrol') {
+       if (!loadingPatrols) fetchReportsData(page + 1, true);
+    } else {
+       if (!loadingIncidents) fetchReportsData(page + 1, true);
     }
-  }, [fetchReports, hasMore, loading, loadingMore, page]);
+  }, [fetchReportsData, hasMore, loadingPatrols, loadingIncidents, loadingMore, page, tab]);
 
   const activeReports =
     tab === 'patrol' ? patrolReports : incidentReports;
 
   const showShimmer =
-    loading &&
-    (tab === 'patrol' ? patrolReports.length === 0 : incidentReports.length === 0);
+    (tab === 'patrol' && loadingPatrols && patrolReports.length === 0) ||
+    (tab === 'incident' && loadingIncidents && incidentReports.length === 0);
 
   const handleDateFilter = (filter: DateFilter) => {
-    setDateFilter(filter);
-    setLoading(true);
+    dispatch(setDateFilter(filter));
   };
 
   const subtitle = useMemo(() => {
@@ -230,8 +238,7 @@ export default function ManagerReportsScreen() {
               <TouchableOpacity
                 style={[styles.tab, tab === 'patrol' && styles.tabActive]}
                 onPress={() => {
-                  setTab('patrol');
-                  setLoading(true);
+                  if (tab !== 'patrol') dispatch(setTab('patrol'));
                 }}
               >
                 <Footprints
@@ -250,8 +257,7 @@ export default function ManagerReportsScreen() {
               <TouchableOpacity
                 style={[styles.tab, tab === 'incident' && styles.tabActive]}
                 onPress={() => {
-                  setTab('incident');
-                  setLoading(true);
+                  if (tab !== 'incident') dispatch(setTab('incident'));
                 }}
               >
                 <AlertTriangle
@@ -275,7 +281,7 @@ export default function ManagerReportsScreen() {
                 placeholder="Search..."
                 placeholderTextColor={Colors.textMuted}
                 value={search}
-                onChangeText={setSearch}
+                onChangeText={(v) => dispatch(setSearch(v))}
               />
               <TouchableOpacity
                 style={[
@@ -399,7 +405,7 @@ export default function ManagerReportsScreen() {
         ) : activeReports.length === 0 ? (
           <Text style={styles.emptyText}>No reports found.</Text>
         ) : tab === 'patrol' ? (
-          patrolReports.map((r, index) => (
+          patrolReports.map((r: ManagerPatrolReportItem, index: number) => (
             <TouchableOpacity
               key={`${r.guard_id}-${r.site_id}-${r.date}-${index}`}
               style={[styles.reportRow, Shadows.card]}
@@ -425,7 +431,7 @@ export default function ManagerReportsScreen() {
             </TouchableOpacity>
           ))
         ) : (
-          incidentReports.map(r => (
+          incidentReports.map((r: ManagerIncidentReportItem) => (
             <TouchableOpacity
               key={r.id}
               style={[styles.reportRow, Shadows.card]}
@@ -465,7 +471,7 @@ export default function ManagerReportsScreen() {
             </TouchableOpacity>
           ))
         )}
-        {loadingMore ? (
+        {(loadingMore || (refreshing && !showShimmer)) ? (
           <ActivityIndicator color={Colors.accent} style={styles.loadMore} />
         ) : null}
       </ManagerListLayout>
@@ -476,7 +482,7 @@ export default function ManagerReportsScreen() {
           selectedDate={startDate}
           onClose={() => setShowStartPicker(false)}
           onSelectDate={(date) => {
-            setStartDate(date);
+            dispatch(setCustomDates({ startDate: date.toISOString(), endDate: endDateStr }));
             setShowStartPicker(false);
           }}
         />
@@ -487,7 +493,7 @@ export default function ManagerReportsScreen() {
           selectedDate={endDate}
           onClose={() => setShowEndPicker(false)}
           onSelectDate={(date) => {
-            setEndDate(date);
+            dispatch(setCustomDates({ startDate: startDateStr, endDate: date.toISOString() }));
             setShowEndPicker(false);
           }}
         />
@@ -501,11 +507,11 @@ export default function ManagerReportsScreen() {
           selectedIds={selectedGuardIds}
           onClose={() => setShowGuardFilter(false)}
           onApply={ids => {
-            setSelectedGuardIds(ids);
+            dispatch(setSelectedGuardIds(ids));
             setShowGuardFilter(false);
           }}
           onClear={() => {
-            setSelectedGuardIds([]);
+            dispatch(setSelectedGuardIds([]));
             setShowGuardFilter(false);
           }}
         />
@@ -518,17 +524,17 @@ export default function ManagerReportsScreen() {
           selectedIds={selectedSiteIds}
           onClose={() => setShowSiteFilter(false)}
           onApply={ids => {
-            setSelectedSiteIds(ids);
+            dispatch(setSelectedSiteIds(ids));
             setShowSiteFilter(false);
           }}
           onClear={() => {
-            setSelectedSiteIds([]);
+            dispatch(setSelectedSiteIds([]));
             setShowSiteFilter(false);
           }}
         />
       )}
       {showAllFilters && (
-        <ManagerReportFiltersModal
+        <ManagerMultiFilterModal
           visible={showAllFilters}
           guards={guards}
           sites={sites}
@@ -536,13 +542,12 @@ export default function ManagerReportsScreen() {
           selectedSiteIds={selectedSiteIds}
           onClose={() => setShowAllFilters(false)}
           onApply={(gIds, sIds) => {
-            setSelectedGuardIds(gIds);
-            setSelectedSiteIds(sIds);
+            dispatch(setSelectedGuardIds(gIds));
+            dispatch(setSelectedSiteIds(sIds));
             setShowAllFilters(false);
           }}
           onClear={() => {
-            setSelectedGuardIds([]);
-            setSelectedSiteIds([]);
+            dispatch(resetFilters());
             setShowAllFilters(false);
           }}
         />
@@ -550,379 +555,6 @@ export default function ManagerReportsScreen() {
     </ManagerCompactTabShell>
   );
 }
-
-function ManagerSearchableFilterModal({
-  visible,
-  title,
-  data,
-  selectedIds,
-  onClose,
-  onApply,
-  onClear,
-}: {
-  visible: boolean;
-  title: string;
-  data: { id: number; name: string }[];
-  selectedIds: number[];
-  onClose: () => void;
-  onApply: (ids: number[]) => void;
-  onClear: () => void;
-}) {
-  const [search, setSearch] = useState('');
-  const [tempSelectedIds, setTempSelectedIds] = useState<number[]>(selectedIds);
-
-  useEffect(() => {
-    if (visible) {
-      setTempSelectedIds(selectedIds);
-      setSearch('');
-    }
-  }, [visible, selectedIds]);
-
-  const filteredData = useMemo(() => {
-    if (!search) return data;
-    const s = search.toLowerCase();
-    return data.filter(item => item.name.toLowerCase().includes(s));
-  }, [data, search]);
-
-  const toggleId = (id: number) => {
-    setTempSelectedIds(prev =>
-      prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id],
-    );
-  };
-
-  return (
-    <Modal visible={visible} transparent animationType="slide">
-      <View style={modalStyles.overlay}>
-        <View style={modalStyles.container}>
-          <View style={modalStyles.header}>
-            <Text style={modalStyles.title}>{title} Filter</Text>
-            <TouchableOpacity onPress={onClose}>
-              <X size={20} color={Colors.textPrimary} />
-            </TouchableOpacity>
-          </View>
-
-          <View style={modalStyles.searchBox}>
-            <Search size={16} color={Colors.textMuted} />
-            <TextInput
-              style={modalStyles.searchInput}
-              placeholder={`Search ${title.toLowerCase()}...`}
-              placeholderTextColor={Colors.textMuted}
-              value={search}
-              onChangeText={setSearch}
-            />
-          </View>
-
-          <ScrollView style={modalStyles.content}>
-            <View style={modalStyles.chipRow}>
-              {filteredData.map(item => (
-                <TouchableOpacity
-                  key={item.id}
-                  style={[
-                    modalStyles.chip,
-                    tempSelectedIds.includes(item.id) && modalStyles.chipActive,
-                  ]}
-                  onPress={() => toggleId(item.id)}
-                >
-                  <Text
-                    style={[
-                      modalStyles.chipText,
-                      tempSelectedIds.includes(item.id) && modalStyles.chipTextActive,
-                    ]}
-                  >
-                    {item.name}
-                  </Text>
-                  {tempSelectedIds.includes(item.id) && (
-                    <Check size={12} color={Colors.accent} />
-                  )}
-                </TouchableOpacity>
-              ))}
-              {filteredData.length === 0 && (
-                <Text style={modalStyles.emptyText}>No results found.</Text>
-              )}
-            </View>
-          </ScrollView>
-
-          <View style={modalStyles.footer}>
-            <TouchableOpacity style={modalStyles.resetBtn} onPress={onClear}>
-              <Text style={modalStyles.resetBtnText}>Clear</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={modalStyles.applyBtn}
-              onPress={() => onApply(tempSelectedIds)}
-            >
-              <Text style={modalStyles.applyBtnText}>Apply</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </View>
-    </Modal>
-  );
-}
-
-function ManagerReportFiltersModal({
-  visible,
-  guards,
-  sites,
-  selectedGuardIds,
-  selectedSiteIds,
-  onClose,
-  onApply,
-  onClear,
-}: {
-  visible: boolean;
-  guards: ManagerFilterGuard[];
-  sites: ManagerFilterSite[];
-  selectedGuardIds: number[];
-  selectedSiteIds: number[];
-  onClose: () => void;
-  onApply: (guardIds: number[], siteIds: number[]) => void;
-  onClear: () => void;
-}) {
-  const [search, setSearch] = useState('');
-  const [tempGuardIds, setTempGuardIds] = useState<number[]>(selectedGuardIds);
-  const [tempSiteIds, setTempSiteIds] = useState<number[]>(selectedSiteIds);
-
-  useEffect(() => {
-    if (visible) {
-      setTempGuardIds(selectedGuardIds);
-      setTempSiteIds(selectedSiteIds);
-      setSearch('');
-    }
-  }, [visible, selectedGuardIds, selectedSiteIds]);
-
-  const filteredGuards = useMemo(() => {
-    if (!search) return guards;
-    const s = search.toLowerCase();
-    return guards.filter(g => g.name.toLowerCase().includes(s));
-  }, [guards, search]);
-
-  const filteredSites = useMemo(() => {
-    if (!search) return sites;
-    const s = search.toLowerCase();
-    return sites.filter(s_item => s_item.name.toLowerCase().includes(s));
-  }, [sites, search]);
-
-  const toggleGuard = (id: number) => {
-    setTempGuardIds(prev =>
-      prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id],
-    );
-  };
-
-  const toggleSite = (id: number) => {
-    setTempSiteIds(prev =>
-      prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id],
-    );
-  };
-
-  return (
-    <Modal visible={visible} transparent animationType="slide">
-      <View style={modalStyles.overlay}>
-        <View style={modalStyles.container}>
-          <View style={modalStyles.header}>
-            <Text style={modalStyles.title}>Filters</Text>
-            <TouchableOpacity onPress={onClose}>
-              <X size={20} color={Colors.textPrimary} />
-            </TouchableOpacity>
-          </View>
-
-          <View style={modalStyles.searchBox}>
-            <Search size={16} color={Colors.textMuted} />
-            <TextInput
-              style={modalStyles.searchInput}
-              placeholder="Search guards or sites..."
-              placeholderTextColor={Colors.textMuted}
-              value={search}
-              onChangeText={setSearch}
-            />
-          </View>
-
-          <ScrollView style={modalStyles.content}>
-            {filteredGuards.length > 0 && (
-              <>
-                <Text style={modalStyles.sectionTitle}>Guards</Text>
-                <View style={modalStyles.chipRow}>
-                  {filteredGuards.map(g => (
-                    <TouchableOpacity
-                      key={g.id}
-                      style={[
-                        modalStyles.chip,
-                        tempGuardIds.includes(g.id) && modalStyles.chipActive,
-                      ]}
-                      onPress={() => toggleGuard(g.id)}
-                    >
-                      <Text
-                        style={[
-                          modalStyles.chipText,
-                          tempGuardIds.includes(g.id) && modalStyles.chipTextActive,
-                        ]}
-                      >
-                        {g.name}
-                      </Text>
-                      {tempGuardIds.includes(g.id) && (
-                        <Check size={12} color={Colors.accent} />
-                      )}
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              </>
-            )}
-
-            {filteredSites.length > 0 && (
-              <>
-                <Text
-                  style={[
-                    modalStyles.sectionTitle,
-                    { marginTop: filteredGuards.length > 0 ? 20 : 0 },
-                  ]}
-                >
-                  Sites
-                </Text>
-                <View style={modalStyles.chipRow}>
-                  {filteredSites.map(s => (
-                    <TouchableOpacity
-                      key={s.id}
-                      style={[
-                        modalStyles.chip,
-                        tempSiteIds.includes(s.id) && modalStyles.chipActive,
-                      ]}
-                      onPress={() => toggleSite(s.id)}
-                    >
-                      <Text
-                        style={[
-                          modalStyles.chipText,
-                          tempSiteIds.includes(s.id) && modalStyles.chipTextActive,
-                        ]}
-                      >
-                        {s.name}
-                      </Text>
-                      {tempSiteIds.includes(s.id) && (
-                        <Check size={12} color={Colors.accent} />
-                      )}
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              </>
-            )}
-
-            {filteredGuards.length === 0 && filteredSites.length === 0 && (
-              <Text style={modalStyles.emptyText}>No results found.</Text>
-            )}
-          </ScrollView>
-
-          <View style={modalStyles.footer}>
-            <TouchableOpacity style={modalStyles.resetBtn} onPress={onClear}>
-              <Text style={modalStyles.resetBtnText}>Clear All</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={modalStyles.applyBtn}
-              onPress={() => onApply(tempGuardIds, tempSiteIds)}
-            >
-              <Text style={modalStyles.applyBtnText}>Apply Filters</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </View>
-    </Modal>
-  );
-}
-
-const modalStyles = StyleSheet.create({
-  overlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    justifyContent: 'flex-end',
-  },
-  container: {
-    backgroundColor: Colors.white,
-    borderTopLeftRadius: Radii.xl,
-    borderTopRightRadius: Radii.xl,
-    maxHeight: '80%',
-  },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: 20,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.border,
-  },
-  title: { fontSize: 18, fontWeight: '700', color: Colors.textPrimary },
-  searchBox: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: Colors.bgPage,
-    marginHorizontal: 20,
-    marginTop: 15,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderRadius: Radii.md,
-    gap: 8,
-    borderWidth: 1,
-    borderColor: Colors.border,
-  },
-  searchInput: {
-    flex: 1,
-    fontSize: 14,
-    color: Colors.textPrimary,
-    padding: 0,
-  },
-  content: { padding: 20, flexGrow: 1 },
-  emptyText: {
-    fontSize: 13,
-    color: Colors.textMuted,
-    textAlign: 'center',
-    marginTop: 20,
-    width: '100%',
-  },
-  sectionTitle: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: Colors.textSecondary,
-    marginBottom: 12,
-  },
-  chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  chip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: Radii.md,
-    backgroundColor: Colors.bgPage,
-    borderWidth: 1,
-    borderColor: Colors.border,
-  },
-  chipActive: {
-    backgroundColor: Colors.accentLight,
-    borderColor: Colors.accentAlpha25,
-  },
-  chipText: { fontSize: 13, color: Colors.textPrimary, fontWeight: '500' },
-  chipTextActive: { color: Colors.accent, fontWeight: '700' },
-  footer: {
-    flexDirection: 'row',
-    padding: 20,
-    gap: 12,
-    borderTopWidth: 1,
-    borderTopColor: Colors.border,
-  },
-  resetBtn: {
-    flex: 1,
-    paddingVertical: 14,
-    alignItems: 'center',
-    borderRadius: Radii.md,
-    borderWidth: 1,
-    borderColor: Colors.border,
-  },
-  resetBtnText: { color: Colors.textSecondary, fontWeight: '600' },
-  applyBtn: {
-    flex: 2,
-    backgroundColor: Colors.accent,
-    paddingVertical: 14,
-    alignItems: 'center',
-    borderRadius: Radii.md,
-  },
-  applyBtnText: { color: Colors.white, fontWeight: '700' },
-});
 
 const styles = StyleSheet.create({
   tabRow: { flexDirection: 'row', gap: 8, marginBottom: 12 },
@@ -967,7 +599,7 @@ const styles = StyleSheet.create({
   filterBtn: {
     padding: 8,
     borderRadius: Radii.sm,
-    backgroundColor: Colors.bgPage,
+    backgroundColor: Colors.bgAlt,
     position: 'relative',
   },
   filterBtnActive: {

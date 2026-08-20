@@ -1,4 +1,4 @@
-package com.patrolapp
+package com.reportpro
 
 import com.facebook.react.ReactActivity
 import com.facebook.react.ReactActivityDelegate

@@ -1,4 +1,10 @@
-import React, { type ComponentType, type ReactNode, useState } from 'react';
+import React, {
+  type ComponentType,
+  type ReactNode,
+  useState,
+  useCallback,
+  useEffect,
+} from 'react';
 
 import {
 
@@ -19,6 +25,16 @@ import {
   Linking,
 
   ActivityIndicator,
+
+  type NativeSyntheticEvent,
+
+  type TextLayoutEventData,
+
+  type StyleProp,
+
+  type TextStyle,
+
+  type ViewStyle,
 
 } from 'react-native';
 
@@ -50,11 +66,15 @@ import {
 
   PenLine,
 
+  ChevronDown,
+
+  ChevronUp,
+
 } from 'lucide-react-native';
 
 import { Colors, FontSizes, Radii, Shadows } from '../theme';
 
-import { useGuardNavigation } from '../navigation/utils';
+import { useGuardNavigation, useSafeAreaTopInset } from '../navigation/utils';
 
 import type { GuardStackScreenProps } from '../navigation/types';
 
@@ -69,8 +89,8 @@ import {
 } from '../services/incidentsMapper';
 
 import { downloadIncidentPdf } from '../services/incidentPdfDownload';
-
 import ImageViewerModal from '../components/ImageViewerModal';
+import { DownloadButton } from '../components/DownloadButton';
 
 type ViewIncidentRoute = GuardStackScreenProps<'ViewIncidentReport'>['route'];
 
@@ -142,44 +162,193 @@ function SectionCard({
 
 
 
-function FieldGrid({
+const LONG_FIELD_LABELS = [
+  'description',
+  'details',
+  'notes',
+  'action taken',
+  'comments',
+  'location details',
+  'witness information',
+  'other details',
+  'address',
+  'emergency detail',
+  'statement',
+  'damage details',
+  'injury detail',
+];
 
-  entries,
+function isFullWidthField(label: string, value: string): boolean {
+  const normLabel = label.toLowerCase().trim();
+  if (LONG_FIELD_LABELS.some(l => normLabel.includes(l))) {
+    return true;
+  }
+  if (value.length > 35 || value.includes('\n')) {
+    return true;
+  }
+  return false;
+}
 
-}: {
+function computeFallbackTruncation(text: string, limit: number = 65): string {
+  const clean = text.replace(/[\r\n]+/g, ' ');
+  if (clean.length <= limit) return clean;
+  let sliced = clean.slice(0, limit);
+  const lastSpace = sliced.lastIndexOf(' ');
+  if (lastSpace > limit - 15 && lastSpace > 0) {
+    sliced = sliced.slice(0, lastSpace);
+  }
+  return sliced.trimEnd() + '... ';
+}
 
-  entries: { label: string; value: string }[];
+interface ExpandableTextProps {
+  text: string;
+  numberOfLines?: number;
+  style?: StyleProp<TextStyle>;
+  containerStyle?: StyleProp<ViewStyle>;
+}
 
-}) {
+function ExpandableText({
+  text,
+  numberOfLines = 2,
+  style,
+  containerStyle,
+}: ExpandableTextProps) {
+  const [isExpanded, setIsExpanded] = useState(false);
 
-  if (!entries.length) return null;
+  const isLikelyLong = Boolean(text && (text.length > 70 || text.includes('\n')));
 
+  const [canExpand, setCanExpand] = useState(isLikelyLong);
+  const [truncatedText, setTruncatedText] = useState<string | null>(() => {
+    if (!text || !isLikelyLong) return null;
+    return computeFallbackTruncation(text);
+  });
+  const [measured, setMeasured] = useState(false);
 
+  useEffect(() => {
+    setIsExpanded(false);
+    setMeasured(false);
+    const long = Boolean(text && (text.length > 70 || text.includes('\n')));
+    setCanExpand(long);
+    setTruncatedText(long ? computeFallbackTruncation(text) : null);
+  }, [text]);
 
-  return (
+  const handleTextLayout = useCallback(
+    (e: NativeSyntheticEvent<TextLayoutEventData>) => {
+      if (measured || isExpanded) return;
+      const lines = e.nativeEvent.lines;
+      if (!lines || lines.length === 0) return;
 
-    <View style={styles.fieldGrid}>
+      if (lines.length > numberOfLines) {
+        setCanExpand(true);
+        setMeasured(true);
 
-      {entries.map(item => (
+        const line1 = lines[0]?.text || '';
+        const line2 = lines[1]?.text || '';
 
-        <View style={styles.fieldCell} key={item.label}>
+        const l1Clean = line1.replace(/[\r\n]+/g, ' ');
+        const l2Clean = line2.replace(/[\r\n]+/g, ' ');
 
-          <Text style={styles.fieldLabel} numberOfLines={1}>
+        const reserveChars = 14;
+        let l2Trimmed = l2Clean.slice(0, Math.max(0, l2Clean.length - reserveChars));
+        const lastSpace = l2Trimmed.lastIndexOf(' ');
+        if (lastSpace > l2Trimmed.length - 10 && lastSpace > 0) {
+          l2Trimmed = l2Trimmed.slice(0, lastSpace);
+        }
 
-            {item.label}
-
-          </Text>
-
-          <Text style={styles.fieldValue}>{item.value}</Text>
-
-        </View>
-
-      ))}
-
-    </View>
-
+        const preview = (l1Clean + l2Trimmed).trimEnd() + '... ';
+        setTruncatedText(preview);
+      } else {
+        setCanExpand(false);
+        setMeasured(true);
+        setTruncatedText(null);
+      }
+    },
+    [measured, isExpanded, numberOfLines],
   );
 
+  if (!text || !text.trim()) {
+    return null;
+  }
+
+  if (!canExpand) {
+    return (
+      <View style={[styles.expandableContainer, containerStyle]}>
+        <Text style={style} onTextLayout={handleTextLayout}>
+          {text}
+        </Text>
+      </View>
+    );
+  }
+
+  if (isExpanded) {
+    return (
+      <View style={[styles.expandableContainer, containerStyle]}>
+        <Text style={style}>{text}</Text>
+        <TouchableOpacity
+          activeOpacity={0.7}
+          onPress={() => setIsExpanded(false)}
+          style={styles.expandToggleBtn}
+          hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+        >
+          <Text style={styles.expandToggleText}>View Less</Text>
+          <ChevronUp size={12} color={Colors.accent} />
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
+  const displayText = truncatedText ?? computeFallbackTruncation(text);
+
+  return (
+    <View style={[styles.expandableContainer, containerStyle]}>
+      {!measured && (
+        <Text
+          style={[style, styles.hiddenMeasureText]}
+          onTextLayout={handleTextLayout}
+        >
+          {text}
+        </Text>
+      )}
+      <TouchableOpacity
+        activeOpacity={0.8}
+        onPress={() => setIsExpanded(true)}
+      >
+        <Text style={style} numberOfLines={2}>
+          {displayText}
+          <Text style={styles.expandToggleTextInline}>
+            {'View More'}
+          </Text>
+        </Text>
+      </TouchableOpacity>
+    </View>
+  );
+}
+
+function FieldGrid({
+  entries,
+}: {
+  entries: { label: string; value: string }[];
+}) {
+  if (!entries.length) return null;
+
+  return (
+    <View style={styles.fieldGrid}>
+      {entries.map(item => {
+        const fullWidth = isFullWidthField(item.label, item.value);
+        return (
+          <View
+            style={[styles.fieldCell, fullWidth && styles.fieldCellFull]}
+            key={item.label}
+          >
+            <Text style={styles.fieldLabel} numberOfLines={1}>
+              {item.label}
+            </Text>
+            <ExpandableText text={item.value} style={styles.fieldValue} />
+          </View>
+        );
+      })}
+    </View>
+  );
 }
 
 
@@ -255,6 +424,7 @@ function RecordList({ records }: { records: Record<string, unknown>[] }) {
 export default function ViewIncidentReportScreen() {
 
   const navigation = useGuardNavigation();
+  const topInset = useSafeAreaTopInset();
 
   const route = useRoute<ViewIncidentRoute>();
 
@@ -280,7 +450,7 @@ export default function ViewIncidentReportScreen() {
 
       <View style={styles.container}>
 
-        <SafeAreaView style={styles.safeTop} edges={['top']}>
+        <View style={[styles.safeTop, { paddingTop: topInset }]}>
 
           <View style={styles.header}>
 
@@ -296,7 +466,7 @@ export default function ViewIncidentReportScreen() {
 
           </View>
 
-        </SafeAreaView>
+        </View>
 
         <SafeAreaView style={styles.safeBody} edges={['bottom']}>
 
@@ -367,7 +537,7 @@ export default function ViewIncidentReportScreen() {
 
 
 
-      <SafeAreaView style={styles.safeTop} edges={['top']}>
+      <View style={[styles.safeTop, { paddingTop: topInset }]}>
 
         <View style={styles.header}>
 
@@ -383,7 +553,7 @@ export default function ViewIncidentReportScreen() {
 
         </View>
 
-      </SafeAreaView>
+      </View>
 
 
 
@@ -411,11 +581,17 @@ export default function ViewIncidentReportScreen() {
 
             {incident.injuryDetail ? (
 
-              <Text style={styles.injuryDetail} numberOfLines={3}>
+              <ExpandableText
 
-                {incident.injuryDetail}
+                text={incident.injuryDetail}
 
-              </Text>
+                numberOfLines={2}
+
+                style={styles.injuryDetail}
+
+                containerStyle={styles.injuryDetailWrap}
+
+              />
 
             ) : null}
 
@@ -621,33 +797,7 @@ export default function ViewIncidentReportScreen() {
 
           ) : null}
 
-{/*
 
-          {incident.id ? (
-
-            <TouchableOpacity
-
-              style={[styles.pdfBtn, isGenerating && styles.pdfBtnDisabled]}
-
-              onPress={handleDownloadPdf}
-
-              disabled={isGenerating}
-
-            >
-
-              {isGenerating ? (
-                <View style={styles.loaderWrap}>
-                  <ActivityIndicator size="small" color={Colors.white} />
-                  <Text style={styles.pdfBtnText}>PDF Generating...</Text>
-                </View>
-              ) : (
-                <Text style={styles.pdfBtnText}>Download PDF</Text>
-              )}
-
-            </TouchableOpacity>
-
-          ) : null}
-       */}
 
         </ScrollView>
 
@@ -870,6 +1020,70 @@ const styles = StyleSheet.create({
     paddingHorizontal: GRID_GAP / 2,
 
     paddingBottom: GRID_GAP,
+
+  },
+
+  fieldCellFull: {
+
+    width: '100%',
+
+  },
+
+  expandableContainer: {
+
+    width: '100%',
+
+  },
+
+  expandToggleBtn: {
+
+    flexDirection: 'row',
+
+    alignItems: 'center',
+
+    alignSelf: 'flex-start',
+
+    gap: 3,
+
+    marginTop: 3,
+
+    paddingVertical: 1,
+
+  },
+
+  expandToggleText: {
+
+    fontSize: FontSizes.xs,
+
+    fontWeight: '700',
+
+    color: Colors.accent,
+
+  },
+
+  expandToggleTextInline: {
+
+    fontSize: FontSizes.xs,
+
+    fontWeight: '700',
+
+    color: Colors.accent,
+
+  },
+
+  hiddenMeasureText: {
+
+    position: 'absolute',
+
+    opacity: 0,
+
+    zIndex: -1,
+
+  },
+
+  injuryDetailWrap: {
+
+    marginBottom: 10,
 
   },
 

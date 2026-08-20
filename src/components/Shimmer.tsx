@@ -108,17 +108,59 @@ export function PatrolListShimmer({ count = 3 }: { count?: number }) {
 export function PatrolTimelineShimmer() {
   return (
     <View style={styles.patrolTimelineWrap}>
-      <View style={[styles.patrolSummaryShimmer, styles.cardShadow]}>
-        <View style={{ flex: 1, gap: 8 }}>
-          <ShimmerBox width={110} height={10} />
-          <ShimmerBox width="55%" height={16} />
-          <ShimmerBox width="40%" height={12} />
+      {/* Active Patrol Summary Card */}
+      <View style={styles.patrolSummaryCardShimmer}>
+        <View style={styles.patrolSummaryTopShimmer}>
+          <View style={{ flex: 1 }}>
+            <ShimmerBox width={100} height={10} />
+            <ShimmerBox width="55%" height={16} style={{ marginTop: 4 }} />
+            <ShimmerBox width="45%" height={12} style={{ marginTop: 6 }} />
+          </View>
+          <ShimmerBox width={58} height={58} borderRadius={29} />
         </View>
-        <ShimmerBox width={58} height={58} borderRadius={29} />
+        <ShimmerBox height={6} borderRadius={3} style={{ marginBottom: 8 }} />
+        <ShimmerBox width="65%" height={10} />
       </View>
-      <ShimmerBox height={6} borderRadius={3} style={{ marginBottom: 12 }} />
-      <ShimmerBox width={120} height={10} style={{ marginBottom: 12 }} />
-      <PatrolListShimmer count={4} />
+
+      {/* Checkpoints Timeline Section */}
+      <ShimmerBox width={90} height={10} style={{ marginBottom: 10 }} />
+      <View style={styles.timelineShimmerWrap}>
+        <View style={styles.timelineVerticalLineShimmer} />
+        {Array.from({ length: 4 }).map((_, i) => (
+          <View key={i} style={styles.timelineRowShimmer}>
+            <View style={styles.timelineDotColShimmer}>
+              <View style={styles.timelineDotOuter}>
+                <ShimmerBox width={12} height={12} borderRadius={6} />
+              </View>
+            </View>
+            <View style={styles.timelineCardShimmer}>
+              <View style={styles.timelineCardTopShimmer}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1 }}>
+                  <ShimmerBox width={14} height={14} borderRadius={4} />
+                  <ShimmerBox width="60%" height={14} />
+                </View>
+                <ShimmerBox width={48} height={20} borderRadius={Radii.pill} />
+              </View>
+              <ShimmerBox width="65%" height={10} style={{ marginBottom: 6 }} />
+              <ShimmerBox width="85%" height={10} style={{ marginTop: 2, marginBottom: 8 }} />
+              <ShimmerBox height={38} borderRadius={Radii.sm} />
+            </View>
+          </View>
+        ))}
+      </View>
+
+      {/* Today's Patrol Rounds Section (History) */}
+      <ShimmerBox width={160} height={10} style={{ marginBottom: 10 }} />
+      {Array.from({ length: 2 }).map((_, i) => (
+        <View key={i} style={styles.patrolHistoryCardShimmer}>
+          <ShimmerBox width={36} height={36} borderRadius={10} />
+          <View style={{ flex: 1 }}>
+            <ShimmerBox width="45%" height={14} />
+            <ShimmerBox width="70%" height={10} style={{ marginTop: 4 }} />
+          </View>
+          <ShimmerBox width={62} height={20} borderRadius={6} />
+        </View>
+      ))}
     </View>
   );
 }
@@ -883,16 +925,76 @@ const styles = StyleSheet.create({
     ...Shadows.card,
   },
   patrolTimelineWrap: {
-    padding: 16,
-    paddingTop: 14,
+    paddingTop: 0,
+    paddingBottom: 8,
   },
-  patrolSummaryShimmer: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 12,
-    padding: 16,
-    marginBottom: 12,
+  patrolSummaryCardShimmer: {
+    backgroundColor: Colors.bgCard,
     borderRadius: Radii.xl,
+    padding: 16,
+    marginBottom: 10,
+    ...Shadows.card,
+  },
+  patrolSummaryTopShimmer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 12,
+    gap: 12,
+  },
+  timelineShimmerWrap: {
+    position: 'relative',
+    marginBottom: 8,
+  },
+  timelineVerticalLineShimmer: {
+    position: 'absolute',
+    left: 11,
+    top: 0,
+    bottom: 0,
+    width: 2,
+    backgroundColor: Colors.border,
+  },
+  timelineRowShimmer: {
+    flexDirection: 'row',
+    gap: 12,
+    marginBottom: 14,
+  },
+  timelineDotColShimmer: {
+    width: 24,
+    alignItems: 'center',
+    paddingTop: 4,
+  },
+  timelineDotOuter: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    overflow: 'hidden',
+  },
+  timelineCardShimmer: {
+    flex: 1,
+    backgroundColor: Colors.bgCard,
+    borderRadius: Radii.lg,
+    padding: 12,
+    borderWidth: 1.5,
+    borderColor: Colors.border,
+    ...Shadows.card,
+  },
+  timelineCardTopShimmer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 6,
+    gap: 8,
+  },
+  patrolHistoryCardShimmer: {
+    backgroundColor: Colors.bgCard,
+    borderRadius: Radii.lg,
+    padding: 12,
+    marginBottom: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    ...Shadows.card,
   },
   dashboardShiftCard: {
     backgroundColor: Colors.bgCard,

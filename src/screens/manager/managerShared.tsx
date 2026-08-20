@@ -15,7 +15,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { ArrowLeft } from 'lucide-react-native';
 import { Colors, FontSizes, Radii, Shadows, Spacing } from '../../theme';
 import { NavBar } from '../../components';
-import { useManagerNavigation } from '../../navigation/utils';
+import { useManagerNavigation, useSafeAreaTopInset } from '../../navigation/utils';
 import { navigateManagerBottomTab } from '../../navigation/constants';
 import { formatFullDisplayDate } from '../../services/guardJobsMapper';
 
@@ -70,13 +70,13 @@ interface ManagerTabShellProps {
 
 /** Legacy shell — prefer ManagerCompactTabShell for tab screens. */
 export function ManagerTabShell({ activeIndex, children }: ManagerTabShellProps) {
+  const topInset = useSafeAreaTopInset();
   return (
     <View style={sharedStyles.container}>
       <StatusBar barStyle="light-content" backgroundColor={Colors.headerStart} />
-      <SafeAreaView style={sharedStyles.safe} edges={['top', 'bottom']}>
+      <View style={[sharedStyles.safe, { paddingTop: topInset }]}>
         {children}
-        <ManagerNavBar activeIndex={activeIndex} />
-      </SafeAreaView>
+      </View>
     </View>
   );
 }
@@ -122,20 +122,20 @@ export function ManagerCompactTabShell({
   headerRight,
   children,
 }: ManagerCompactTabShellProps) {
+  const topInset = useSafeAreaTopInset();
   return (
     <View style={sharedStyles.container}>
       <StatusBar barStyle="light-content" backgroundColor={Colors.headerStart} />
-      <SafeAreaView style={sharedStyles.safeTop} edges={['top']}>
+      <View style={[sharedStyles.safeTop, { paddingTop: topInset }]}>
         <ManagerPageHeader
           title={title}
           subtitle={subtitle}
           right={headerRight}
         />
-      </SafeAreaView>
-      <SafeAreaView style={sharedStyles.safeBody} edges={['bottom']}>
+      </View>
+      <View style={sharedStyles.safeBody}>
         <View style={sharedStyles.tabBody}>{children}</View>
-        <ManagerNavBar activeIndex={activeIndex} />
-      </SafeAreaView>
+      </View>
     </View>
   );
 }
@@ -183,12 +183,13 @@ interface ManagerStackShellProps {
 }
 
 export function ManagerStackShell({ header, children }: ManagerStackShellProps) {
+  const topInset = useSafeAreaTopInset();
   return (
     <View style={sharedStyles.stackContainer}>
       <StatusBar barStyle="light-content" backgroundColor={Colors.headerStart} />
-      <SafeAreaView style={sharedStyles.safeTop} edges={['top']}>
+      <View style={[sharedStyles.safeTop, { paddingTop: topInset }]}>
         {header}
-      </SafeAreaView>
+      </View>
       <SafeAreaView style={sharedStyles.safeBody} edges={['bottom']}>
         {children}
       </SafeAreaView>
