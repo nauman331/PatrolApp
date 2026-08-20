@@ -86,7 +86,6 @@ export default function ManagerRosterDetailScreen({ route, navigation }: Props) 
 
   useFocusEffect(
     useCallback(() => {
-      setLoading(true);
       fetchDetail();
     }, [fetchDetail]),
   );

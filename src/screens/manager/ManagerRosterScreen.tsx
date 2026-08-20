@@ -51,7 +51,13 @@ import {
   selectManagerSites,
   selectLoadingShifts,
   selectLoadingSites,
-  selectRosterFilters,
+  selectRosterTab,
+  selectRosterPeriodFilter,
+  selectRosterSearch,
+  selectRosterSelectedGuardIds,
+  selectRosterSelectedSiteIds,
+  selectRosterStartDate,
+  selectRosterEndDate,
   setTab,
   setPeriodFilter,
   setSearch,
@@ -68,15 +74,13 @@ export default function ManagerRosterScreen() {
   const navigation = useNavigation<any>();
   const dispatch = useAppDispatch();
 
-  const {
-    tab,
-    periodFilter,
-    search,
-    selectedGuardIds,
-    selectedSiteIds,
-    startDate: startDateStr,
-    endDate: endDateStr
-  } = useAppSelector(selectRosterFilters);
+  const tab = useAppSelector(selectRosterTab);
+  const periodFilter = useAppSelector(selectRosterPeriodFilter);
+  const search = useAppSelector(selectRosterSearch);
+  const selectedGuardIds = useAppSelector(selectRosterSelectedGuardIds);
+  const selectedSiteIds = useAppSelector(selectRosterSelectedSiteIds);
+  const startDateStr = useAppSelector(selectRosterStartDate);
+  const endDateStr = useAppSelector(selectRosterEndDate);
 
   const startDate = useMemo(() => new Date(startDateStr), [startDateStr]);
   const endDate = useMemo(() => new Date(endDateStr), [endDateStr]);
@@ -122,6 +126,9 @@ export default function ManagerRosterScreen() {
     loadFilters();
   }, []);
 
+  const guardIdsKey = selectedGuardIds.join(',');
+  const siteIdsKey = selectedSiteIds.join(',');
+
   const fetchShiftsData = useCallback(
     async (pageNum: number, append: boolean) => {
       if (pageNum !== 1) setLoadingMore(true);
@@ -157,8 +164,8 @@ export default function ManagerRosterScreen() {
     [
       apiPeriod,
       debouncedSearch,
-      selectedGuardIds,
-      selectedSiteIds,
+      guardIdsKey,
+      siteIdsKey,
       startDateStr,
       endDateStr,
       dispatch
@@ -200,8 +207,8 @@ export default function ManagerRosterScreen() {
     [
       apiPeriod,
       debouncedSearch,
-      selectedGuardIds,
-      selectedSiteIds,
+      guardIdsKey,
+      siteIdsKey,
       startDateStr,
       endDateStr,
       dispatch

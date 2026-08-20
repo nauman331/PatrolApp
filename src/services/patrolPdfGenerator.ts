@@ -32,7 +32,7 @@ type L = {
 
 function txt(value: unknown): string {
   if (value == null) return '—';
-  const s = String(value).replace(/\s+/g, ' ').trim();
+  const s = String(value).replace(/[ \t\r]+/g, ' ').trim();
   return s || '—';
 }
 
@@ -95,23 +95,81 @@ function section(l: L, number: number, title: string) {
   l.doc.setTextColor(...C.text);
 }
 
-function detailTable(l: L, rows: [string, string][]) {
+const ALWAYS_LONG_LABELS = new Set([
+  'description',
+  'details',
+  'notes',
+  'action taken',
+  'comments',
+  'location details',
+  'witness information',
+  'other details',
+  'address',
+  'address details',
+  'emergency detail',
+  'statement',
+  'damage details',
+  'injury detail',
+  'summary',
+  'instructions',
+  'remarks',
+  'site address',
+]);
+
+function isLongField(label: string, value: string): boolean {
+  const normLabel = label.toLowerCase().trim();
+  if (Array.from(ALWAYS_LONG_LABELS).some(l => normLabel.includes(l))) {
+    return true;
+  }
+  const strVal = txt(value);
+  if (strVal.length > 30 || strVal.includes('\n')) {
+    return true;
+  }
+  return false;
+}
+
+/** Smart responsive table — pairs short fields into 2 columns (4 table cols), spans long fields full width (colSpan 3). */
+function renderSmartGridTable(l: L, rows: [string, string][]) {
   if (!rows.length) return;
   space(l, 24);
 
-  const body: string[][] = [];
-  for (let i = 0; i < rows.length; i += 2) {
-    const left = rows[i];
-    const right = rows[i + 1];
-    body.push([
-      left[0],
-      left[1],
-      right?.[0] ?? '',
-      right?.[1] ?? '',
-    ]);
+  const body: any[] = [];
+  let i = 0;
+  while (i < rows.length) {
+    const current = rows[i];
+    const isCurrentLong = isLongField(current[0], current[1]);
+
+    if (isCurrentLong) {
+      body.push([
+        current[0],
+        { content: current[1], colSpan: 3 },
+      ]);
+      i++;
+    } else {
+      const next = rows[i + 1];
+      const isNextLong = next ? isLongField(next[0], next[1]) : true;
+
+      if (next && !isNextLong) {
+        body.push([
+          current[0],
+          current[1],
+          next[0],
+          next[1],
+        ]);
+        i += 2;
+      } else {
+        body.push([
+          current[0],
+          { content: current[1], colSpan: 3 },
+        ]);
+        i++;
+      }
+    }
   }
 
-  const quarter = l.cw / 4;
+  const colLabelWidth = Math.round(l.cw * 0.22);
+  const colValWidth = Math.round((l.cw - colLabelWidth * 2) / 2);
+
   autoTable(l.doc, {
     startY: l.y,
     margin: { left: MARGIN, right: MARGIN },
@@ -124,24 +182,24 @@ function detailTable(l: L, rows: [string, string][]) {
       lineColor: C.line,
       lineWidth: 0.4,
       overflow: 'linebreak',
-      valign: 'middle',
+      valign: 'top',
     },
     body,
     columnStyles: {
       0: {
-        cellWidth: quarter,
+        cellWidth: colLabelWidth,
         fontStyle: 'bold',
         textColor: C.label,
         fillColor: C.panel,
       },
-      1: { cellWidth: quarter },
+      1: { cellWidth: colValWidth },
       2: {
-        cellWidth: quarter,
+        cellWidth: colLabelWidth,
         fontStyle: 'bold',
         textColor: C.label,
         fillColor: C.panel,
       },
-      3: { cellWidth: quarter },
+      3: { cellWidth: colValWidth },
     },
   });
   afterTable(l);
@@ -182,7 +240,7 @@ export async function buildPatrolReportPdf(
   drawBanner(l, data);
 
   section(l, 1, 'Overview');
-  detailTable(l, [
+  renderSmartGridTable(l, [
     ['Guard', txt(data.guard.name)],
     ['Site', txt(data.site.name)],
     ['Date', txt(data.date_label)],

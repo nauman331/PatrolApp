@@ -26,7 +26,7 @@ import {
 } from 'lucide-react-native';
 import { Clock, MapPin, CheckCircle, Camera } from 'lucide-react-native';
 import { useFocusEffect } from '@react-navigation/native';
-import { useGuardNavigation } from '../navigation/utils';
+import { useGuardNavigation, useSafeAreaTopInset } from '../navigation/utils';
 import { GUARD_ROUTES, navigateGuardBottomTab } from '../navigation/constants';
 import {
   findBlockingActiveShift,
@@ -142,6 +142,7 @@ function buildListItems(groups: ShiftGroup[]): ShiftListItem[] {
 
 export default function ShiftsScreen() {
   const navigation = useGuardNavigation();
+  const topInset = useSafeAreaTopInset();
   const dispatch = useAppDispatch();
   const jobsRaw = useAppSelector(selectJobsItems);
   const loading = useAppSelector(selectJobsLoading);
@@ -435,7 +436,7 @@ export default function ShiftsScreen() {
     <View style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor={Colors.headerStart} />
 
-      <SafeAreaView style={styles.safeTop} edges={['top']}>
+      <View style={[styles.safeTop, { paddingTop: topInset }]}>
         <View style={styles.header}>
           <View style={styles.hdrRow}>
             <Text style={styles.hdrTitle}>My Shifts</Text>
@@ -447,7 +448,7 @@ export default function ShiftsScreen() {
           </View>
           <Text style={styles.hdrSub}>{formatFullDisplayDate()}</Text>
         </View>
-      </SafeAreaView>
+      </View>
 
       <View style={styles.safeBody}>
         <FlatList

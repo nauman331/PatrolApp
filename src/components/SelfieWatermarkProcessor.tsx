@@ -9,7 +9,6 @@ import {
 import ViewShot from 'react-native-view-shot';
 import ReactNativeBlobUtil from 'react-native-blob-util';
 import type { SelfieWatermarkJob } from '../services/applySelfieWatermark';
-import { Colors } from '../theme';
 
 export type { SelfieWatermarkJob };
 
@@ -280,7 +279,7 @@ const styles = StyleSheet.create({
     alignItems: 'flex-end',
   },
   timestampText: {
-    color: Colors.danger,
+    color: '#88BDF2',
     fontSize: 11,
     fontWeight: '700',
     textAlign: 'right',

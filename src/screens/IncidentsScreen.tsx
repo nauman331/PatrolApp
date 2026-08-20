@@ -30,7 +30,7 @@ import {
   Camera,
   Download,
 } from 'lucide-react-native';
-import { useGuardNavigation } from '../navigation/utils';
+import { useGuardNavigation, useSafeAreaTopInset } from '../navigation/utils';
 import { GUARD_ROUTES, navigateGuardBottomTab } from '../navigation/constants';
 import { useAppDispatch, useAppSelector } from '../store/hooks';
 import {
@@ -87,6 +87,7 @@ function MetaChip({
 
 export default function IncidentsScreen() {
   const navigation = useGuardNavigation();
+  const topInset = useSafeAreaTopInset();
   const dispatch = useAppDispatch();
   const incidents = useAppSelector(selectIncidents);
   const loading = useAppSelector(selectIncidentsLoading);
@@ -119,7 +120,7 @@ export default function IncidentsScreen() {
     <View style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor={Colors.headerStart} />
 
-      <SafeAreaView style={styles.safeTop} edges={['top']}>
+      <View style={[styles.safeTop, { paddingTop: topInset }]}>
         <View style={styles.header}>
           <View style={styles.hdrRow}>
             <Text style={styles.hdrTitle}>Incidents</Text>
@@ -131,7 +132,7 @@ export default function IncidentsScreen() {
           </View>
           <Text style={styles.hdrSub}>{meta.subtitle}</Text>
         </View>
-      </SafeAreaView>
+      </View>
 
       <View style={styles.safeBody}>
         <ScrollView
@@ -256,13 +257,7 @@ export default function IncidentsScreen() {
                       <ChevronRight size={16} color={Colors.accent} />
                     </TouchableOpacity>
 
-                    <DownloadButton
-                      label="Download PDF"
-                      style={{ flex: 1 }}
-                      onDownload={async (onProgress) => {
-                        return await downloadIncidentPdf(inc, onProgress);
-                      }}
-                    />
+
                   </View>
                 </View>
               );

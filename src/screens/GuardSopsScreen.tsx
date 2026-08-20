@@ -20,7 +20,7 @@ import {
   Siren,
   FileText,
 } from 'lucide-react-native';
-import { useGuardNavigation } from '../navigation/utils';
+import { useGuardNavigation, useSafeAreaTopInset } from '../navigation/utils';
 import { getActiveShiftSession } from '../services/activeShiftSession';
 import { STORAGE_BASE_URL } from '../config/env';
 import { GUARD_ROUTES } from '../navigation/constants';
@@ -36,6 +36,7 @@ type SopItem = {
 
 export default function GuardSopsScreen() {
   const navigation = useGuardNavigation();
+  const topInset = useSafeAreaTopInset();
   const [loading, setLoading] = useState(true);
   const [docs, setDocs] = useState<SopItem[]>([]);
 
@@ -192,7 +193,7 @@ export default function GuardSopsScreen() {
     <View style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor={Colors.headerStart} />
 
-      <SafeAreaView style={styles.safeTop} edges={['top']}>
+      <View style={[styles.safeTop, { paddingTop: topInset }]}>
         <View style={styles.header}>
           <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
             <ArrowLeft size={20} color={Colors.white} />
@@ -200,7 +201,7 @@ export default function GuardSopsScreen() {
           <Text style={styles.hdrTitle}>SOP Documents</Text>
           <View style={styles.headerSpacer} />
         </View>
-      </SafeAreaView>
+      </View>
 
       <SafeAreaView style={styles.safeBody} edges={['bottom']}>
         {loading ? (

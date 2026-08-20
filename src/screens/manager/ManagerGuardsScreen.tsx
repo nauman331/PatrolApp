@@ -30,7 +30,8 @@ import {
   fetchManagerGuards,
   selectManagerGuardsData,
   selectManagerGuardsLoading,
-  selectGuardsFilters,
+  selectGuardsSearch,
+  selectGuardsStatusFilter,
   setSearch,
   setStatusFilter,
 } from '../../store/slices/managerGuardsSlice';
@@ -39,7 +40,8 @@ export default function ManagerGuardsScreen() {
   const navigation = useManagerNavigation();
   const dispatch = useAppDispatch();
 
-  const { search, statusFilter } = useAppSelector(selectGuardsFilters);
+  const search = useAppSelector(selectGuardsSearch);
+  const statusFilter = useAppSelector(selectGuardsStatusFilter);
   const debouncedQuery = useDebouncedValue(search, 400);
 
   const guardsData = useAppSelector(selectManagerGuardsData);
@@ -73,7 +75,7 @@ export default function ManagerGuardsScreen() {
   }, [fetchGuardsData]);
 
   const filteredGuards = useMemo(() => {
-    return guards.filter(g => {
+    return guards.filter((g: ManagerGuardListItem) => {
       if (statusFilter === 'on_duty') return g.status === 'on_duty';
       if (statusFilter === 'off_duty') return g.status === 'off_duty';
       return true;
@@ -142,7 +144,7 @@ export default function ManagerGuardsScreen() {
         ) : filteredGuards.length === 0 ? (
           <Text style={styles.emptyText}>No guards found.</Text>
         ) : (
-          filteredGuards.map((g, index) => {
+          filteredGuards.map((g: ManagerGuardListItem, index: number) => {
             const palette = guardAvatarPalette[index % guardAvatarPalette.length];
             const statusColor = mapManagerStatusColor(g.status_color);
 

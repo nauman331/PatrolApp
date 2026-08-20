@@ -38,6 +38,7 @@ export async function shareReport(
   data: any,
   action: 'download' | 'share' | 'email',
   onProgress?: DownloadProgressCallback,
+  onModalOpen?: () => void,
 ): Promise<boolean | string> {
   try {
     let filePath: string;
@@ -85,6 +86,8 @@ export async function shareReport(
       type: 'application/pdf',
       failOnCancel: false,
     };
+
+    onModalOpen?.();
 
     if (action === 'email') {
         try {

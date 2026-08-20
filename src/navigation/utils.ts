@@ -94,3 +94,18 @@ export function resetNavigation(
         routes: [{ name: 'Splash' as never }],
     });
 }
+
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { StatusBar, Platform } from 'react-native';
+
+/**
+ * Returns top safe area inset synchronously with fallback to StatusBar.currentHeight on Android.
+ * Prevents initial render layout jump/flicker where top header is rendered at 0 padding before native inset event fires.
+ */
+export function useSafeAreaTopInset(): number {
+    const insets = useSafeAreaInsets();
+    return Math.max(
+        insets.top,
+        Platform.OS === 'android' ? StatusBar.currentHeight ?? 24 : 0,
+    );
+}
