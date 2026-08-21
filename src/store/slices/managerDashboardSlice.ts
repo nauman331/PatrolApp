@@ -59,8 +59,6 @@ const managerDashboardSlice = createSlice({
       .addCase(fetchManagerDashboard.pending, (state: ManagerDashboardState) => {
         if (!state.data) {
           state.loading = true;
-        } else {
-          state.refreshing = true;
         }
         state.error = null;
       })

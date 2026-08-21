@@ -26,8 +26,15 @@ import {
   type LucideIcon,
 } from 'lucide-react-native';
 import { useManagerNavigation, useSafeAreaTopInset } from '../../navigation/utils';
-import { MANAGER_ROUTES } from '../../navigation/constants';
+import { MANAGER_ROUTES, navigateManagerBottomTab } from '../../navigation/constants';
 import { MANAGER_TAB_INDEX, sharedStyles } from './managerShared';
+
+function formatDateForApi(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
 import { ManagerCalendarModal } from './ManagerCalendarModal';
 import { useAppDispatch, useAppSelector } from '../../store/hooks';
 import {
@@ -153,16 +160,21 @@ export default function ManagerDashboard() {
   const selectedDate = useMemo(() => new Date(selectedDateStr), [selectedDateStr]);
   const [showDatePicker, setShowDatePicker] = useState(false);
 
-  const formatDateForApi = (date: Date) => {
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const day = String(date.getDate()).padStart(2, '0');
-    return `${year}-${month}-${day}`;
-  };
-
   const refreshDashboard = useCallback(() => {
     dispatch(fetchManagerDashboard(formatDateForApi(selectedDate)));
   }, [dispatch, selectedDate]);
+
+  const handleNavigateRoster = useCallback(() => {
+    navigateManagerBottomTab(navigation, MANAGER_TAB_INDEX.ROSTER);
+  }, [navigation]);
+
+  const handleNavigateReports = useCallback(() => {
+    navigateManagerBottomTab(navigation, MANAGER_TAB_INDEX.REPORTS);
+  }, [navigation]);
+
+  const handleNavigateGuards = useCallback(() => {
+    navigateManagerBottomTab(navigation, MANAGER_TAB_INDEX.GUARDS);
+  }, [navigation]);
 
   const onRefresh = useCallback(async () => {
     await dispatch(fetchManagerDashboard(formatDateForApi(selectedDate)));
@@ -329,7 +341,7 @@ export default function ManagerDashboard() {
                     title="Missed Shifts "
                     action="View All →"
                     dark={false}
-                    onActionPress={() => navigation.navigate(MANAGER_ROUTES.ROSTER)}
+                    onActionPress={handleNavigateRoster}
                   />
                 </View>
                 {missedAlerts.length === 0 ? (
@@ -358,7 +370,7 @@ export default function ManagerDashboard() {
                   <SectionHeader
                     title="Recent Incidents"
                     action="Reports →"
-                    onActionPress={() => navigation.navigate(MANAGER_ROUTES.REPORTS)}
+                    onActionPress={handleNavigateReports}
                   />
                 </View>
                 {recentIncidents.length === 0 ? (
@@ -395,7 +407,7 @@ export default function ManagerDashboard() {
                   <SectionHeader
                     title="Active Guards"
                     action="Guards →"
-                    onActionPress={() => navigation.navigate(MANAGER_ROUTES.GUARDS)}
+                    onActionPress={handleNavigateGuards}
                   />
                 </View>
                 {activeGuards.length === 0 ? (

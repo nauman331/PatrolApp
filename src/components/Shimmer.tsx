@@ -1,5 +1,5 @@
 import React, { useEffect, useRef } from 'react';
-import { Animated, StyleSheet, View, ViewStyle } from 'react-native';
+import { Animated, StyleSheet, View, ViewStyle, useWindowDimensions } from 'react-native';
 import { Colors, Radii, Shadows, Spacing } from '../theme';
 
 interface ShimmerBoxProps {
@@ -832,14 +832,16 @@ export function ManagerRosterDetailBodyShimmer() {
 }
 
 export function ProfileShimmer() {
+  const { width: windowWidth } = useWindowDimensions();
+  const avatarSize = Math.min(Math.max(windowWidth * 0.26, 84), 110);
   return (
     <>
       <View style={styles.profileAvatarWrap}>
-        <ShimmerBox width={110} height={110} borderRadius={60} />
+        <ShimmerBox width={avatarSize} height={avatarSize} borderRadius={Radii.pill} />
       </View>
       <View style={[styles.profileCard, styles.cardShadow]}>
         <ShimmerBox width={100} height={12} style={{ marginBottom: 16 }} />
-        {Array.from({ length: 5 }).map((_, i) => (
+        {Array.from({ length: 4 }).map((_, i) => (
           <View key={i} style={{ marginBottom: 14 }}>
             <ShimmerBox width={80} height={10} style={{ marginBottom: 6 }} />
             <ShimmerBox width="85%" height={14} />
@@ -848,7 +850,7 @@ export function ProfileShimmer() {
       </View>
       <View style={[styles.profileCard, styles.cardShadow]}>
         <ShimmerBox width={110} height={12} style={{ marginBottom: 14 }} />
-        {Array.from({ length: 2 }).map((_, i) => (
+        {Array.from({ length: 3 }).map((_, i) => (
           <View key={i} style={styles.profileActionRow}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 }}>
               <ShimmerBox width={35} height={35} borderRadius={10} />
@@ -858,7 +860,8 @@ export function ProfileShimmer() {
           </View>
         ))}
       </View>
-      <ShimmerBox height={52} borderRadius={Radii.md} />
+      <ShimmerBox height={50} borderRadius={Radii.md} style={{ marginBottom: 12 }} />
+      <ShimmerBox height={50} borderRadius={Radii.md} />
     </>
   );
 }

@@ -31,14 +31,14 @@ export default function ManagerTabs() {
     const targetScreen = route.params?.screen || route.name;
     if (targetScreen) {
       const idx = MANAGER_BOTTOM_TAB_ROUTES.indexOf(targetScreen as any);
-      if (idx !== -1) {
+      if (idx !== -1 && idx !== activeIndex) {
         setActiveIndex(idx);
         if (route.params?.screen) {
           navigation.setParams({ screen: undefined });
         }
       }
     }
-  }, [route.params?.screen, route.name, navigation]);
+  }, [route.params?.screen, route.name, navigation, activeIndex]);
 
   const handleTabPress = (index: number) => {
     setActiveIndex(index);
