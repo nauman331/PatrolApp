@@ -8,6 +8,7 @@ import {
   StatusBar,
   Alert,
   AppState,
+  RefreshControl,
   type AppStateStatus,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -50,6 +51,7 @@ import {
   fetchGuardDashboard,
   selectDashboardData,
   selectDashboardLoading,
+  selectDashboardRefreshing,
   selectDashboardError,
 } from '../store/slices/guardDashboardSlice';
 
@@ -97,12 +99,15 @@ export default function GuardDashboard() {
 
   const dashboard = useAppSelector(selectDashboardData);
   const dashboardLoading = useAppSelector(selectDashboardLoading);
+  const dashboardRefreshing = useAppSelector(selectDashboardRefreshing);
   const dashboardError = useAppSelector(selectDashboardError);
 
   const [activeSession, setActiveSession] = useState<ActiveShiftSession | null>(
     null,
   );
   const [elapsed, setElapsed] = useState('00:00:00');
+  const [refreshing, setRefreshing] = useState(false);
+  const isRefreshingRef = useRef(false);
   const appStateRef = useRef(AppState.currentState);
 
   const loadDashboard = useCallback(async () => {
@@ -175,6 +180,22 @@ export default function GuardDashboard() {
   const refreshDashboard = useCallback(() => {
     loadDashboard();
   }, [loadDashboard]);
+
+  const handleRefresh = useCallback(async () => {
+    if (isRefreshingRef.current || refreshing || dashboardRefreshing || dashboardLoading) {
+      return;
+    }
+    isRefreshingRef.current = true;
+    setRefreshing(true);
+    try {
+      await loadDashboard();
+    } catch (error) {
+      // handled inside loadDashboard / Redux thunk
+    } finally {
+      setRefreshing(false);
+      isRefreshingRef.current = false;
+    }
+  }, [refreshing, dashboardRefreshing, dashboardLoading, loadDashboard]);
 
   useFocusEffect(
     useCallback(() => {
@@ -439,7 +460,19 @@ export default function GuardDashboard() {
           <Text style={styles.greetSub}>{formatFullDisplayDate()}</Text>
         </View>
 
-        <View style={styles.body}>
+        <ScrollView
+          style={styles.body}
+          contentContainerStyle={styles.bodyContent}
+          showsVerticalScrollIndicator={false}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing || dashboardRefreshing}
+              onRefresh={handleRefresh}
+              tintColor={Colors.accent}
+              colors={[Colors.accent]}
+            />
+          }
+        >
           <View style={styles.bodyUpper}>
             {showShiftShimmer ? (
               <DashboardShiftShimmer />
@@ -547,27 +580,20 @@ export default function GuardDashboard() {
             {showPatrolShimmer ? (
               <PatrolListShimmer count={3} />
             ) : todayPatrols.length > 0 ? (
-              <ScrollView
-                style={styles.patrolScroll}
-                contentContainerStyle={styles.patrolScrollContent}
-                showsVerticalScrollIndicator={false}
-                nestedScrollEnabled
-              >
-                {todayPatrols.map((patrol, index) => (
-                  <PatrolItem
-                    key={String(patrol.rosterId)}
-                    location={patrol.site}
-                    time={patrol.time}
-                    status={patrol.status === 'done' ? 'done' : 'pending'}
-                    isLast={index === todayPatrols.length - 1}
-                  />
-                ))}
-              </ScrollView>
+              todayPatrols.map((patrol, index) => (
+                <PatrolItem
+                  key={String(patrol.rosterId)}
+                  location={patrol.site}
+                  time={patrol.time}
+                  status={patrol.status === 'done' ? 'done' : 'pending'}
+                  isLast={index === todayPatrols.length - 1}
+                />
+              ))
             ) : (
               <Text style={styles.patrolMetaText}>No patrols found.</Text>
             )}
           </View>
-        </View>
+        </ScrollView>
       </View>
     </View>
   );
@@ -664,6 +690,9 @@ const styles = StyleSheet.create({
     paddingTop: Spacing.md,
     paddingBottom: 0,
     marginTop: -10,
+  },
+  bodyContent: {
+    paddingBottom: Spacing.xl,
   },
   bodyUpper: {
     flex: 1,
