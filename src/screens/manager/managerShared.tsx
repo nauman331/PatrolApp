@@ -3,6 +3,8 @@ import {
   View,
   Text,
   TouchableOpacity,
+  TouchableWithoutFeedback,
+  Keyboard,
   StyleSheet,
   StatusBar,
   ScrollView,
@@ -124,19 +126,21 @@ export function ManagerCompactTabShell({
 }: ManagerCompactTabShellProps) {
   const topInset = useSafeAreaTopInset();
   return (
-    <View style={sharedStyles.container}>
-      <StatusBar barStyle="light-content" backgroundColor={Colors.headerStart} />
-      <View style={[sharedStyles.safeTop, { paddingTop: topInset }]}>
-        <ManagerPageHeader
-          title={title}
-          subtitle={subtitle}
-          right={headerRight}
-        />
+    <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
+      <View style={sharedStyles.container}>
+        <StatusBar barStyle="light-content" backgroundColor={Colors.headerStart} />
+        <View style={[sharedStyles.safeTop, { paddingTop: topInset }]}>
+          <ManagerPageHeader
+            title={title}
+            subtitle={subtitle}
+            right={headerRight}
+          />
+        </View>
+        <View style={sharedStyles.safeBody}>
+          <View style={sharedStyles.tabBody}>{children}</View>
+        </View>
       </View>
-      <View style={sharedStyles.safeBody}>
-        <View style={sharedStyles.tabBody}>{children}</View>
-      </View>
-    </View>
+    </TouchableWithoutFeedback>
   );
 }
 
@@ -242,32 +246,35 @@ export function ManagerListLayout({
   };
 
   return (
-    <View style={sharedStyles.listScreen}>
-      {toolbar ? (
-        <View style={sharedStyles.listToolbar}>{toolbar}</View>
-      ) : null}
-      {fixedContent ? (
-        <View style={sharedStyles.listFixed}>{fixedContent}</View>
-      ) : null}
-      {listHeader ? (
-        <View style={sharedStyles.listHeader}>{listHeader}</View>
-      ) : null}
-      <ScrollView
-        style={sharedStyles.listScroll}
-        contentContainerStyle={sharedStyles.listScrollContent}
-        showsVerticalScrollIndicator={false}
-        stickyHeaderIndices={stickyHeaderIndices}
-        refreshControl={
-          onRefresh ? (
-            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
-          ) : undefined
-        }
-        onScroll={handleScroll}
-        scrollEventThrottle={400}
-      >
-        {children}
-      </ScrollView>
-    </View>
+    <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
+      <View style={sharedStyles.listScreen}>
+        {toolbar ? (
+          <View style={sharedStyles.listToolbar}>{toolbar}</View>
+        ) : null}
+        {fixedContent ? (
+          <View style={sharedStyles.listFixed}>{fixedContent}</View>
+        ) : null}
+        {listHeader ? (
+          <View style={sharedStyles.listHeader}>{listHeader}</View>
+        ) : null}
+        <ScrollView
+          style={sharedStyles.listScroll}
+          contentContainerStyle={sharedStyles.listScrollContent}
+          showsVerticalScrollIndicator={false}
+          stickyHeaderIndices={stickyHeaderIndices}
+          keyboardShouldPersistTaps="handled"
+          refreshControl={
+            onRefresh ? (
+              <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+            ) : undefined
+          }
+          onScroll={handleScroll}
+          scrollEventThrottle={400}
+        >
+          {children}
+        </ScrollView>
+      </View>
+    </TouchableWithoutFeedback>
   );
 }
 

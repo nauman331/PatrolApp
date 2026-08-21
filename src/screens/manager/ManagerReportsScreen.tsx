@@ -6,6 +6,7 @@ import {
   StyleSheet,
   TextInput,
   ActivityIndicator,
+  Keyboard,
 } from 'react-native';
 import { Colors, FontSizes, Radii, Shadows } from '../../theme';
 import {
@@ -211,6 +212,7 @@ export default function ManagerReportsScreen() {
     (tab === 'incident' && loadingIncidents && incidentReports.length === 0);
 
   const handleDateFilter = (filter: DateFilter) => {
+    Keyboard.dismiss();
     dispatch(setDateFilter(filter));
   };
 
@@ -238,6 +240,7 @@ export default function ManagerReportsScreen() {
               <TouchableOpacity
                 style={[styles.tab, tab === 'patrol' && styles.tabActive]}
                 onPress={() => {
+                  Keyboard.dismiss();
                   if (tab !== 'patrol') dispatch(setTab('patrol'));
                 }}
               >
@@ -257,6 +260,7 @@ export default function ManagerReportsScreen() {
               <TouchableOpacity
                 style={[styles.tab, tab === 'incident' && styles.tabActive]}
                 onPress={() => {
+                  Keyboard.dismiss();
                   if (tab !== 'incident') dispatch(setTab('incident'));
                 }}
               >

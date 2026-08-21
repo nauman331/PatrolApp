@@ -6,6 +6,7 @@ import {
   StyleSheet,
   TextInput,
   ActivityIndicator,
+  Keyboard,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { Colors, FontSizes, Radii, Shadows } from '../../theme';
@@ -242,6 +243,7 @@ export default function ManagerRosterScreen() {
   }, [fetchShiftsData, fetchSitesData, hasMore, loadingShifts, loadingSites, loadingMore, page, tab]);
 
   const handlePeriodFilter = (filter: PeriodFilter) => {
+    Keyboard.dismiss();
     dispatch(setPeriodFilter(filter));
   };
 
@@ -268,6 +270,7 @@ export default function ManagerRosterScreen() {
           key={t.key}
           style={[styles.tab, tab === t.key && styles.tabActive]}
           onPress={() => {
+            Keyboard.dismiss();
             if (tab !== t.key) {
               dispatch(setTab(t.key));
             }
