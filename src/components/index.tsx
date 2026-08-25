@@ -98,7 +98,7 @@ interface SectionHeaderProps {
   dark?: boolean;
 }
 
-export const SectionHeader: React.FC<SectionHeaderProps> = ({
+export const SectionHeader: React.FC<SectionHeaderProps> = React.memo(({
   title,
   action,
   onActionPress,
@@ -115,7 +115,11 @@ export const SectionHeader: React.FC<SectionHeaderProps> = ({
     </Text>
     {action && (
       onActionPress ? (
-        <TouchableOpacity onPress={onActionPress} activeOpacity={0.7}>
+        <TouchableOpacity
+          onPress={onActionPress}
+          activeOpacity={0.6}
+          hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+        >
           <Text style={styles.seeAll}>{action}</Text>
         </TouchableOpacity>
       ) : (
@@ -123,7 +127,7 @@ export const SectionHeader: React.FC<SectionHeaderProps> = ({
       )
     )}
   </View>
-);
+));
 
 // ─────────────────────────────────────────────────────────────
 // STAT CARD (UPDATED WITH LUCIDE SUPPORT)
@@ -138,7 +142,7 @@ interface StatCardProps {
   trendUp?: boolean;
 }
 
-export const StatCard: React.FC<StatCardProps> = ({
+export const StatCard: React.FC<StatCardProps> = React.memo(({
   icon,
   value,
   label,
@@ -172,7 +176,7 @@ export const StatCard: React.FC<StatCardProps> = ({
       ) : null}
     </View>
   );
-};
+});
 
 // ─────────────────────────────────────────────────────────────
 // BUTTONS

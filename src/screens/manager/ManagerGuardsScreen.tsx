@@ -5,6 +5,7 @@ import {
   TouchableOpacity,
   StyleSheet,
   TextInput,
+  Keyboard,
 } from 'react-native';
 import { Colors, FontSizes, Radii, Shadows } from '../../theme';
 import { Search, ChevronRight } from 'lucide-react-native';
@@ -123,7 +124,10 @@ export default function ManagerGuardsScreen() {
                     sharedStyles.chip,
                     statusFilter === f.value && sharedStyles.chipActive,
                   ]}
-                  onPress={() => dispatch(setStatusFilter(f.value))}
+                  onPress={() => {
+                    Keyboard.dismiss();
+                    dispatch(setStatusFilter(f.value));
+                  }}
                 >
                   <Text
                     style={[
@@ -152,15 +156,16 @@ export default function ManagerGuardsScreen() {
               <TouchableOpacity
                 key={`${g.id}-${g.roster_id}`}
                 style={[styles.guardRow, Shadows.card]}
-                onPress={() =>
+                onPress={() => {
+                  Keyboard.dismiss();
                   navigation.navigate(MANAGER_ROUTES.GUARD_DETAILS, {
                     guardId: String(g.id),
                     name: g.name,
                     rosterId: g.roster_id,
                     siteName: g.site_name,
                     statusText: g.status_label,
-                  })
-                }
+                  });
+                }}
               >
                 <View style={[styles.avatar, { backgroundColor: palette.bg }]}>
                   <Text style={[styles.avatarText, { color: palette.color }]}>

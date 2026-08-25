@@ -13,6 +13,8 @@ import {
   Platform,
   PermissionsAndroid,
   Keyboard,
+  KeyboardAvoidingView,
+  Pressable,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRoute } from '@react-navigation/native';
@@ -879,7 +881,10 @@ export default function AddIncidentScreen() {
       />
       <StatusBar barStyle="light-content" backgroundColor={Colors.headerStart} />
 
-      <View style={[styles.safeTop, { paddingTop: topInset }]}>
+      <Pressable
+        style={[styles.safeTop, { paddingTop: topInset }]}
+        onPress={Keyboard.dismiss}
+      >
         <View style={styles.header}>
           <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
             <ArrowLeft size={20} color={Colors.white} />
@@ -887,17 +892,23 @@ export default function AddIncidentScreen() {
           <Text style={styles.hdrTitle}>Incident Report</Text>
           <View style={styles.headerSpacer} />
         </View>
-      </View>
+      </Pressable>
 
       <SafeAreaView style={styles.safeBody} edges={['bottom']}>
-        <ScrollView
-          ref={scrollViewRef}
-          style={styles.body}
-          contentContainerStyle={styles.bodyContent}
-          showsVerticalScrollIndicator={false}
-          keyboardShouldPersistTaps="always"
-          scrollEventThrottle={16}
+        <KeyboardAvoidingView
+          style={styles.keyboardAvoid}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          keyboardVerticalOffset={Platform.OS === 'ios' ? topInset + 64 : 0}
         >
+          <ScrollView
+            ref={scrollViewRef}
+            style={styles.body}
+            contentContainerStyle={styles.bodyContent}
+            showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+            keyboardDismissMode="on-drag"
+            scrollEventThrottle={16}
+          >
           <View style={styles.card}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
               <AlertTriangle size={14} color={Colors.danger} style={styles.icon} />
@@ -1378,8 +1389,9 @@ export default function AddIncidentScreen() {
             )}
           </TouchableOpacity>
         </View>
-      </SafeAreaView>
-    </View>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
+  </View>
   );
 }
 
@@ -1409,8 +1421,9 @@ const styles = StyleSheet.create({
   },
   headerSpacer: { width: 36 },
 
+  keyboardAvoid: { flex: 1 },
   body: { flex: 1 },
-  bodyContent: { padding: 14, paddingBottom: 110 },
+  bodyContent: { padding: 14, paddingBottom: 32 },
   icon: { marginBottom: 7 },
 
   cardLabelRow: {

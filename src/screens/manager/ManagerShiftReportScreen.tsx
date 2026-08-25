@@ -9,7 +9,7 @@ import {
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { Colors, FontSizes, Radii, Shadows } from '../../theme';
 import { SectionHeader } from '../../components';
-import { MapPin, Clock, Footprints, Download, Share2, Mail } from 'lucide-react-native';
+import { MapPin, Clock, Footprints, Share2, Mail } from 'lucide-react-native';
 import type { ManagerStackScreenProps } from '../../navigation/types';
 import {
   ManagerStackHeader,
@@ -49,30 +49,45 @@ export default function ManagerShiftReportScreen({ route }: Props) {
 
   const [sharing, setSharing] = useState(false);
   const [emailing, setEmailing] = useState(false);
+  const [downloading, setDownloading] = useState(false);
+
+  const isBusy = sharing || emailing || downloading;
 
   const handleShare = useCallback(async () => {
-    if (sharing || emailing || !data) return;
+    if (isBusy || !data) return;
     setSharing(true);
     try {
-      await shareReport('patrol', data, 'share', undefined, () => setSharing(false));
+      await shareReport(
+        'patrol',
+        data,
+        'share',
+        undefined,
+        () => setSharing(false),
+      );
     } catch (err) {
       console.error('Share patrol report failed:', err);
     } finally {
       setSharing(false);
     }
-  }, [data, sharing, emailing]);
+  }, [data, isBusy]);
 
   const handleEmail = useCallback(async () => {
-    if (sharing || emailing || !data) return;
+    if (isBusy || !data) return;
     setEmailing(true);
     try {
-      await shareReport('patrol', data, 'email', undefined, () => setEmailing(false));
+      await shareReport(
+        'patrol',
+        data,
+        'email',
+        undefined,
+        () => setEmailing(false),
+      );
     } catch (err) {
       console.error('Email patrol report failed:', err);
     } finally {
       setEmailing(false);
     }
-  }, [data, sharing, emailing]);
+  }, [data, isBusy]);
 
   const displayDate = routeDate || new Date().toISOString().slice(0, 10);
 
@@ -183,14 +198,20 @@ export default function ManagerShiftReportScreen({ route }: Props) {
                     <DownloadButton
                       label="Download"
                       style={{ flex: 1 }}
+                      disabled={isBusy}
                       onDownload={async (onProgress) => {
-                        return await shareReport('patrol', data, 'download', onProgress);
+                        setDownloading(true);
+                        try {
+                          return await shareReport('patrol', data, 'download', onProgress);
+                        } finally {
+                          setDownloading(false);
+                        }
                       }}
                     />
                     <TouchableOpacity
-                      style={[styles.actionBtn, Shadows.card, (sharing || emailing) && styles.actionBtnDisabled]}
+                      style={[styles.actionBtn, Shadows.card, isBusy && styles.actionBtnDisabled]}
                       onPress={handleShare}
-                      disabled={sharing || emailing}
+                      disabled={isBusy}
                     >
                       {sharing ? (
                         <ActivityIndicator size="small" color={Colors.accent} />
@@ -202,9 +223,9 @@ export default function ManagerShiftReportScreen({ route }: Props) {
                       )}
                     </TouchableOpacity>
                     <TouchableOpacity
-                      style={[styles.actionBtn, Shadows.card, (sharing || emailing) && styles.actionBtnDisabled]}
+                      style={[styles.actionBtn, Shadows.card, isBusy && styles.actionBtnDisabled]}
                       onPress={handleEmail}
-                      disabled={sharing || emailing}
+                      disabled={isBusy}
                     >
                       {emailing ? (
                         <ActivityIndicator size="small" color={Colors.accent} />

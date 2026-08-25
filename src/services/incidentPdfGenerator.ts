@@ -1,6 +1,6 @@
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import { Platform } from 'react-native';
+import { Platform, PermissionsAndroid } from 'react-native';
 import ReactNativeBlobUtil from 'react-native-blob-util';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { type MappedIncident, formatAppDateTime } from './incidentsMapper';
@@ -589,9 +589,25 @@ export async function buildIncidentReportPdf(
           cachePath,
         );
       savedPath = contentUri || cachePath;
-    } catch {
+    } catch (err) {
+      console.warn('MediaStore save failed, trying legacy downloads:', err);
       const legacyPath = `${ReactNativeBlobUtil.fs.dirs.LegacyDownloadDir}/${fileName}`;
       try {
+        if ((Platform.Version as number) <= 28) {
+          const granted = await PermissionsAndroid.request(
+            PermissionsAndroid.PERMISSIONS.WRITE_EXTERNAL_STORAGE,
+            {
+              title: 'Storage Permission Required',
+              message: 'Report Pro needs access to your storage to save the PDF report.',
+              buttonNeutral: 'Ask Me Later',
+              buttonNegative: 'Cancel',
+              buttonPositive: 'OK',
+            },
+          );
+          if (granted !== PermissionsAndroid.RESULTS.GRANTED) {
+            return { filePath: cachePath, cachePath, base64: pdfBase64 };
+          }
+        }
         await ReactNativeBlobUtil.fs.cp(cachePath, legacyPath);
         savedPath = legacyPath;
         await ReactNativeBlobUtil.fs.scanFile([{ path: legacyPath, mime: 'application/pdf' }]);
