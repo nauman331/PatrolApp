@@ -13,6 +13,7 @@ import {
   ScrollView,
   StyleProp,
   StyleSheet,
+  TouchableWithoutFeedback,
   View,
   ViewStyle,
 } from 'react-native';
@@ -69,7 +70,7 @@ const AuthKeyboardScroll = forwardRef<
               animated: true,
             });
           },
-          () => {},
+          () => { },
         );
       };
 
@@ -128,31 +129,33 @@ const AuthKeyboardScroll = forwardRef<
   const keyboardContentStyle =
     keyboardHeight > 0
       ? {
-          paddingBottom:
-            Platform.OS === 'android'
-              ? keyboardHeight + EXTRA_SCROLL_PADDING
-              : EXTRA_SCROLL_PADDING,
-        }
+        paddingBottom:
+          Platform.OS === 'android'
+            ? keyboardHeight + EXTRA_SCROLL_PADDING
+            : EXTRA_SCROLL_PADDING,
+      }
       : null;
 
   const scrollView = (
-    <View style={[styles.flex, keyboardInsetStyle]}>
-      <ScrollView
-        ref={scrollRef}
-        style={styles.scroll}
-        contentContainerStyle={[
-          styles.content,
-          keyboardContentStyle,
-          contentContainerStyle,
-        ]}
-        showsVerticalScrollIndicator={false}
-        keyboardShouldPersistTaps="always"
-        keyboardDismissMode="none"
-        nestedScrollEnabled
-      >
-        {children}
-      </ScrollView>
-    </View>
+    <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
+      <View style={[styles.flex, keyboardInsetStyle]}>
+        <ScrollView
+          ref={scrollRef}
+          style={styles.scroll}
+          contentContainerStyle={[
+            styles.content,
+            keyboardContentStyle,
+            contentContainerStyle,
+          ]}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="none"
+          nestedScrollEnabled
+        >
+          {children}
+        </ScrollView>
+      </View>
+    </TouchableWithoutFeedback>
   );
 
   if (!wrapFullScreen) {

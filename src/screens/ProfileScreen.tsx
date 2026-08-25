@@ -12,16 +12,12 @@ import {
   ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
+  useWindowDimensions,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Colors, FontSizes, Radii, Shadows } from '../theme';
-import { NavBar } from '../components';
 import { ProfileShimmer } from '../components/Shimmer';
 import {
-  AlertTriangle,
-  Home,
-  Route,
-  User,
   ClipboardList,
   FileText,
   ChevronRight,
@@ -29,19 +25,17 @@ import {
   Trash2,
 } from 'lucide-react-native';
 import { useAppDispatch, useAppSelector } from '../store/hooks';
-import { fetchGuardIncidents, selectIncidents } from '../store/slices/incidentsSlice';
+import { fetchGuardIncidents } from '../store/slices/incidentsSlice';
 import { logout } from '../services/authApi';
 import { useNavigation } from '@react-navigation/native';
 import { useSafeAreaTopInset } from '../navigation/utils';
 import { GUARD_ROUTES, MANAGER_ROUTES, navigateGuardBottomTab, navigateManagerBottomTab } from '../navigation/constants';
-import { buildManagerNavItems } from '../screens/manager/managerShared';
 import {
   deleteUserAccount,
   fetchUserProfile,
   updateUserProfile,
   type UserProfile,
 } from '../services/userApi';
-import { formatFullDisplayDate } from '../services/guardJobsMapper';
 
 interface Props {
   onLogout?: () => void;
@@ -84,6 +78,7 @@ type ProfileFieldProps = {
   form: ProfileForm;
   onChangeField: (key: keyof ProfileForm, text: string) => void;
   keyboardType?: 'default' | 'email-address' | 'phone-pad';
+  isSmallScreen?: boolean;
 };
 
 function ProfileField({
@@ -95,22 +90,29 @@ function ProfileField({
   form,
   onChangeField,
   keyboardType = 'default',
+  isSmallScreen = false,
 }: ProfileFieldProps) {
   return (
-    <View>
-      <Text style={styles.label}>{label}</Text>
+    <View style={styles.fieldWrapper}>
+      <Text style={[styles.label, isSmallScreen && styles.labelSmall]}>{label}</Text>
       {isEditing && editable && keyName ? (
         <View style={styles.inputBox}>
           <TextInput
             value={form[keyName]}
             onChangeText={text => onChangeField(keyName, text)}
-            style={styles.input}
+            style={[styles.input, isSmallScreen && styles.inputSmall]}
             keyboardType={keyboardType}
             autoCapitalize={keyboardType === 'email-address' ? 'none' : 'sentences'}
           />
         </View>
       ) : (
-        <Text style={styles.value}>{value || '—'}</Text>
+        <Text
+          style={[styles.value, isSmallScreen && styles.valueSmall]}
+          numberOfLines={2}
+          ellipsizeMode="tail"
+        >
+          {value || '—'}
+        </Text>
       )}
     </View>
   );
@@ -119,10 +121,12 @@ function ProfileField({
 export default function ProfileScreen({ onLogout }: Props) {
   const navigation = useNavigation<any>();
   const topInset = useSafeAreaTopInset();
+  const insets = useSafeAreaInsets();
+  const { width: windowWidth, height: windowHeight } = useWindowDimensions();
+
   const dispatch = useAppDispatch();
   const userRole = useAppSelector(state => state.auth?.userRole ?? 'guard');
   const guardId = useAppSelector(state => state.auth?.guardId ?? null);
-  const incidents = useAppSelector(selectIncidents);
 
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [form, setForm] = useState<ProfileForm>({
@@ -136,6 +140,15 @@ export default function ProfileScreen({ onLogout }: Props) {
   const [deleting, setDeleting] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
+
+  // Responsive calculations
+  const isSmallScreen = windowWidth < 360;
+
+  // Avatar sizing: scales fluidly between 84px and 110px based on screen width
+  const avatarSize = Math.min(Math.max(windowWidth * 0.26, 84), 110);
+
+  // Content bottom padding accounting for safe bottom inset
+  const bottomContentPadding = Math.max(insets.bottom + 24, 36);
 
   const loadProfile = useCallback(async () => {
     if (!guardId) {
@@ -311,14 +324,17 @@ export default function ProfileScreen({ onLogout }: Props) {
     <View style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor={Colors.headerStart} />
 
+      {/* Header Container */}
       <View style={[styles.safeTop, { paddingTop: topInset }]}>
-        <View style={styles.header}>
+        <View style={[styles.header, isSmallScreen && styles.headerSmall]}>
           <View style={styles.hdrRow}>
-            <Text style={styles.hdrTitle}>Profile</Text>
+            <Text style={[styles.hdrTitle, isSmallScreen && styles.hdrTitleSmall]}>Profile</Text>
             {!loading && !loadError ? (
               <TouchableOpacity
                 onPress={handleEditPress}
                 disabled={saving || deleting}
+                style={styles.editBtnTouch}
+                activeOpacity={0.7}
               >
                 <Text style={styles.editText}>
                   {isEditing ? 'Cancel' : 'Edit'}
@@ -331,6 +347,7 @@ export default function ProfileScreen({ onLogout }: Props) {
         </View>
       </View>
 
+      {/* Main Content Body */}
       <View style={styles.safeBody}>
         <KeyboardAvoidingView
           style={styles.keyboardAvoid}
@@ -339,7 +356,13 @@ export default function ProfileScreen({ onLogout }: Props) {
         >
           <ScrollView
             style={styles.body}
-            contentContainerStyle={styles.bodyContent}
+            contentContainerStyle={[
+              styles.bodyContent,
+              {
+                paddingHorizontal: isSmallScreen ? 12 : 16,
+                paddingBottom: bottomContentPadding,
+              },
+            ]}
             showsVerticalScrollIndicator={false}
             keyboardShouldPersistTaps="handled"
           >
@@ -354,16 +377,24 @@ export default function ProfileScreen({ onLogout }: Props) {
               </View>
             ) : (
               <>
+                {/* Avatar Section */}
                 <View style={styles.avatarContainer}>
                   <Image
                     source={require('../../assets/dummy.jpg')}
-                    style={styles.avatar}
+                    style={[
+                      styles.avatar,
+                      {
+                        width: avatarSize,
+                        height: avatarSize,
+                        borderRadius: Radii.pill,
+                      },
+                    ]}
+                    resizeMode="cover"
                   />
                 </View>
 
-                <View style={styles.card}>
-                  {/* <Text style={styles.sectionTitle}>Profile Info</Text> */}
-
+                {/* Profile Form / Info Card */}
+                <View style={[styles.card, isSmallScreen && styles.cardSmall]}>
                   <ProfileField
                     label="Full Name"
                     value={form.name}
@@ -371,6 +402,7 @@ export default function ProfileScreen({ onLogout }: Props) {
                     isEditing={isEditing}
                     form={form}
                     onChangeField={handleChangeField}
+                    isSmallScreen={isSmallScreen}
                   />
                   <ProfileField
                     label="Security License No."
@@ -379,6 +411,7 @@ export default function ProfileScreen({ onLogout }: Props) {
                     isEditing={isEditing}
                     form={form}
                     onChangeField={handleChangeField}
+                    isSmallScreen={isSmallScreen}
                   />
 
                   <ProfileField
@@ -389,6 +422,7 @@ export default function ProfileScreen({ onLogout }: Props) {
                     isEditing={isEditing}
                     form={form}
                     onChangeField={handleChangeField}
+                    isSmallScreen={isSmallScreen}
                   />
                   <ProfileField
                     label="Phone"
@@ -398,6 +432,7 @@ export default function ProfileScreen({ onLogout }: Props) {
                     isEditing={isEditing}
                     form={form}
                     onChangeField={handleChangeField}
+                    isSmallScreen={isSmallScreen}
                   />
 
                   {!isEditing && (
@@ -409,6 +444,7 @@ export default function ProfileScreen({ onLogout }: Props) {
                         isEditing={isEditing}
                         form={form}
                         onChangeField={handleChangeField}
+                        isSmallScreen={isSmallScreen}
                       />
 
                       <ProfileField
@@ -418,19 +454,24 @@ export default function ProfileScreen({ onLogout }: Props) {
                         isEditing={isEditing}
                         form={form}
                         onChangeField={handleChangeField}
+                        isSmallScreen={isSmallScreen}
                       />
                     </>
                   )}
                 </View>
 
-
-
+                {/* Save Changes Button */}
                 {isEditing && (
                   <View style={styles.saveWrap}>
                     <TouchableOpacity
-                      style={[styles.saveBtn, saving && styles.btnDisabled]}
+                      style={[
+                        styles.saveBtn,
+                        isSmallScreen && styles.saveBtnSmall,
+                        saving && styles.btnDisabled,
+                      ]}
                       onPress={handleSave}
                       disabled={saving}
+                      activeOpacity={0.8}
                     >
                       {saving ? (
                         <ActivityIndicator color="#fff" size="small" />
@@ -441,17 +482,24 @@ export default function ProfileScreen({ onLogout }: Props) {
                   </View>
                 )}
 
+                {/* Quick Actions Card */}
+                <View style={[styles.card, isSmallScreen && styles.cardSmall]}>
+                  <Text style={[styles.sectionTitle, isSmallScreen && styles.sectionTitleSmall]}>
+                    Quick Actions
+                  </Text>
 
-
-                <View style={styles.card}>
-                  <Text style={styles.sectionTitle}>Quick Actions</Text>
-
-                  <TouchableOpacity style={styles.actionRow} onPress={handleViewReports}>
+                  <TouchableOpacity
+                    style={styles.actionRow}
+                    onPress={handleViewReports}
+                    activeOpacity={0.7}
+                  >
                     <View style={styles.actionLeft}>
                       <View style={styles.box}>
                         <ClipboardList size={18} color={Colors.accent} />
                       </View>
-                      <Text style={styles.actionText}>View Reports</Text>
+                      <Text style={styles.actionText} numberOfLines={1} ellipsizeMode="tail">
+                        View Reports
+                      </Text>
                     </View>
                     <ChevronRight size={18} color="#999" />
                   </TouchableOpacity>
@@ -459,12 +507,15 @@ export default function ProfileScreen({ onLogout }: Props) {
                   <TouchableOpacity
                     style={styles.actionRow}
                     onPress={() => navigateTo(privacyRoute)}
+                    activeOpacity={0.7}
                   >
                     <View style={styles.actionLeft}>
                       <View style={styles.box}>
                         <Shield size={18} color={Colors.accent} />
                       </View>
-                      <Text style={styles.actionText}>Privacy Policy</Text>
+                      <Text style={styles.actionText} numberOfLines={1} ellipsizeMode="tail">
+                        Privacy Policy
+                      </Text>
                     </View>
                     <ChevronRight size={18} color="#999" />
                   </TouchableOpacity>
@@ -472,37 +523,49 @@ export default function ProfileScreen({ onLogout }: Props) {
                   <TouchableOpacity
                     style={[styles.actionRow, styles.actionRowLast]}
                     onPress={() => navigateTo(termsRoute)}
+                    activeOpacity={0.7}
                   >
                     <View style={styles.actionLeft}>
                       <View style={styles.box}>
                         <FileText size={18} color={Colors.accent} />
                       </View>
-                      <Text style={styles.actionText}>Terms & Conditions</Text>
+                      <Text style={styles.actionText} numberOfLines={1} ellipsizeMode="tail">
+                        Terms & Conditions
+                      </Text>
                     </View>
                     <ChevronRight size={18} color="#999" />
                   </TouchableOpacity>
                 </View>
 
-
-
-                <View style={styles.card}>
-                  <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout}>
-                    <Text style={styles.logoutText}>Logout</Text>
+                {/* Logout Card */}
+                <View style={[styles.card, isSmallScreen && styles.cardSmall]}>
+                  <TouchableOpacity
+                    style={styles.logoutBtn}
+                    onPress={handleLogout}
+                    activeOpacity={0.8}
+                  >
+                    <Text style={[styles.logoutText, isSmallScreen && styles.btnTextSmall]}>
+                      Logout
+                    </Text>
                   </TouchableOpacity>
                 </View>
 
-                <View style={styles.card}>
+                {/* Delete Account Card */}
+                <View style={[styles.card, isSmallScreen && styles.cardSmall]}>
                   <TouchableOpacity
                     style={[styles.deleteBtn, deleting && styles.btnDisabled]}
                     onPress={handleDeleteAccount}
                     disabled={deleting}
+                    activeOpacity={0.8}
                   >
                     {deleting ? (
                       <ActivityIndicator color={Colors.danger} size="small" />
                     ) : (
                       <>
                         <Trash2 size={18} color={Colors.danger} />
-                        <Text style={styles.deleteText}>Delete Account</Text>
+                        <Text style={[styles.deleteText, isSmallScreen && styles.btnTextSmall]}>
+                          Delete Account
+                        </Text>
                       </>
                     )}
                   </TouchableOpacity>
@@ -524,35 +587,119 @@ const styles = StyleSheet.create({
   header: {
     backgroundColor: Colors.headerStart,
     paddingHorizontal: 18,
-    paddingTop: 8,
-    paddingBottom: 22,
+    paddingTop: 5,
+    paddingBottom: 11,
+  },
+  headerSmall: {
+    paddingHorizontal: 14,
+    paddingTop: 4,
+    paddingBottom: 9,
   },
   hdrRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 3,
+    minHeight: 40,
   },
-  hdrTitle: { fontSize: 17, fontWeight: '800', color: Colors.white },
-  hdrSub: { fontSize: FontSizes.xs, color: 'rgba(255,255,255,0.35)' },
+  hdrTitle: { fontSize: 18, fontWeight: '800', color: Colors.white },
+  hdrTitleSmall: { fontSize: 16 },
+  editBtnTouch: {
+    paddingVertical: 5,
+    paddingHorizontal: 10,
+    minHeight: 40,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
   editText: {
-    fontSize: FontSizes.sm,
+    fontSize: FontSizes.md,
     fontWeight: '700',
     color: '#f5c2d0',
   },
-  headerSpacer: { width: 40 },
+  headerSpacer: { width: 40, height: 40 },
 
   keyboardAvoid: { flex: 1 },
   body: { flex: 1 },
   bodyContent: {
-    paddingHorizontal: 14,
     paddingTop: 14,
-    paddingBottom: 36,
+  },
+
+  avatarContainer: {
+    alignItems: 'center',
+    marginBottom: 16,
+    marginTop: 4,
+  },
+  avatar: {
+    borderWidth: 1.5,
+    borderColor: Colors.border,
+  },
+
+  card: {
+    backgroundColor: Colors.bgCard,
+    borderRadius: Radii.lg,
+    padding: 16,
+    marginBottom: 12,
+    borderLeftWidth: 0,
+    ...Shadows.card,
+  },
+  cardSmall: {
+    padding: 12,
+    marginBottom: 10,
+  },
+
+  fieldWrapper: {
+    marginBottom: 10,
+  },
+  label: {
+    fontSize: 11,
+    color: '#666',
+    fontWeight: '700',
+    marginTop: 6,
+    marginBottom: 4,
+    textTransform: 'uppercase',
+    letterSpacing: 0.3,
+  },
+  labelSmall: {
+    fontSize: 10,
+  },
+  value: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: Colors.textPrimary,
+    flexShrink: 1,
+  },
+  valueSmall: {
+    fontSize: 13,
+  },
+
+  sectionTitle: {
+    fontSize: FontSizes.md,
+    fontWeight: '700',
+    color: '#555',
+    marginBottom: 10,
+  },
+  sectionTitleSmall: {
+    fontSize: FontSizes.base,
+    marginBottom: 8,
+  },
+
+  actionRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 12,
+    minHeight: 50,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border,
+  },
+  actionRowLast: {
+    borderBottomWidth: 0,
   },
   actionLeft: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
+    gap: 12,
+    flex: 1,
+    marginRight: 8,
   },
   box: {
     height: 36,
@@ -561,88 +708,24 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: Colors.accentAlpha12,
-  },
-  avatarContainer: {
-    alignItems: 'center',
-    marginBottom: 15,
-  },
-  avatar: {
-    width: 110,
-    height: 110,
-    borderRadius: 60,
-    borderWidth: 1,
-  },
-
-  card: {
-    backgroundColor: Colors.bgCard,
-    borderRadius: Radii.lg,
-    padding: 14,
-    marginBottom: 12,
-    borderLeftWidth: 0,
-    ...Shadows.card,
-  },
-
-  label: {
-    fontSize: FontSizes.xs,
-    color: '#666',
-    fontWeight: '700',
-    marginTop: 12,
-    marginBottom: 4,
-  },
-  value: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: Colors.textPrimary,
-  },
-
-  sectionTitle: {
-    fontSize: FontSizes.sm,
-    fontWeight: '700',
-    color: '#555',
-    marginBottom: 12,
-  },
-
-  statsRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-  },
-  statItem: {
-    alignItems: 'center',
-  },
-  statNumber: {
-    fontSize: 22,
-    fontWeight: '800',
-    color: Colors.accent,
-  },
-  statLabel: {
-    fontSize: 12,
-    color: '#777',
-    marginTop: 2,
-    textAlign: 'center',
-  },
-
-  actionRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.border,
-  },
-  actionRowLast: {
-    borderBottomWidth: 0,
+    flexShrink: 0,
   },
   actionText: {
     fontSize: 14,
-    fontWeight: '400',
+    fontWeight: '500',
     color: Colors.textPrimary,
+    flex: 1,
+    flexShrink: 1,
   },
 
   logoutBtn: {
     backgroundColor: Colors.accent,
-    padding: 16,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
     borderRadius: Radii.md,
     alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 48,
     borderWidth: 1,
     borderColor: '#fca5a5',
   },
@@ -650,6 +733,8 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontWeight: '700',
     fontSize: 16,
+    flexShrink: 1,
+    textAlign: 'center',
   },
   deleteBtn: {
     flexDirection: 'row',
@@ -657,8 +742,10 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: 8,
     backgroundColor: Colors.dangerLight,
-    padding: 16,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
     borderRadius: Radii.md,
+    minHeight: 48,
     borderWidth: 1,
     borderColor: '#fca5a5',
   },
@@ -666,25 +753,35 @@ const styles = StyleSheet.create({
     color: Colors.danger,
     fontWeight: '700',
     fontSize: 16,
+    flexShrink: 1,
+    textAlign: 'center',
   },
+  btnTextSmall: {
+    fontSize: 14,
+  },
+
   saveWrap: {
     alignItems: 'flex-end',
-    marginBottom: 14,
+    marginBottom: 12,
+    width: '100%',
   },
-
   saveBtn: {
     backgroundColor: Colors.accent,
-    paddingVertical: 10,
-    paddingHorizontal: 18,
+    paddingVertical: 12,
+    paddingHorizontal: 20,
     borderRadius: 10,
     minWidth: 130,
+    minHeight: 44,
     alignItems: 'center',
+    justifyContent: 'center',
   },
-
+  saveBtnSmall: {
+    width: '100%',
+  },
   saveText: {
     color: '#fff',
     fontWeight: '700',
-    fontSize: 13,
+    fontSize: 14,
   },
   btnDisabled: {
     opacity: 0.7,
@@ -696,14 +793,18 @@ const styles = StyleSheet.create({
     borderColor: Colors.border,
     borderRadius: 8,
     marginTop: 4,
-    paddingHorizontal: 10,
+    paddingHorizontal: 12,
+    minHeight: 44,
+    justifyContent: 'center',
   },
-
   input: {
-    fontSize: 13,
+    fontSize: 14,
     fontWeight: '600',
     color: Colors.textPrimary,
-    paddingVertical: 6,
+    paddingVertical: Platform.OS === 'ios' ? 10 : 6,
+  },
+  inputSmall: {
+    fontSize: 13,
   },
 
   errorCard: {
@@ -726,6 +827,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingVertical: 10,
     borderRadius: Radii.md,
+    minHeight: 44,
+    justifyContent: 'center',
   },
   retryText: {
     color: '#fff',
@@ -733,3 +836,4 @@ const styles = StyleSheet.create({
     fontSize: FontSizes.md,
   },
 });
+

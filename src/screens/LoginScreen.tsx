@@ -4,6 +4,8 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
+  TouchableWithoutFeedback,
+  Keyboard,
   StyleSheet,
   StatusBar,
   Alert,
@@ -82,6 +84,7 @@ export default function LoginScreen({ }: LoginScreenProps) {
   };
 
   const resetFormsForRole = (nextRole: 'guard' | 'manager') => {
+    Keyboard.dismiss();
     setManagerError(null);
     setGuardError(null);
     if (nextRole === 'guard') {
@@ -93,6 +96,7 @@ export default function LoginScreen({ }: LoginScreenProps) {
   };
 
   const handleGuardSubmit = async () => {
+    Keyboard.dismiss();
     const normalizedPhone = phone.trim();
     if (!normalizedPhone) {
       setGuardError('Please enter your phone number to continue.');
@@ -160,6 +164,7 @@ export default function LoginScreen({ }: LoginScreenProps) {
   };
 
   const handleManagerSubmit = async () => {
+    Keyboard.dismiss();
     const email = managerEmail.trim().toLowerCase();
     const password = managerPassword.trim();
 
@@ -208,292 +213,294 @@ export default function LoginScreen({ }: LoginScreenProps) {
   };
 
   return (
-    <View style={styles.container}>
-      <StatusBar
-        barStyle="light-content"
-        backgroundColor={Colors.headerStart}
-      />
-      <SafeAreaView style={styles.safeTop} edges={['top']} />
-      <SafeAreaView style={styles.safeBody} edges={['bottom']}>
-        <AuthKeyboardScroll ref={keyboardScrollRef} wrapFullScreen={false}>
-          <View style={styles.header}>
-            <View style={styles.logoWrap}>
-              <AppLogo variant="header" centered={false} />
-            </View>
-            <Text style={styles.headerTitle}>Welcome Back</Text>
-            <Text style={styles.headerSub}>
-              Sign in to continue your patrol
-            </Text>
-          </View>
-
-          <View style={styles.body}>
-            {/* Role Tabs (keep only Guard active flow, Manager optional) */}
-            <View style={styles.roleTabs}>
-              <TouchableOpacity
-                style={[
-                  styles.roleTab,
-                  role === 'guard' && styles.roleTabActive,
-                ]}
-                onPress={() => {
-                  setRole('guard');
-                  resetFormsForRole('guard');
-                }}
-              >
-                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                  <Shield
-                    size={16}
-                    color={role === 'guard' ? Colors.white : Colors.textSecondary}
-                  />
-                  <Text
-                    style={[
-                      styles.roleTabText,
-                      role === 'guard' && styles.roleTabTextActive,
-                      { marginLeft: 6 },
-                    ]}
-                  >
-                    Guard
-                  </Text>
-                </View>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[
-                  styles.roleTab,
-                  role === 'manager' && styles.roleTabActive,
-                ]}
-                onPress={() => {
-                  setRole('manager');
-                  resetFormsForRole('manager');
-                }}
-              >
-                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                  <User
-                    size={16}
-                    color={role === 'manager' ? Colors.white : Colors.textSecondary}
-                  />
-                  <Text
-                    style={[
-                      styles.roleTabText,
-                      role === 'manager' && styles.roleTabTextActive,
-                      { marginLeft: 6 },
-                    ]}
-                  >
-                    Manager
-                  </Text>
-                </View>
-              </TouchableOpacity>
+    <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
+      <View style={styles.container}>
+        <StatusBar
+          barStyle="light-content"
+          backgroundColor={Colors.headerStart}
+        />
+        <SafeAreaView style={styles.safeTop} edges={['top']} />
+        <SafeAreaView style={styles.safeBody} edges={['bottom']}>
+          <AuthKeyboardScroll ref={keyboardScrollRef} wrapFullScreen={false}>
+            <View style={styles.header}>
+              <View style={styles.logoWrap}>
+                <AppLogo variant="header" centered={false} />
+              </View>
+              <Text style={styles.headerTitle}>Welcome Back</Text>
+              <Text style={styles.headerSub}>
+                Sign in to continue your patrol
+              </Text>
             </View>
 
-            {/* Only Guard uses OTP login */}
-            {role === 'guard' && (
-              <>
-                {guardError ? <AuthErrorBanner message={guardError} /> : null}
-
-                <Text style={styles.label}>Phone Number</Text>
-
-                <View
-                  ref={phoneFieldRef}
-                  collapsable={false}
+            <View style={styles.body}>
+              {/* Role Tabs (keep only Guard active flow, Manager optional) */}
+              <View style={styles.roleTabs}>
+                <TouchableOpacity
                   style={[
-                    styles.inputWrap,
-                    guardError ? styles.inputWrapError : null,
+                    styles.roleTab,
+                    role === 'guard' && styles.roleTabActive,
                   ]}
+                  onPress={() => {
+                    setRole('guard');
+                    resetFormsForRole('guard');
+                  }}
                 >
-                  <TextInput
-                    style={styles.input}
-                    value={phone}
-                    onChangeText={value => {
-                      setPhone(value);
-                      if (guardError) setGuardError(null);
-                      if (otpSent) resetOtpFlow();
-                    }}
-                    onFocus={() => scrollToField(phoneFieldRef)}
-                    placeholder="+923350964001"
-                    placeholderTextColor="#888"
-                    keyboardType="phone-pad"
-                    autoCapitalize="none"
-                    autoCorrect={false}
-                    editable={!loading}
-                    underlineColorAndroid="transparent"
-                  />
-                  <Phone size={18} color={Colors.textSecondary} />
-                </View>
-
-                {otpSent && (
-                  <>
-                    {devOtp != null && (
-                      <Text style={styles.devOtpBanner}>
-                        OTP: {devOtp}
-                      </Text>
-                    )}
-                    <Text style={styles.label}>Enter OTP</Text>
-                    <View
-                      ref={otpFieldRef}
-                      collapsable={false}
+                  <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                    <Shield
+                      size={16}
+                      color={role === 'guard' ? Colors.white : Colors.textSecondary}
+                    />
+                    <Text
                       style={[
-                        styles.inputWrap,
-                        guardError ? styles.inputWrapError : null,
+                        styles.roleTabText,
+                        role === 'guard' && styles.roleTabTextActive,
+                        { marginLeft: 6 },
                       ]}
                     >
-                      <TextInput
-                        style={styles.input}
-                        value={otp}
-                        onChangeText={value => {
-                          setOtp(value);
-                          if (guardError) setGuardError(null);
-                        }}
-                        onFocus={() => scrollToField(otpFieldRef)}
-                        placeholder="123456"
-                        placeholderTextColor="#888"
-                        keyboardType="number-pad"
-                        maxLength={6}
-                        autoCapitalize="none"
-                        autoCorrect={false}
-                        editable={!loading}
-                        underlineColorAndroid="transparent"
-                      />
-                      <KeyRound size={18} color={Colors.textSecondary} />
-                    </View>
-                  </>
-                )}
-
-                <TouchableOpacity
-                  style={styles.loginBtn}
-                  onPress={handleGuardSubmit}
-                  disabled={loading}
-                  activeOpacity={0.85}
-                >
-                  <Text style={styles.loginBtnText}>
-                    {loading
-                      ? otpSent
-                        ? 'Verifying...'
-                        : 'Sending OTP...'
-                      : otpSent
-                        ? 'Verify'
-                        : 'Send OTP'}
-                  </Text>
-                </TouchableOpacity>
-
-                {otpSent && (
-                  <TouchableOpacity
-                    style={styles.resendWrap}
-                    onPress={resetOtpFlow}
-                    disabled={loading}
-                  >
-                    <Text style={styles.resendText}>Change phone number</Text>
-                  </TouchableOpacity>
-                )}
-              </>
-            )}
-
-            {role === 'manager' && (
-              <>
-                {managerError ? <AuthErrorBanner message={managerError} /> : null}
-
-                <Text style={styles.label}>Email Address</Text>
-                <View
-                  ref={managerEmailFieldRef}
-                  collapsable={false}
-                  style={[
-                    styles.inputWrap,
-                    managerError ? styles.inputWrapError : null,
-                  ]}
-                >
-                  <TextInput
-                    style={styles.input}
-                    value={managerEmail}
-                    onChangeText={value => {
-                      setManagerEmail(value);
-                      if (managerError) setManagerError(null);
-                    }}
-                    onFocus={() => scrollToField(managerEmailFieldRef)}
-                    placeholder="manager@company.com"
-                    placeholderTextColor="#888"
-                    keyboardType="email-address"
-                    autoCapitalize="none"
-                    autoCorrect={false}
-                    editable={!loading}
-                    underlineColorAndroid="transparent"
-                  />
-                  <Mail size={18} color={Colors.textSecondary} />
-                </View>
-
-                <Text style={styles.label}>Password</Text>
-                <View
-                  ref={managerPasswordFieldRef}
-                  collapsable={false}
-                  style={[
-                    styles.inputWrap,
-                    managerError ? styles.inputWrapError : null,
-                  ]}
-                >
-                  <TextInput
-                    style={styles.input}
-                    value={managerPassword}
-                    onChangeText={value => {
-                      setManagerPassword(value);
-                      if (managerError) setManagerError(null);
-                    }}
-                    onFocus={() => scrollToField(managerPasswordFieldRef)}
-                    placeholder="••••••••"
-                    placeholderTextColor="#888"
-                    secureTextEntry={!showManagerPass}
-                    autoCapitalize="none"
-                    autoCorrect={false}
-                    editable={!loading}
-                    underlineColorAndroid="transparent"
-                  />
-                  <TouchableOpacity
-                    onPress={() => setShowManagerPass(!showManagerPass)}
-                    disabled={loading}
-                  >
-                    {showManagerPass ? (
-                      <Eye size={18} color={Colors.textSecondary} />
-                    ) : (
-                      <EyeOff size={18} color={Colors.textSecondary} />
-                    )}
-                  </TouchableOpacity>
-                </View>
-
-                <TouchableOpacity
-                  style={styles.rememberRow}
-                  onPress={() => setRememberManager(!rememberManager)}
-                  disabled={loading}
-                  activeOpacity={0.8}
-                >
-                  <View
-                    style={[
-                      styles.checkbox,
-                      rememberManager && styles.checkboxActive,
-                    ]}
-                  >
-                    {rememberManager ? (
-                      <Text style={styles.checkmark}>✓</Text>
-                    ) : null}
-                  </View>
-                  <Text style={styles.rememberText}>Remember me</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={styles.loginBtn}
-                  onPress={handleManagerSubmit}
-                  disabled={loading}
-                  activeOpacity={0.85}
-                >
-                  <View style={styles.managerBtnInner}>
-                    <Lock size={16} color={Colors.white} />
-                    <Text style={styles.loginBtnText}>
-                      {loading ? 'Signing in...' : 'Sign In'}
+                      Guard
                     </Text>
                   </View>
                 </TouchableOpacity>
-              </>
-            )}
 
-          </View>
-        </AuthKeyboardScroll>
-      </SafeAreaView>
-    </View>
+                <TouchableOpacity
+                  style={[
+                    styles.roleTab,
+                    role === 'manager' && styles.roleTabActive,
+                  ]}
+                  onPress={() => {
+                    setRole('manager');
+                    resetFormsForRole('manager');
+                  }}
+                >
+                  <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                    <User
+                      size={16}
+                      color={role === 'manager' ? Colors.white : Colors.textSecondary}
+                    />
+                    <Text
+                      style={[
+                        styles.roleTabText,
+                        role === 'manager' && styles.roleTabTextActive,
+                        { marginLeft: 6 },
+                      ]}
+                    >
+                      Manager
+                    </Text>
+                  </View>
+                </TouchableOpacity>
+              </View>
+
+              {/* Only Guard uses OTP login */}
+              {role === 'guard' && (
+                <>
+                  {guardError ? <AuthErrorBanner message={guardError} /> : null}
+
+                  <Text style={styles.label}>Phone Number</Text>
+
+                  <View
+                    ref={phoneFieldRef}
+                    collapsable={false}
+                    style={[
+                      styles.inputWrap,
+                      guardError ? styles.inputWrapError : null,
+                    ]}
+                  >
+                    <TextInput
+                      style={styles.input}
+                      value={phone}
+                      onChangeText={value => {
+                        setPhone(value);
+                        if (guardError) setGuardError(null);
+                        if (otpSent) resetOtpFlow();
+                      }}
+                      onFocus={() => scrollToField(phoneFieldRef)}
+                      placeholder="+923350964001"
+                      placeholderTextColor="#888"
+                      keyboardType="phone-pad"
+                      autoCapitalize="none"
+                      autoCorrect={false}
+                      editable={!loading}
+                      underlineColorAndroid="transparent"
+                    />
+                    <Phone size={18} color={Colors.textSecondary} />
+                  </View>
+
+                  {otpSent && (
+                    <>
+                      {devOtp != null && (
+                        <Text style={styles.devOtpBanner}>
+                          OTP: {devOtp}
+                        </Text>
+                      )}
+                      <Text style={styles.label}>Enter OTP</Text>
+                      <View
+                        ref={otpFieldRef}
+                        collapsable={false}
+                        style={[
+                          styles.inputWrap,
+                          guardError ? styles.inputWrapError : null,
+                        ]}
+                      >
+                        <TextInput
+                          style={styles.input}
+                          value={otp}
+                          onChangeText={value => {
+                            setOtp(value);
+                            if (guardError) setGuardError(null);
+                          }}
+                          onFocus={() => scrollToField(otpFieldRef)}
+                          placeholder="123456"
+                          placeholderTextColor="#888"
+                          keyboardType="number-pad"
+                          maxLength={6}
+                          autoCapitalize="none"
+                          autoCorrect={false}
+                          editable={!loading}
+                          underlineColorAndroid="transparent"
+                        />
+                        <KeyRound size={18} color={Colors.textSecondary} />
+                      </View>
+                    </>
+                  )}
+
+                  <TouchableOpacity
+                    style={styles.loginBtn}
+                    onPress={handleGuardSubmit}
+                    disabled={loading}
+                    activeOpacity={0.85}
+                  >
+                    <Text style={styles.loginBtnText}>
+                      {loading
+                        ? otpSent
+                          ? 'Verifying...'
+                          : 'Sending OTP...'
+                        : otpSent
+                          ? 'Verify'
+                          : 'Send OTP'}
+                    </Text>
+                  </TouchableOpacity>
+
+                  {otpSent && (
+                    <TouchableOpacity
+                      style={styles.resendWrap}
+                      onPress={resetOtpFlow}
+                      disabled={loading}
+                    >
+                      <Text style={styles.resendText}>Change phone number</Text>
+                    </TouchableOpacity>
+                  )}
+                </>
+              )}
+
+              {role === 'manager' && (
+                <>
+                  {managerError ? <AuthErrorBanner message={managerError} /> : null}
+
+                  <Text style={styles.label}>Email Address</Text>
+                  <View
+                    ref={managerEmailFieldRef}
+                    collapsable={false}
+                    style={[
+                      styles.inputWrap,
+                      managerError ? styles.inputWrapError : null,
+                    ]}
+                  >
+                    <TextInput
+                      style={styles.input}
+                      value={managerEmail}
+                      onChangeText={value => {
+                        setManagerEmail(value);
+                        if (managerError) setManagerError(null);
+                      }}
+                      onFocus={() => scrollToField(managerEmailFieldRef)}
+                      placeholder="manager@company.com"
+                      placeholderTextColor="#888"
+                      keyboardType="email-address"
+                      autoCapitalize="none"
+                      autoCorrect={false}
+                      editable={!loading}
+                      underlineColorAndroid="transparent"
+                    />
+                    <Mail size={18} color={Colors.textSecondary} />
+                  </View>
+
+                  <Text style={styles.label}>Password</Text>
+                  <View
+                    ref={managerPasswordFieldRef}
+                    collapsable={false}
+                    style={[
+                      styles.inputWrap,
+                      managerError ? styles.inputWrapError : null,
+                    ]}
+                  >
+                    <TextInput
+                      style={styles.input}
+                      value={managerPassword}
+                      onChangeText={value => {
+                        setManagerPassword(value);
+                        if (managerError) setManagerError(null);
+                      }}
+                      onFocus={() => scrollToField(managerPasswordFieldRef)}
+                      placeholder="••••••••"
+                      placeholderTextColor="#888"
+                      secureTextEntry={!showManagerPass}
+                      autoCapitalize="none"
+                      autoCorrect={false}
+                      editable={!loading}
+                      underlineColorAndroid="transparent"
+                    />
+                    <TouchableOpacity
+                      onPress={() => setShowManagerPass(!showManagerPass)}
+                      disabled={loading}
+                    >
+                      {showManagerPass ? (
+                        <Eye size={18} color={Colors.textSecondary} />
+                      ) : (
+                        <EyeOff size={18} color={Colors.textSecondary} />
+                      )}
+                    </TouchableOpacity>
+                  </View>
+
+                  <TouchableOpacity
+                    style={styles.rememberRow}
+                    onPress={() => setRememberManager(!rememberManager)}
+                    disabled={loading}
+                    activeOpacity={0.8}
+                  >
+                    <View
+                      style={[
+                        styles.checkbox,
+                        rememberManager && styles.checkboxActive,
+                      ]}
+                    >
+                      {rememberManager ? (
+                        <Text style={styles.checkmark}>✓</Text>
+                      ) : null}
+                    </View>
+                    <Text style={styles.rememberText}>Remember me</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={styles.loginBtn}
+                    onPress={handleManagerSubmit}
+                    disabled={loading}
+                    activeOpacity={0.85}
+                  >
+                    <View style={styles.managerBtnInner}>
+                      <Lock size={16} color={Colors.white} />
+                      <Text style={styles.loginBtnText}>
+                        {loading ? 'Signing in...' : 'Sign In'}
+                      </Text>
+                    </View>
+                  </TouchableOpacity>
+                </>
+              )}
+
+            </View>
+          </AuthKeyboardScroll>
+        </SafeAreaView>
+      </View>
+    </TouchableWithoutFeedback>
   );
 }
 

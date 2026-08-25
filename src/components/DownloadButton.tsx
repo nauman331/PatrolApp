@@ -35,6 +35,8 @@ export type DownloadButtonProps = {
   textStyle?: StyleProp<TextStyle>;
   /** Optional variant: 'full' (full-width block) or 'compact' (action button) */
   variant?: 'full' | 'compact';
+  /** Optional flag to disable button during external operations */
+  disabled?: boolean;
 };
 
 export type DownloadState = 'idle' | 'downloading' | 'success' | 'error';
@@ -46,6 +48,7 @@ export function DownloadButton({
   style,
   textStyle,
   variant = 'compact',
+  disabled = false,
 }: DownloadButtonProps) {
   const [downloadState, setDownloadState] = useState<DownloadState>('idle');
   const [progressData, setProgressData] = useState<DownloadProgressData>(null);
@@ -83,6 +86,8 @@ export function DownloadButton({
   }, [downloadState, progressData, animValue]);
 
   const handlePress = useCallback(async () => {
+    if (disabled) return;
+
     if (downloadState === 'success') {
       if (onView) {
         onView(savedFilePath || undefined);
@@ -143,7 +148,7 @@ export function DownloadButton({
     } finally {
       isDownloadingRef.current = false;
     }
-  }, [downloadState, onDownload, onView, savedFilePath]);
+  }, [disabled, downloadState, onDownload, onView, savedFilePath]);
 
   // Calculate percentage if available
   const hasRealProgress =
@@ -169,10 +174,11 @@ export function DownloadButton({
           isDownloading && styles.buttonDownloading,
           downloadState === 'success' && styles.buttonSuccess,
           downloadState === 'error' && styles.buttonError,
+          disabled && { opacity: 0.6 },
           downloadState !== 'success' && Shadows.card,
         ]}
         onPress={handlePress}
-        disabled={isDownloading}
+        disabled={disabled || isDownloading}
         activeOpacity={0.8}
       >
         {downloadState === 'idle' && (

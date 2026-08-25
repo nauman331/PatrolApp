@@ -374,30 +374,45 @@ export default function ManagerIncidentDetailScreen({ route }: Props) {
 
   const [sharing, setSharing] = useState(false);
   const [emailing, setEmailing] = useState(false);
+  const [downloading, setDownloading] = useState(false);
+
+  const isBusy = sharing || emailing || downloading;
 
   const handleShare = useCallback(async () => {
-    if (sharing || emailing || !data) return;
+    if (isBusy || !data) return;
     setSharing(true);
     try {
-      await shareReport('incident', data, 'share', undefined, () => setSharing(false));
+      await shareReport(
+        'incident',
+        data,
+        'share',
+        undefined,
+        () => setSharing(false),
+      );
     } catch (err) {
       console.error('Share incident report failed:', err);
     } finally {
       setSharing(false);
     }
-  }, [data, sharing, emailing]);
+  }, [data, isBusy]);
 
   const handleEmail = useCallback(async () => {
-    if (sharing || emailing || !data) return;
+    if (isBusy || !data) return;
     setEmailing(true);
     try {
-      await shareReport('incident', data, 'email', undefined, () => setEmailing(false));
+      await shareReport(
+        'incident',
+        data,
+        'email',
+        undefined,
+        () => setEmailing(false),
+      );
     } catch (err) {
       console.error('Email incident report failed:', err);
     } finally {
       setEmailing(false);
     }
-  }, [data, sharing, emailing]);
+  }, [data, isBusy]);
 
   const fetchDetail = useCallback(async () => {
     setError(null);
@@ -542,14 +557,20 @@ export default function ManagerIncidentDetailScreen({ route }: Props) {
                 <DownloadButton
                   label="Download"
                   style={{ flex: 1 }}
+                  disabled={isBusy}
                   onDownload={async (onProgress) => {
-                    return await shareReport('incident', data, 'download', onProgress);
+                    setDownloading(true);
+                    try {
+                      return await shareReport('incident', data, 'download', onProgress);
+                    } finally {
+                      setDownloading(false);
+                    }
                   }}
                 />
                 <TouchableOpacity
-                  style={[styles.actionBtn, Shadows.card, (sharing || emailing) && styles.actionBtnDisabled]}
+                  style={[styles.actionBtn, Shadows.card, isBusy && styles.actionBtnDisabled]}
                   onPress={handleShare}
-                  disabled={sharing || emailing}
+                  disabled={isBusy}
                   activeOpacity={0.8}
                 >
                   {sharing ? (
@@ -562,9 +583,9 @@ export default function ManagerIncidentDetailScreen({ route }: Props) {
                   )}
                 </TouchableOpacity>
                 <TouchableOpacity
-                  style={[styles.actionBtn, Shadows.card, (sharing || emailing) && styles.actionBtnDisabled]}
+                  style={[styles.actionBtn, Shadows.card, isBusy && styles.actionBtnDisabled]}
                   onPress={handleEmail}
-                  disabled={sharing || emailing}
+                  disabled={isBusy}
                   activeOpacity={0.8}
                 >
                   {emailing ? (
