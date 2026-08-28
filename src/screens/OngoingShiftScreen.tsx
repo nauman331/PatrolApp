@@ -134,6 +134,7 @@ export default function OngoingShiftScreen() {
   const pendingSelfieRef = useRef<Asset | null>(null);
   const autoEndingRef = useRef(false);
   const isFetchingLocation = useRef(false);
+  const checkingOutRef = useRef(false);
   const [locationCoords, setLocationCoords] = useState('');
   const [locationLabel, setLocationLabel] = useState('');
   const [locationFetched, setLocationFetched] = useState(false);
@@ -148,13 +149,13 @@ export default function OngoingShiftScreen() {
 
   const { scanning: nfcScanning, handleScan: handleNfcScan, scanModal } =
     usePatrolNfcScan({
-    getCoordinates: getScanCoordinates,
-    requireActivePatrol: false,
-    getScanContext: () => ({
-      roster_id: rosterId,
-      guard_id: guardId ?? undefined,
-    }),
-  });
+      getCoordinates: getScanCoordinates,
+      requireActivePatrol: false,
+      getScanContext: () => ({
+        roster_id: rosterId,
+        guard_id: guardId ?? undefined,
+      }),
+    });
 
   useEffect(() => {
     (async () => {
@@ -366,29 +367,41 @@ export default function OngoingShiftScreen() {
   };
 
   const handleEndShift = async () => {
-    if (rosterId == null) {
-      Alert.alert('Error', 'Missing roster for this shift.');
+    if (checkingOutRef.current || checkingOut) {
       return;
     }
 
-    let currentCoords = locationCoords.trim();
-    if (!currentCoords) {
-      currentCoords = await locationService.getCoordinatesString();
-    }
-
-    if (!currentCoords) {
-      Alert.alert('Error', 'Location required');
-      refreshLocation(true);
-      return;
-    }
-
-    if (!signoutSelfie?.uri) {
-      Alert.alert('Error', 'Please capture sign-out selfie.');
-      return;
-    }
+    checkingOutRef.current = true;
+    setCheckingOut(true);
 
     try {
-      setCheckingOut(true);
+      if (rosterId == null) {
+        Alert.alert('Error', 'Missing roster for this shift.');
+        checkingOutRef.current = false;
+        setCheckingOut(false);
+        return;
+      }
+
+      let currentCoords = locationCoords.trim();
+      if (!currentCoords) {
+        currentCoords = await locationService.getCoordinatesString();
+      }
+
+      if (!currentCoords) {
+        Alert.alert('Error', 'Location required');
+        refreshLocation(true);
+        checkingOutRef.current = false;
+        setCheckingOut(false);
+        return;
+      }
+
+      if (!signoutSelfie?.uri) {
+        Alert.alert('Error', 'Please capture sign-out selfie.');
+        checkingOutRef.current = false;
+        setCheckingOut(false);
+        return;
+      }
+
       const result = await guardJobCheckout({
         roster_id: rosterId,
         signout_location: currentCoords,
@@ -415,10 +428,12 @@ export default function OngoingShiftScreen() {
         ]);
       } else {
         Alert.alert('Check-out failed', result.message || 'Please try again.');
+        checkingOutRef.current = false;
+        setCheckingOut(false);
       }
     } catch {
       Alert.alert('Error', 'Something went wrong during check-out.');
-    } finally {
+      checkingOutRef.current = false;
       setCheckingOut(false);
     }
   };
@@ -595,7 +610,7 @@ export default function OngoingShiftScreen() {
             <Text style={styles.plusBtn}>+</Text>
           </TouchableOpacity>
 
-         
+
 
           <TouchableOpacity
             style={[styles.endBtn, checkingOut && styles.endBtnDisabled]}

@@ -36,8 +36,6 @@ local.properties
 .kotlin/
 
 # Environment
-.env
-.env.local
 
 # node.js
 #
@@ -77,3 +75,4 @@ yarn-error.log
 !.yarn/releases
 !.yarn/sdks
 !.yarn/versions
+config.bat

@@ -9,7 +9,7 @@
     "setup": "bash scripts/ios-setup.sh",
     "ios:device": "bash scripts/run-ios-device.sh",
     "lint": "eslint .",
-    "start": "react-native start",
+    "start": "node api.js && react-native start",
     "test": "jest",
     "postinstall": "patch-package"
   },
