@@ -1,4 +1,4 @@
-import { Platform, PermissionsAndroid, Alert } from 'react-native';
+import { Platform, PermissionsAndroid, AppState, AppStateStatus } from 'react-native';
 import Geolocation from '@react-native-community/geolocation';
 
 export interface LocationData {
@@ -9,6 +9,15 @@ export interface LocationData {
   formatted: string; // "latitude,longitude"
 }
 
+export type LocationModalType = 'disclosure' | 'location_disabled' | 'permission_denied' | null;
+
+export interface LocationModalState {
+  type: LocationModalType;
+  visible: boolean;
+  onContinue?: () => void;
+  onCancel?: () => void;
+}
+
 class LocationService {
   private lastKnownLocation: LocationData | null = null;
   private watchId: number | null = null;
@@ -16,19 +25,112 @@ class LocationService {
   private readonly REFRESH_INTERVAL_MS = 2 * 60 * 1000; // 2 minutes
   private isTracking = false;
 
+  private modalListeners: Array<(state: LocationModalState) => void> = [];
+  private currentModalState: LocationModalState = { type: null, visible: false };
+  private appStateSubscription: any = null;
+  private isRequestingPermission = false;
+
   constructor() {
     Geolocation.setRNConfiguration({
       skipPermissionRequests: false,
       authorizationLevel: 'whenInUse',
       locationProvider: 'auto',
     });
+
+    this.setupAppStateListener();
+  }
+
+  public subscribeModalState(listener: (state: LocationModalState) => void) {
+    this.modalListeners.push(listener);
+    listener(this.currentModalState);
+    return () => {
+      this.modalListeners = this.modalListeners.filter((l) => l !== listener);
+    };
+  }
+
+  public setModalState(state: LocationModalState) {
+    this.currentModalState = state;
+    this.modalListeners.forEach((listener) => listener(state));
+  }
+
+  private setupAppStateListener() {
+    this.appStateSubscription = AppState.addEventListener('change', (nextAppState: AppStateStatus) => {
+      if (nextAppState === 'active') {
+        this.onAppForeground();
+      }
+    });
+  }
+
+  private async onAppForeground() {
+    if (this.currentModalState.type === 'location_disabled') {
+      const isEnabled = await this.checkLocationEnabled();
+      if (isEnabled) {
+        this.setModalState({ type: null, visible: false });
+        if (this.isTracking) {
+          this.refreshLocation();
+        }
+      }
+    }
   }
 
   /**
-   * Checks if location permissions are granted.
-   * Requests them if not already granted.
+   * Checks if foreground location permissions are already granted without showing prompts.
    */
-  async checkLocationPermission(): Promise<boolean> {
+  async hasForegroundPermission(): Promise<boolean> {
+    if (Platform.OS === 'android') {
+      try {
+        const fine = await PermissionsAndroid.check(
+          PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION
+        );
+        const coarse = await PermissionsAndroid.check(
+          PermissionsAndroid.PERMISSIONS.ACCESS_COARSE_LOCATION
+        );
+        return fine || coarse;
+      } catch {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  /**
+   * Performs Play Store compliant location permission flow:
+   * 1. Check if permission already granted -> return true.
+   * 2. If not granted -> show Prominent Disclosure Modal.
+   * 3. User taps Continue -> trigger native permission request (FINE & COARSE).
+   * 4. If foreground granted on Android 10+ (API 29+), request ACCESS_BACKGROUND_LOCATION.
+   */
+  async requestPermissionWithDisclosure(): Promise<boolean> {
+    const alreadyGranted = await this.hasForegroundPermission();
+    if (alreadyGranted) {
+      return true;
+    }
+
+    if (this.isRequestingPermission) {
+      return false;
+    }
+    this.isRequestingPermission = true;
+
+    return new Promise((resolve) => {
+      this.setModalState({
+        type: 'disclosure',
+        visible: true,
+        onContinue: async () => {
+          this.setModalState({ type: null, visible: false });
+          const granted = await this.executeNativePermissionRequest();
+          this.isRequestingPermission = false;
+          resolve(granted);
+        },
+        onCancel: () => {
+          this.setModalState({ type: null, visible: false });
+          this.isRequestingPermission = false;
+          resolve(false);
+        },
+      });
+    });
+  }
+
+  private async executeNativePermissionRequest(): Promise<boolean> {
     if (Platform.OS === 'android') {
       try {
         const granted = await PermissionsAndroid.requestMultiple([
@@ -36,10 +138,38 @@ class LocationService {
           PermissionsAndroid.PERMISSIONS.ACCESS_COARSE_LOCATION,
         ]);
 
-        return (
+        const fgGranted =
           granted['android.permission.ACCESS_FINE_LOCATION'] === PermissionsAndroid.RESULTS.GRANTED ||
-          granted['android.permission.ACCESS_COARSE_LOCATION'] === PermissionsAndroid.RESULTS.GRANTED
-        );
+          granted['android.permission.ACCESS_COARSE_LOCATION'] === PermissionsAndroid.RESULTS.GRANTED;
+
+        if (fgGranted) {
+          // On Android 10+ (API Level >= 29), request background location separately
+          const apiLevel = typeof Platform.Version === 'number' ? Platform.Version : parseInt(String(Platform.Version), 10);
+          if (apiLevel >= 29) {
+            const hasBg = await PermissionsAndroid.check(
+              PermissionsAndroid.PERMISSIONS.ACCESS_BACKGROUND_LOCATION
+            );
+            if (!hasBg) {
+              try {
+                await PermissionsAndroid.request(
+                  PermissionsAndroid.PERMISSIONS.ACCESS_BACKGROUND_LOCATION
+                );
+              } catch (bgErr) {
+                // Background permission request optional fallback
+              }
+            }
+          }
+          return true;
+        } else {
+          const isNeverAskAgain =
+            granted['android.permission.ACCESS_FINE_LOCATION'] === PermissionsAndroid.RESULTS.NEVER_ASK_AGAIN &&
+            granted['android.permission.ACCESS_COARSE_LOCATION'] === PermissionsAndroid.RESULTS.NEVER_ASK_AGAIN;
+
+          if (isNeverAskAgain) {
+            this.setModalState({ type: 'permission_denied', visible: true });
+          }
+          return false;
+        }
       } catch (err) {
         return false;
       }
@@ -51,6 +181,14 @@ class LocationService {
         );
       });
     }
+  }
+
+  /**
+   * Checks if location permissions are granted.
+   * Prompts user with disclosure if not already granted.
+   */
+  async checkLocationPermission(): Promise<boolean> {
+    return this.requestPermissionWithDisclosure();
   }
 
   /**
@@ -149,14 +287,12 @@ class LocationService {
   }
 
   private async refreshLocation() {
-    // Try High Accuracy first
     Geolocation.getCurrentPosition(
       (position) => this.updateCache(position),
       (error) => {
         if (error.code === 2) {
           this.handleLocationOff();
         } else {
-          // Fallback to lower accuracy if high accuracy fails (timeout/unavailable)
           this.refreshLocationLowAccuracy();
         }
       },
@@ -167,7 +303,7 @@ class LocationService {
   private refreshLocationLowAccuracy() {
     Geolocation.getCurrentPosition(
       (position) => this.updateCache(position),
-      () => {}, // Silent fail
+      () => { }, // Silent fail
       { enableHighAccuracy: false, timeout: 10000, maximumAge: 60000 }
     );
   }
@@ -184,11 +320,12 @@ class LocationService {
   }
 
   private handleLocationOff() {
-    Alert.alert(
-      'Location Services Disabled',
-      'Please enable GPS/Location Services to continue using the app.',
-      [{ text: 'OK' }]
-    );
+    if (this.currentModalState.type !== 'location_disabled') {
+      this.setModalState({
+        type: 'location_disabled',
+        visible: true,
+      });
+    }
   }
 
   /**
@@ -204,15 +341,13 @@ class LocationService {
    */
   async getFormattedLocation(): Promise<string> {
     if (this.lastKnownLocation) {
-      // If we have a cache but it's older than 5 minutes, refresh in background
       if (Date.now() - this.lastKnownLocation.timestamp > 5 * 60 * 1000) {
         this.refreshLocation();
       }
       return this.lastKnownLocation.formatted;
     }
 
-    // No cache, attempt immediate fetch
-    const hasPermission = await this.checkLocationPermission();
+    const hasPermission = await this.hasForegroundPermission();
     if (!hasPermission) return '';
 
     return new Promise((resolve) => {
@@ -226,7 +361,6 @@ class LocationService {
             this.handleLocationOff();
             resolve('');
           } else {
-            // Try one more time with low accuracy
             Geolocation.getCurrentPosition(
               (pos) => {
                 this.updateCache(pos);
@@ -263,3 +397,4 @@ class LocationService {
 
 export const locationService = new LocationService();
 export default locationService;
+

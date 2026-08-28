@@ -12,6 +12,7 @@ import type { RootState } from './src/store/store';
 import { Colors } from './src/theme';
 import { syncAuthTokensToStorage } from './src/services/savedLogin';
 import SplashScreen from './src/screens/Splashscreen';
+import LocationModalContainer from './src/components/LocationModalContainer';
 
 function AuthRehydrationSync() {
   useEffect(() => {
@@ -87,6 +88,7 @@ export default function App() {
               translucent={false}
             />
             <AppNavigator />
+            <LocationModalContainer />
           </View>
         </PersistGate>
       </Provider>
