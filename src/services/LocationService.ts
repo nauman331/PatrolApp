@@ -167,7 +167,7 @@ class LocationService {
   private refreshLocationLowAccuracy() {
     Geolocation.getCurrentPosition(
       (position) => this.updateCache(position),
-      () => {}, // Silent fail
+      () => { }, // Silent fail
       { enableHighAccuracy: false, timeout: 10000, maximumAge: 60000 }
     );
   }
