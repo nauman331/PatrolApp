@@ -93,6 +93,7 @@ export default function ShiftSignInScreen() {
   const [watermarking, setWatermarking] = useState(false);
   const pendingSelfieRef = useRef<Asset | null>(null);
   const isFetchingLocation = useRef(false);
+  const checkingInRef = useRef(false);
   const [resolvedSiteId, setResolvedSiteId] = useState<
     string | number | undefined
   >(params?.siteId);
@@ -200,30 +201,42 @@ export default function ShiftSignInScreen() {
   };
 
   const handleCheckIn = async () => {
-    if (!shift.rosterId) {
-      Alert.alert('Error', 'Missing roster for this shift.');
+    if (checkingInRef.current || checkingIn) {
       return;
     }
 
-    let currentCoords = locationCoords.trim();
-    if (!currentCoords) {
-      // Try to get from service if local state is empty
-      currentCoords = await locationService.getFormattedLocation();
-    }
-
-    if (!currentCoords) {
-      Alert.alert('Error', 'Location required');
-      refreshLocation(true);
-      return;
-    }
-
-    if (!selfie?.uri) {
-      Alert.alert('Error', 'Please capture a selfie before signing in.');
-      return;
-    }
+    checkingInRef.current = true;
+    setCheckingIn(true);
 
     try {
-      setCheckingIn(true);
+      if (!shift.rosterId) {
+        Alert.alert('Error', 'Missing roster for this shift.');
+        checkingInRef.current = false;
+        setCheckingIn(false);
+        return;
+      }
+
+      let currentCoords = locationCoords.trim();
+      if (!currentCoords) {
+        // Try to get from service if local state is empty
+        currentCoords = await locationService.getFormattedLocation();
+      }
+
+      if (!currentCoords) {
+        Alert.alert('Error', 'Location required');
+        refreshLocation(true);
+        checkingInRef.current = false;
+        setCheckingIn(false);
+        return;
+      }
+
+      if (!selfie?.uri) {
+        Alert.alert('Error', 'Please capture a selfie before signing in.');
+        checkingInRef.current = false;
+        setCheckingIn(false);
+        return;
+      }
+
       const result = await guardJobCheckin({
         roster_id: shift.rosterId,
         location: currentCoords,
@@ -280,10 +293,12 @@ export default function ShiftSignInScreen() {
         });
       } else {
         Alert.alert('Check-in failed', result.message || 'Please try again.');
+        checkingInRef.current = false;
+        setCheckingIn(false);
       }
     } catch {
       Alert.alert('Error', 'Something went wrong during check-in.');
-    } finally {
+      checkingInRef.current = false;
       setCheckingIn(false);
     }
   };

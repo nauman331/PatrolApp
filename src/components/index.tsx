@@ -36,8 +36,8 @@ export const NavBar: React.FC<NavBarProps> = ({
     variant === 'dark'
       ? Colors.navBgDark
       : variant === 'mgr'
-      ? Colors.navBgMgr
-      : Colors.navBg;
+        ? Colors.navBgMgr
+        : Colors.navBg;
 
   const inactive =
     variant === 'dark'
