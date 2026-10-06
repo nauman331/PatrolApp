@@ -68,7 +68,7 @@ function statusFallback(statusCode?: number, fallback = 'Something went wrong. P
 
 export function extractApiErrorMessage(
   payload: unknown,
-  fallback = 'Something went wrong. Please try again.',
+  fallback = 'Something went wrong. Please try again...',
   options: ApiErrorOptions = {},
 ): string {
   if (typeof payload === 'string' && payload.trim()) {
